@@ -20,7 +20,47 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-const { axiosRetry } = require('axios-retry');
+// Simple axios retry mechanism using interceptors
+axios.interceptors.response.use(null, async (error) => {
+  const { config } = error;
+  
+  // If no config or retry not specified, reject
+  if (!config || config.retry === undefined) {
+    return Promise.reject(error);
+  }
+  
+  // Set retry count
+  config.retryCount = config.retryCount || 0;
+  
+  // Check if we've reached the max retries
+  if (config.retryCount >= config.retry) {
+    return Promise.reject(error);
+  }
+  
+  // Increase retry count
+  config.retryCount += 1;
+  
+  // Create a new promise with exponential backoff
+  const delayTime = config.retryDelay || 1000 * Math.pow(2, config.retryCount - 1);
+  
+  // Log retry (if logger is available)
+  if (typeof logger !== 'undefined') {
+    logger.debug({ url: config.url, attempt: config.retryCount, delay: delayTime }, 'Retrying request');
+  } else {
+    console.log(`Retrying request to ${config.url}, attempt ${config.retryCount} after ${delayTime}ms`);
+  }
+  
+  // Wait before retrying
+  await new Promise(resolve => setTimeout(resolve, delayTime));
+  
+  // Return the retry request
+  return axios(config);
+});
+
+// Configure default retry options for all requests
+axios.defaults.retry = 3;        // Number of retries
+axios.defaults.retryDelay = 1000; // Base delay in ms
+
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -46,19 +86,6 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
-// Configure axios-retry
-axiosRetry(axios, {
-  retries: 3,
-  retryDelay: retryCount => retryCount * 1000,
-  retryCondition: error => {
-    return (
-      error.code === 'ECONNABORTED' ||
-      (!error.response && error.code !== 'ECONNREFUSED') ||
-      (error.response && error.response.status >= 500) ||
-      (error.response && error.response.status === 429)
-    );
-  }
-});
 
 // Initialize Redis for rate limiting (optional)
 let redis = null;
