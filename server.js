@@ -37,15 +37,13 @@ const PORT = process.env.PORT || 3000;
 let redis = null;
 try {
   if (process.env.REDIS_URL) {
-    const Redis = require('ioredis');
-    redis = new Redis(process.env.REDIS_URL);
-    
-    // Test connection
-    redis.on('error', (err) => {
-      logger.error({ err }, 'Redis connection error. Falling back to memory store');
-      redis = null;
-    });
-  }
+  const Redis = require('ioredis');
+  redis = new Redis(process.env.REDIS_URL, {
+    tls: {
+      rejectUnauthorized: true // Set to false only for testing if you have certificate issues
+    }
+  });
+}
 } catch (err) {
   console.error('Redis initialization failed:', err);
 }
