@@ -1617,8 +1617,6 @@ async function tryAllStores(bundleId, searchTerms = null) {
       
       const result = await extractFromStore(validId, storeType, searchTerms);
       
-      const result = await extractFromStore(validId, storeType, searchTerms);
-      
       if (result.success) {
         logger.info({ bundleId: validId, storeType, domain: result.domain }, 'Successfully extracted from store');
         return result;
