@@ -45,6 +45,14 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
+const startupId = Math.random().toString(36).substring(2, 10);
+logger.info({ 
+  startupId,
+  timestamp: new Date().toISOString(),
+  nodeVersion: process.version,
+  environment: process.env.NODE_ENV || 'development'
+}, 'Server initializing');
+
 // Custom axios retry mechanism (replaces axios-retry)
 axios.interceptors.response.use(undefined, async (error) => {
   const { config } = error;
@@ -1996,6 +2004,24 @@ const server = app.listen(PORT, () => {
   }, 'Server started');
 });
 
+// Add these event listeners right after that:
+server.on('listening', () => {
+  logger.info({
+    startupId,
+    port: PORT,
+    timestamp: new Date().toISOString()
+  }, 'Server successfully started and listening');
+});
+
+server.on('error', (err) => {
+  logger.error({
+    startupId,
+    error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString()
+  }, 'Server encountered an error during startup');
+});
+
 // Graceful shutdown
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
@@ -2025,5 +2051,23 @@ function gracefulShutdown() {
     process.exit(1);
   }, 10000);
 }
+
+process.on('uncaughtException', (err) => {
+  logger.error({
+    startupId,
+    error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString()
+  }, 'Uncaught exception');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({
+    startupId,
+    error: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+    timestamp: new Date().toISOString()
+  }, 'Unhandled promise rejection');
+});
 
 module.exports = app; // For testing
