@@ -326,7 +326,7 @@ const STORES = {
         }
       }
     ],
-    rateLimit: { requests: 10, windowMs: 1200 }
+    rateLimit: { requests: 4, windowMs: 3000 }
   },
   samsung: {
     urlTemplate: id => `https://www.samsung.com/us/appstore/app/${encodeURIComponent(id)}`,
@@ -687,15 +687,14 @@ function saveHtmlForDebugging(storeType, bundleId, html) {
 // Enhanced user agent rotation
 function getRandomUserAgent() {
   const agents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    // Your existing agents plus additional ones:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15'
   ];
   return agents[Math.floor(Math.random() * agents.length)];
 }
@@ -847,6 +846,13 @@ async function applyRateLimit(storeType) {
   try {
     const store = STORES[storeType];
     if (!store?.rateLimit) return;
+    
+    // Special handling for Roku
+    if (storeType === 'roku') {
+      // Add a random delay between 1-3 seconds for Roku
+      const jitter = Math.floor(Math.random() * 2000) + 1000;
+      await new Promise(resolve => setTimeout(resolve, jitter));
+    }
     
     const { requests, windowMs } = store.rateLimit;
     
@@ -1270,25 +1276,27 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     let data;
     let response;
     
-    try {
-      response = await axios.get(url, {
-        timeout: 15000,
-        retry: 3, // Use our custom retry mechanism
-        headers: {
-          'User-Agent': getRandomUserAgent(),
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-          'Referer': 'https://www.google.com/'
-        }
-      });
+try {
+  response = await axios.get(url, {
+    timeout: 15000,
+    retry: 3,
+    headers: {
+      'User-Agent': getRandomUserAgent(),
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+      'Referer': storeType === 'roku' ? 'https://www.roku.com/search/browse' : 'https://www.google.com/',
+      // Add this Cookie header for Roku
+      ...(storeType === 'roku' ? {'Cookie': 'visitor_id='+Math.random().toString(36).substring(2,15)} : {})
+    }
+  });
       
       if (!response.data || typeof response.data !== 'string') {
         throw new Error(`Empty or invalid response from ${storeType}`);
@@ -1301,10 +1309,12 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       
       // Check if the response might be a captcha or block page
       if (data.includes('captcha') || data.includes('security check') || 
-          data.includes('automated access') || data.includes('blocked')) {
-        logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
-        throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
-      }
+    data.includes('automated access') || data.includes('blocked') ||
+    data.includes('suspicious activity') || data.includes('verify you are a human') ||
+    (storeType === 'roku' && (data.includes('unusual traffic') || data.includes('access denied')))) {
+  logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
+  throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
+}
     } catch (fetchErr) {
       // Case sensitivity handling for 404 errors
       if (fetchErr.response?.status === 404) {
@@ -1590,12 +1600,22 @@ async function tryAllStores(bundleId, searchTerms = null) {
   
   logger.info({ bundleId: validId }, 'Trying all stores');
   
-  for (const storeType of Object.keys(STORES)) {
+   for (const storeType of Object.keys(STORES)) {
     try {
       // Add delay between store attempts
       if (storeType !== Object.keys(STORES)[0]) {  // Skip delay for first store
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Add longer delay for Roku
+        const delay = storeType === 'roku' ? 3000 : 1500;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
+      
+      // If Roku failed in the last hour, skip it to avoid blocking
+      if (storeType === 'roku' && cache.get(`roku-blocked-${new Date().getHours()}`)) {
+        logger.info({ bundleId, storeType }, 'Skipping Roku due to recent blocking');
+        continue;
+      }
+      
+      const result = await extractFromStore(validId, storeType, searchTerms);
       
       const result = await extractFromStore(validId, storeType, searchTerms);
       
@@ -1606,6 +1626,12 @@ async function tryAllStores(bundleId, searchTerms = null) {
       
       results.push(result);
     } catch (err) {
+      // If this is a Roku blocking error, mark Roku as blocked for this hour
+      if (storeType === 'roku' && 
+          (err.message.includes('blocked') || err.message.includes('captcha'))) {
+        cache.set(`roku-blocked-${new Date().getHours()}`, true, 1); // Cache for 1 hour
+        logger.warn({ bundleId }, 'Marking Roku API as blocked for this hour');
+      }
       logger.error({ 
         err: err.message, 
         bundleId: validId, 
