@@ -267,7 +267,7 @@
       return storeNames[storeType] || 'Unknown';
     },
     
-    /**
+/**
  * Detect store type from bundle ID format
  * @param {string} bundleId - Bundle ID
  * @returns {string} Store type
@@ -277,18 +277,25 @@ detectStoreType(bundleId) {
   
   const trimmedId = bundleId.trim();
   
-  // Check Google Play first to ensure correct detection
+  // Check for complex Roku ID (most specific pattern first)
+  if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
+  
+  // Check for Samsung ID (G/g followed by 11 digits)
+  if (/^[gG]\d{11}$/i.test(trimmedId)) return 'samsung';
+  
+  // Check for Amazon ID (B/b followed by 9 alphanumeric characters)
+  if (/^[bB][0-9A-Z]{9}$/i.test(trimmedId)) return 'amazon';
+  
+  // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
+  if (/^(id)?\d{9}$/i.test(trimmedId)) return 'appstore';
+  
+  // Check for simple Roku ID (2-6 digits)
+  if (/^\d{2,6}$/i.test(trimmedId)) return 'roku';
+  
+  // Check for Google Play ID (package name format)
   if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';
   
-  // Then check other stores
-  if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
-  if (/^B[0-9A-Z]{9,10}$/i.test(trimmedId)) return 'amazon';
-  if (/^(id)?\d+$/.test(trimmedId)) return /^\d{4,6}$/.test(trimmedId) ? 'roku' : 'appstore';
-  if (/^G\d{10,15}$/i.test(trimmedId)) return 'samsung';
-  
-  // Modified Roku pattern to exclude IDs with dots (to avoid conflicting with Google Play)
-  if (/^[a-zA-Z0-9]{4,}$/.test(trimmedId) && !trimmedId.includes('.')) return 'roku';
-  
+  // Unknown store type
   return 'unknown';
 },
     

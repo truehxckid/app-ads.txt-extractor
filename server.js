@@ -772,22 +772,25 @@ function detectStoreType(bundleId) {
   try {
     const validId = validateBundleId(bundleId);
     
-    // Important: Check Google Play first, as it has the most specific pattern
+    // Check for complex Roku ID (most specific pattern first)
+    if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
+    
+    // Check for Samsung ID (G/g followed by 11 digits)
+    if (/^[gG]\d{11}$/i.test(validId)) return 'samsung';
+    
+    // Check for Amazon ID (B/b followed by 9 alphanumeric characters)
+    if (/^[bB][0-9A-Z]{9}$/i.test(validId)) return 'amazon';
+    
+    // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
+    if (/^(id)?\d{9}$/i.test(validId)) return 'appstore';
+    
+    // Check for simple Roku ID (2-6 digits)
+    if (/^\d{2,6}$/i.test(validId)) return 'roku';
+    
+    // Check for Google Play ID (package name format)
     if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
     
-    // Then check other patterns
-    if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
-    if (/^B[0-9A-Z]{9,10}$/i.test(validId)) return 'amazon';
-    if (/^(id)?\d+$/.test(validId)) return /^\d{4,6}$/.test(validId) ? 'roku' : 'appstore';
-    
-    // Make Samsung detection case-insensitive
-    if (/^[gG]\d{10,15}$/i.test(validId)) return 'samsung';
-    
-    // More specific Roku pattern - not starting with 'G' or 'g' (Samsung pattern)
-    // and either entirely numeric (not covered by earlier patterns) 
-    // or alphanumeric but not meeting other patterns and NOT containing periods
-    if (/^(?![gG]\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
-    
+    // Unknown store type
     return 'unknown';
   } catch (err) {
     logger.error({ err, bundleId }, 'Error detecting store type');
