@@ -1226,13 +1226,6 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   }
 }
 
-/**
- * Extract developer information from a specific store
- * @param {string} bundleId - The app bundle ID
- * @param {string} storeType - The store type (googleplay, appstore, etc.)
- * @param {string[]} searchTerms - Optional search terms for app-ads.txt
- * @returns {Promise<Object>} Store extraction result
- */
 async function extractFromStore(bundleId, storeType, searchTerms = null) {
   try {
     const store = STORES[storeType];
@@ -1270,9 +1263,12 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     
     logger.debug({ bundleId, storeType, url }, 'Extracting from store');
     
+    // Fetch store page
+    let data;
+    let response;
+    
     try {
-      // Fetch store page
-      const response = await axios.get(url, {
+      response = await axios.get(url, {
         timeout: 15000,
         retry: 3, // Use our custom retry mechanism
         headers: {
@@ -1295,7 +1291,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
         throw new Error(`Empty or invalid response from ${storeType}`);
       }
       
-      const data = response.data;
+      data = response.data;
       
       // Save HTML for debugging if enabled
       saveHtmlForDebugging(storeType, validId, data);
@@ -1306,116 +1302,9 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
         logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
         throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
       }
-      
-      let developerUrl = null;
-      
-      // Try pattern-based extractors first
-      for (const extractor of store.extractors) {
-        try {
-          developerUrl = extractor(data);
-          if (developerUrl) break;
-        } catch (extractErr) {
-          logger.error({ extractErr, storeType }, 'Error in extractor');
-        }
-      }
-      
-      // If pattern-based extraction failed, try using Cheerio
-      if (!developerUrl) {
-        try {
-          const $ = cheerio.load(data);
-          const selectors = [
-            'meta[name="appstore:developer_url"]',
-            'a[href*="/developer/"]',
-            'a.link.icon.icon-after.icon-external',
-            'a:contains("Visit the")',
-            'a:contains("More by")'
-          ];
-          
-          for (const selector of selectors) {
-            const el = $(selector);
-            if (el.length > 0) {
-              developerUrl = el.attr('content') || el.attr('href');
-              if (developerUrl) break;
-            }
-          }
-        } catch (cheerioErr) {
-          logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
-        }
-      }
-      
-      // When checking for developer URL, add more detailed logging
-      if (!developerUrl) {
-        // Log a sample of the HTML to help debug extraction patterns
-        const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
-        logger.warn({ 
-          bundleId, 
-          storeType,
-          htmlSample,
-          patternCount: store.extractors.length
-        }, 'Developer URL extraction failed');
-        
-        // Try to guess the domain from the bundle ID for Google Play apps
-        if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/i.test(validId)) {
-          const parts = validId.toLowerCase().split('.');
-          if (parts.length >= 2) {
-            // Try to construct a domain from the bundle parts
-            const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
-            logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
-            
-            // Check if this is a valid domain with app-ads.txt
-            try {
-              const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
-              if (appAdsCheck.exists) {
-                // We found a valid app-ads.txt at the guessed domain!
-                logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
-                return {
-                  bundleId: validId,
-                  developerUrl: `https://${possibleDomain}`,
-                  domain: possibleDomain,
-                  storeType,
-                  appAdsTxt: appAdsCheck,
-                  searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-                  success: true,
-                  guessedDomain: true,
-                  timestamp: Date.now()
-                };
-              }
-            } catch (guessErr) {
-              logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
-            }
-          }
-        }
-        
-        throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
-      }
-      
-      // Extract domain from developer URL
-      const domain = extractDomain(developerUrl);
-      if (!domain) {
-        throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
-      }
-      
-      // Check for app-ads.txt
-      const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
-      
-      // Prepare result
-      const result = {
-        bundleId: validId,
-        developerUrl,
-        domain,
-        storeType,
-        appAdsTxt,
-        searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-        success: true,
-        timestamp: Date.now()
-      };
-      
-      // Cache result using case-aware key
-      cache.set(cacheKey, result, 24);
-      return result;
-    } catch (err) {
+    } catch (fetchErr) {
       // Case sensitivity handling for 404 errors
-      if (err.response?.status === 404) {
+      if (fetchErr.response?.status === 404) {
         // Define which stores are case-sensitive and the alternative case to try
         const caseSensitivityOptions = {
           'googleplay': validId !== validId.toLowerCase() ? validId.toLowerCase() : null,
@@ -1539,22 +1428,22 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       
       // Process the original error if we couldn't handle it with case sensitivity
       let errorMessage;
-      if (err.code === 'ECONNABORTED') {
+      if (fetchErr.code === 'ECONNABORTED') {
         errorMessage = 'The request timed out. The app store might be temporarily unavailable.';
-      } else if (err.response?.status === 404) {
+      } else if (fetchErr.response?.status === 404) {
         errorMessage = 'The bundle ID was not found in this store.';
-      } else if (err.response?.status === 429) {
+      } else if (fetchErr.response?.status === 429) {
         errorMessage = 'Too many requests. Please try again later.';
       } else {
-        errorMessage = err.message || 'An unknown error occurred';
+        errorMessage = fetchErr.message || 'An unknown error occurred';
       }
       
       logger.error({ 
         err: errorMessage, 
         bundleId, 
         storeType,
-        url: err.config?.url,
-        status: err.response?.status
+        url: fetchErr.config?.url,
+        status: fetchErr.response?.status
       }, 'Error extracting from store');
       
       const errorResult = { 
@@ -1562,14 +1451,131 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
         storeType, 
         success: false, 
         error: errorMessage,
-        suggestedAction: err.code === 'ECONNABORTED' ? 'retry' : undefined,
+        suggestedAction: fetchErr.code === 'ECONNABORTED' ? 'retry' : undefined,
         timestamp: Date.now()
       };
       
       // Cache errors for a shorter period, using case-aware key
       cache.set(getCaseAwareCacheKey(storeType, validId), errorResult, 1);
-      throw err;
+      throw fetchErr;
     }
+    
+    // If we get here, we have a successful response
+    let developerUrl = null;
+    
+    // Try pattern-based extractors first
+    for (const extractor of store.extractors) {
+      try {
+        developerUrl = extractor(data);
+        if (developerUrl) break;
+      } catch (extractErr) {
+        logger.error({ extractErr, storeType }, 'Error in extractor');
+      }
+    }
+    
+    // If pattern-based extraction failed, try using Cheerio
+    if (!developerUrl) {
+      try {
+        const $ = cheerio.load(data);
+        const selectors = [
+          'meta[name="appstore:developer_url"]',
+          'a[href*="/developer/"]',
+          'a.link.icon.icon-after.icon-external',
+          'a:contains("Visit the")',
+          'a:contains("More by")'
+        ];
+        
+        for (const selector of selectors) {
+          const el = $(selector);
+          if (el.length > 0) {
+            developerUrl = el.attr('content') || el.attr('href');
+            if (developerUrl) break;
+          }
+        }
+      } catch (cheerioErr) {
+        logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
+      }
+    }
+    
+    // When checking for developer URL, add more detailed logging
+    if (!developerUrl) {
+      // Log a sample of the HTML to help debug extraction patterns
+      const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
+      logger.warn({ 
+        bundleId, 
+        storeType,
+        htmlSample,
+        patternCount: store.extractors.length
+      }, 'Developer URL extraction failed');
+      
+      // Try to guess the domain from the bundle ID for Google Play apps
+      if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/i.test(validId)) {
+        const parts = validId.toLowerCase().split('.');
+        if (parts.length >= 2) {
+          // Try to construct a domain from the bundle parts
+          const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+          logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
+          
+          // Check if this is a valid domain with app-ads.txt
+          try {
+            const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
+            if (appAdsCheck.exists) {
+              // We found a valid app-ads.txt at the guessed domain!
+              logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
+              return {
+                bundleId: validId,
+                developerUrl: `https://${possibleDomain}`,
+                domain: possibleDomain,
+                storeType,
+                appAdsTxt: appAdsCheck,
+                searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+                success: true,
+                guessedDomain: true,
+                timestamp: Date.now()
+              };
+            }
+          } catch (guessErr) {
+            logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
+          }
+        }
+      }
+      
+      throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
+    }
+    
+    // Extract domain from developer URL
+    const domain = extractDomain(developerUrl);
+    if (!domain) {
+      throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
+    }
+    
+    // Check for app-ads.txt
+    const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
+    
+    // Prepare result
+    const result = {
+      bundleId: validId,
+      developerUrl,
+      domain,
+      storeType,
+      appAdsTxt,
+      searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+      success: true,
+      timestamp: Date.now()
+    };
+    
+    // Cache result using case-aware key
+    cache.set(cacheKey, result, 24);
+    return result;
+  } catch (err) {
+    // This is the main error handler for the function
+    logger.error({ 
+      err: err.message, 
+      bundleId, 
+      storeType
+    }, 'Final error in extractFromStore');
+    
+    throw err;
   }
 }
 
