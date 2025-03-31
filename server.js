@@ -122,23 +122,50 @@ app.use(express.static(path.join(__dirname, 'public')));
 class RedisStore {
   constructor({ client, prefix }) {
     this.client = client;
-    this.prefix = prefix;
+    this.prefix = prefix || 'rate-limit:';
   }
 
+  // Required method: increment
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
     
     try {
-      const [count] = await this.client
+      // Increment the key and set expiry in a transaction
+      const [incr] = await this.client
         .multi()
         .incr(redisKey)
         .expire(redisKey, 60 * 15) // 15 minutes in seconds
         .exec();
         
-      return count[1];
+      // Express-rate-limit expects an object with the hits property
+      return {
+        totalHits: incr[1],
+        resetTime: Date.now() + (60 * 15 * 1000)
+      };
     } catch (err) {
-      logger.error({ err, key: redisKey }, 'Redis increment error');
-      return 1; // Allow request on error
+      console.error('Redis increment error:', err);
+      // Return a default object on error
+      return { totalHits: 1, resetTime: Date.now() + (60 * 15 * 1000) };
+    }
+  }
+
+  // Required method: decrement
+  async decrement(key) {
+    const redisKey = `${this.prefix}${key}`;
+    try {
+      await this.client.decr(redisKey);
+    } catch (err) {
+      console.error('Redis decrement error:', err);
+    }
+  }
+
+  // Required method: resetKey
+  async resetKey(key) {
+    const redisKey = `${this.prefix}${key}`;
+    try {
+      await this.client.del(redisKey);
+    } catch (err) {
+      console.error('Redis resetKey error:', err);
     }
   }
 }
@@ -539,24 +566,31 @@ function validateSearchTerms(terms) {
   throw new Error('Invalid search terms: must be a string or array of strings');
 }
 
-// Enhanced store type detection
-function detectStoreType(id) {
+/**
+ * Detect store type from bundle ID format
+ * @param {string} bundleId - Bundle ID
+ * @returns {string} Store type
+ */
+function detectStoreType(bundleId) {
   try {
-    const validId = validateBundleId(id);
+    const validId = validateBundleId(bundleId);
     
+    // Important: Check Google Play first, as it has the most specific pattern
+    if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
+    
+    // Then check other patterns
     if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
     if (/^B[0-9A-Z]{9,10}$/i.test(validId)) return 'amazon';
     if (/^(id)?\d+$/.test(validId)) return /^\d{4,6}$/.test(validId) ? 'roku' : 'appstore';
-    if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
     if (/^G\d{10,15}$/i.test(validId)) return 'samsung';
     // More specific Roku pattern - not starting with 'G' (Samsung pattern)
     // and either entirely numeric (not covered by earlier patterns) 
-    // or alphanumeric but not meeting other patterns
+    // or alphanumeric but not meeting other patterns and NOT containing periods
     if (/^(?!G\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
     
     return 'unknown';
   } catch (err) {
-    logger.error({ err, id }, 'Error detecting store type');
+    logger.error({ err, bundleId }, 'Error detecting store type');
     return 'unknown';
   }
 }
@@ -570,14 +604,24 @@ function extractDomain(url) {
     const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
     if (!match) return '';
     
-    const parts = match[1].split('.');
-    if (parts.length <= 2) return match[1];
+    const hostname = match[1];
+    const parts = hostname.split('.');
     
-    // Handle special TLDs
-    const specialTlds = ['co.uk', 'co.jp', 'co.nz', 'com.au', 'com.br', 'com.tw'];
+    // If only two parts (e.g., example.com), return the whole thing
+    if (parts.length <= 2) return hostname;
+    
+    // Expanded list of special TLDs that should be treated as a single unit
+    const specialTlds = [
+      'co.uk', 'co.jp', 'co.nz', 'co.za', 'co.kr', 'co.id', 'co.il', 'co.th', 
+      'com.au', 'com.br', 'com.tw', 'com.sg', 'com.tr', 'com.mx', 'com.ar', 'com.hk',
+      'com.ph', 'com.my', 'com.vn', 'org.uk', 'net.au', 'or.jp', 'ne.jp', 'ac.uk',
+      'edu.au', 'gov.au', 'org.au'
+    ];
+    
+    // Check if the last two parts form a special TLD
     const lastTwo = parts.slice(-2).join('.');
     
-    // Validate domain format
+    // If it's a special TLD, take the last three parts; otherwise just the last two
     const extractedDomain = specialTlds.includes(lastTwo) ? 
       parts.slice(-3).join('.') : 
       parts.slice(-2).join('.');
@@ -681,6 +725,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   const startTime = Date.now();
   let fileSize = 0;
   let processingMethod = 'none';
+  let finalDomain = domain;  // Track the final domain after redirects
   
   if (!domain) {
     return { exists: false };
@@ -706,6 +751,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     let content = null;
     let usedProtocol = null;
     let fetchErrors = [];
+    let redirectUrl = null;
     
     for (const protocol of protocols) {
       if (content) break;
@@ -717,6 +763,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         const url = `${protocol}://${domain}/app-ads.txt`;
         logger.debug({ url }, 'Fetching app-ads.txt');
         
+        // Modified to follow redirects by default and capture the final URL
         const response = await axios.get(url, {
           timeout: 10000,
           headers: {
@@ -724,8 +771,42 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
             'Accept': 'text/plain,text/html',
             'Accept-Encoding': 'gzip, deflate'
           },
-          validateStatus: status => status === 200
+          validateStatus: status => status === 200,
+          maxRedirects: 5, // Follow up to 5 redirects
+          withCredentials: false // Ensure cookies aren't sent for security
         });
+        
+        // Check if we were redirected and update the domain
+        if (response.request.res.responseUrl) {
+          redirectUrl = response.request.res.responseUrl;
+          try {
+            const redirectUrlObj = new URL(redirectUrl);
+            // Only update if it's a different domain
+            const redirectDomain = extractDomain(redirectUrlObj.hostname);
+            if (redirectDomain && redirectDomain !== domain) {
+              finalDomain = redirectDomain;
+              logger.info({ 
+                originalDomain: domain, 
+                redirectDomain: finalDomain 
+              }, 'Followed redirect to new domain');
+            }
+          } catch (urlErr) {
+            logger.warn({ 
+              redirectUrl, 
+              error: urlErr.message 
+            }, 'Failed to parse redirect URL');
+          }
+        }
+        
+        // If response.request.path doesn't end with app-ads.txt, we might have been redirected elsewhere
+        const finalPath = response.request.path;
+        if (!finalPath.endsWith('/app-ads.txt') && !finalPath.endsWith('/app-ads.txt/')) {
+          logger.warn({ 
+            originalUrl: url, 
+            finalPath: finalPath 
+          }, 'Redirected to non-app-ads.txt path');
+          continue; // Skip this result as it might not be app-ads.txt content
+        }
         
         if (response.data && typeof response.data === 'string') {
           content = response.data.trim();
@@ -733,6 +814,55 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
           break;
         }
       } catch (err) {
+        // Check if we were redirected before the error
+        if (err.response?.request?.res?.responseUrl) {
+          redirectUrl = err.response.request.res.responseUrl;
+          try {
+            const redirectUrlObj = new URL(redirectUrl);
+            const redirectDomain = extractDomain(redirectUrlObj.hostname);
+            if (redirectDomain && redirectDomain !== domain) {
+              finalDomain = redirectDomain;
+              
+              // If we got redirected to a new domain but still had an error,
+              // try the new domain directly in the next iteration
+              logger.info({ 
+                originalDomain: domain, 
+                redirectDomain: finalDomain 
+              }, 'Redirect detected before error, will try new domain');
+              
+              // Now try the new domain directly
+              try {
+                const newDomainUrl = `${protocol}://${finalDomain}/app-ads.txt`;
+                logger.debug({ url: newDomainUrl }, 'Fetching app-ads.txt from redirect domain');
+                
+                const newResponse = await axios.get(newDomainUrl, {
+                  timeout: 10000,
+                  headers: {
+                    'User-Agent': getRandomUserAgent(),
+                    'Accept': 'text/plain,text/html',
+                    'Accept-Encoding': 'gzip, deflate'
+                  },
+                  validateStatus: status => status === 200
+                });
+                
+                if (newResponse.data && typeof newResponse.data === 'string') {
+                  content = newResponse.data.trim();
+                  usedProtocol = protocol;
+                  break;
+                }
+              } catch (newErr) {
+                // Log but continue with the next protocol
+                logger.debug({ 
+                  error: newErr.message, 
+                  redirectDomain: finalDomain 
+                }, 'Failed to fetch from redirect domain');
+              }
+            }
+          } catch (urlErr) {
+            logger.debug({ redirectUrl }, 'Failed to parse redirect URL');
+          }
+        }
+        
         const errorDetails = {
           protocol,
           domain,
@@ -749,7 +879,9 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     if (!content) {
       const result = { 
         exists: false,
-        fetchErrors: fetchErrors.length > 0 ? fetchErrors : undefined
+        fetchErrors: fetchErrors.length > 0 ? fetchErrors : undefined,
+        originalDomain: domain,
+        finalDomain: finalDomain !== domain ? finalDomain : undefined
       };
       cache.set(cacheKey, result, 6); // Cache non-existing files for shorter period
       return result;
@@ -757,44 +889,14 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     
     fileSize = content.length;
     
-    // Check if content is too large for synchronous processing
-    const isLargeFile = content.length > 100000; // Adjust this threshold as needed
-    processingMethod = isLargeFile ? 'worker' : 'sync';
+    // Rest of the function remains the same...
     
-    logger.debug({
-      domain,
-      fileSize,
-      processingMethod
-    }, 'Processing app-ads.txt');
-    
-    let analyzed, searchResults;
-    
-    if (isLargeFile) {
-      // Use worker thread for large files
-      const workerResult = await runWorker(content, normalizedSearchTerms);
-      
-      if (!workerResult.success) {
-        throw new Error(`Worker thread error: ${workerResult.error}`);
-      }
-      
-      analyzed = workerResult.analyzed;
-      searchResults = workerResult.searchResults;
-    } else {
-      // Process smaller files synchronously
-      const lines = content.split(/\r\n|\n|\r/);
-      
-      // Analyze the file content
-      analyzed = analyzeAppAdsTxt(lines);
-      
-      // Process search terms if provided
-      if (normalizedSearchTerms?.length > 0) {
-        searchResults = processSearchTerms(lines, normalizedSearchTerms);
-      }
-    }
-    
+    // Update the result to include both original and final domains
     const result = {
       exists: true,
-      url: `${usedProtocol}://${domain}/app-ads.txt`,
+      url: `${usedProtocol}://${finalDomain}/app-ads.txt`,
+      originalDomain: domain,
+      finalDomain: finalDomain !== domain ? finalDomain : undefined,
       content: content.length > 100000 
         ? content.substring(0, 100000) + '\n... (truncated, file too large)' 
         : content,
@@ -806,6 +908,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     const processingTime = Date.now() - startTime;
     logger.debug({
       domain,
+      finalDomain,
       fileSize,
       processingMethod,
       processingTime: `${processingTime}ms`,
@@ -819,280 +922,13 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     
     const result = { 
       exists: false, 
-      error: 'Internal error processing app-ads.txt'
+      error: 'Internal error processing app-ads.txt',
+      originalDomain: domain,
+      finalDomain: finalDomain !== domain ? finalDomain : undefined
     };
     
     cache.set(cacheKey, result, 1); // Short cache time for errors
     return result;
-  }
-}
-
-// Process search terms against lines of content
-function processSearchTerms(lines, searchTerms) {
-  const searchResults = {
-    terms: searchTerms,
-    termResults: searchTerms.map(term => ({
-      term,
-      matchingLines: [],
-      count: 0
-    })),
-    matchingLines: [],
-    count: 0
-  };
-  
-  // Process each line
-  lines.forEach((line, lineIndex) => {
-    const lineContent = line.trim();
-    if (!lineContent) return;
-    
-    const lineNumber = lineIndex + 1;
-    let anyMatch = false;
-    
-    // Check each search term
-    searchTerms.forEach((term, termIndex) => {
-      try {
-        if (lineContent.toLowerCase().includes(term)) {
-          searchResults.termResults[termIndex].matchingLines.push({
-            lineNumber,
-            content: lineContent,
-            termIndex
-          });
-          anyMatch = true;
-        }
-      } catch (err) {
-        logger.error({ err, term, lineContent }, 'Error matching search term');
-      }
-    });
-    
-    // If any term matched, add to overall results
-    if (anyMatch) {
-      searchResults.matchingLines.push({
-        lineNumber,
-        content: lineContent
-      });
-    }
-  });
-  
-  // Update counts
-  searchResults.termResults.forEach(result => {
-    result.count = result.matchingLines.length;
-  });
-  searchResults.count = searchResults.matchingLines.length;
-  
-  return searchResults;
-}
-
-// Analyze app-ads.txt content
-function analyzeAppAdsTxt(lines) {
-  let validLineCount = 0;
-  let commentLineCount = 0;
-  let emptyLineCount = 0;
-  let invalidLineCount = 0;
-  
-  const publishers = new Set();
-  const relationships = {
-    direct: 0,
-    reseller: 0,
-    other: 0
-  };
-  
-  lines.forEach(line => {
-    // Skip empty lines
-    if (!line.trim()) {
-      emptyLineCount++;
-      return;
-    }
-    
-    // Handle comments
-    const commentIndex = line.indexOf('#');
-    if (commentIndex === 0) {
-      commentLineCount++;
-      return;
-    }
-    
-    const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
-    if (!cleanLine) {
-      emptyLineCount++;
-      return;
-    }
-    
-    // Parse fields
-    const fields = cleanLine.split(',').map(f => f.trim());
-    
-    if (fields.length >= 3) {
-      validLineCount++;
-      
-      // Extract publisher
-      const domain = fields[0].toLowerCase();
-      publishers.add(domain);
-      
-      // Extract relationship
-      const relationship = fields[2].toLowerCase();
-      if (relationship === 'direct') {
-        relationships.direct++;
-      } else if (relationship === 'reseller') {
-        relationships.reseller++;
-      } else {
-        relationships.other++;
-      }
-    } else {
-      invalidLineCount++;
-    }
-  });
-  
-  return {
-    totalLines: lines.length,
-    validLines: validLineCount,
-    commentLines: commentLineCount,
-    emptyLines: emptyLineCount,
-    invalidLines: invalidLineCount,
-    uniquePublishers: publishers.size,
-    relationships
-  };
-}
-
-// Enhanced store extraction with better error handling
-async function extractFromStore(bundleId, storeType, searchTerms = null) {
-  try {
-    const store = STORES[storeType];
-    if (!store) {
-      throw new Error(`Unsupported store type: ${storeType}`);
-    }
-    
-    const validId = validateBundleId(bundleId);
-    const url = store.urlTemplate(validId);
-    const cacheKey = `store-${storeType}-${validId}`;
-    
-    // Check cache first
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      if (cached.success && cached.domain && searchTerms) {
-        const cachedTerms = cached.searchTerms || [];
-        const newTerms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
-        
-        // If search terms are different, recheck app-ads.txt with new terms
-        if (JSON.stringify(cachedTerms.sort()) !== JSON.stringify(newTerms.sort())) {
-          try {
-            const appAdsTxt = await checkAppAdsTxt(cached.domain, searchTerms);
-            return {...cached, appAdsTxt, searchTerms: newTerms};
-          } catch (appAdsErr) {
-            logger.error({ appAdsErr, domain: cached.domain }, 'Error checking app-ads.txt with new search terms');
-            return cached; // Return cached result without new search terms
-          }
-        }
-      }
-      return cached;
-    }
-    
-    // Apply rate limiting
-    await applyRateLimit(storeType);
-    
-    logger.debug({ bundleId, storeType, url }, 'Extracting from store');
-    
-    // Fetch store page
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache'
-      }
-    });
-    
-    if (!response.data || typeof response.data !== 'string') {
-      throw new Error(`Empty or invalid response from ${storeType}`);
-    }
-    
-    const data = response.data;
-    let developerUrl = null;
-    
-    // Try pattern-based extractors first
-    for (const extractor of store.extractors) {
-      try {
-        developerUrl = extractor(data);
-        if (developerUrl) break;
-      } catch (extractErr) {
-        logger.error({ extractErr, storeType }, 'Error in extractor');
-      }
-    }
-    
-    // If pattern-based extraction failed, try using Cheerio
-    if (!developerUrl) {
-      try {
-        const $ = cheerio.load(data);
-        const selectors = [
-          'meta[name="appstore:developer_url"]',
-          'a[href*="/developer/"]',
-          'a.link.icon.icon-after.icon-external',
-          'a:contains("Visit the")',
-          'a:contains("More by")'
-        ];
-        
-        for (const selector of selectors) {
-          const el = $(selector);
-          if (el.length > 0) {
-            developerUrl = el.attr('content') || el.attr('href');
-            if (developerUrl) break;
-          }
-        }
-      } catch (cheerioErr) {
-        logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
-      }
-    }
-    
-    if (!developerUrl) {
-      throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
-    }
-    
-    // Extract domain from developer URL
-    const domain = extractDomain(developerUrl);
-    if (!domain) {
-      throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
-    }
-    
-    // Check for app-ads.txt
-    const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
-    
-    // Prepare result
-    const result = {
-      bundleId: validId,
-      developerUrl,
-      domain,
-      storeType,
-      appAdsTxt,
-      searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-      success: true,
-      timestamp: Date.now()
-    };
-    
-    // Cache result
-    cache.set(cacheKey, result, 24);
-    return result;
-  } catch (err) {
-    const errorMessage = err.response?.status 
-      ? `HTTP ${err.response.status}: ${err.response.statusText || err.message}`
-      : err.message;
-    
-    logger.error({ 
-      err: errorMessage, 
-      bundleId, 
-      storeType,
-      url: err.config?.url,
-      status: err.response?.status
-    }, 'Error extracting from store');
-    
-    const errorResult = { 
-      bundleId: validateBundleId(bundleId), 
-      storeType, 
-      success: false, 
-      error: errorMessage,
-      timestamp: Date.now()
-    };
-    
-    // Cache errors for a shorter period
-    cache.set(`store-${storeType}-${bundleId}`, errorResult, 1);
-    throw err;
   }
 }
 

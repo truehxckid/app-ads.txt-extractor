@@ -268,24 +268,29 @@
     },
     
     /**
-     * Detect store type from bundle ID format
-     * @param {string} bundleId - Bundle ID
-     * @returns {string} Store type
-     */
-    detectStoreType(bundleId) {
-      if (!bundleId || typeof bundleId !== 'string') return 'unknown';
-      
-      const trimmedId = bundleId.trim();
-      
-      if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
-      if (/^B[0-9A-Z]{9,10}$/i.test(trimmedId)) return 'amazon';
-      if (/^(id)?\d+$/.test(trimmedId)) return /^\d{4,6}$/.test(trimmedId) ? 'roku' : 'appstore';
-      if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';
-      if (/^[a-zA-Z0-9]{4,}$/.test(trimmedId) && !trimmedId.includes('.')) return 'roku';
-      if (/^G\d{10,15}$/i.test(trimmedId)) return 'samsung';
-      
-      return 'unknown';
-    },
+ * Detect store type from bundle ID format
+ * @param {string} bundleId - Bundle ID
+ * @returns {string} Store type
+ */
+detectStoreType(bundleId) {
+  if (!bundleId || typeof bundleId !== 'string') return 'unknown';
+  
+  const trimmedId = bundleId.trim();
+  
+  // Check Google Play first to ensure correct detection
+  if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';
+  
+  // Then check other stores
+  if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
+  if (/^B[0-9A-Z]{9,10}$/i.test(trimmedId)) return 'amazon';
+  if (/^(id)?\d+$/.test(trimmedId)) return /^\d{4,6}$/.test(trimmedId) ? 'roku' : 'appstore';
+  if (/^G\d{10,15}$/i.test(trimmedId)) return 'samsung';
+  
+  // Modified Roku pattern to exclude IDs with dots (to avoid conflicting with Google Play)
+  if (/^[a-zA-Z0-9]{4,}$/.test(trimmedId) && !trimmedId.includes('.')) return 'roku';
+  
+  return 'unknown';
+},
     
     /**
      * Parse CSV data with header detection
