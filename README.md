@@ -1,12 +1,10 @@
-# App Developer Domain Extractor
+# App-Ads.txt Extractor
 
-Extract developer domains from app bundle IDs across multiple app stores with enhanced app-ads.txt analysis.
-
-![App Developer Domain Extractor](docs/preview.png)
+Extract developer domains and analyze app-ads.txt files from app bundle IDs across multiple app stores.
 
 ## Features
 
-- **Multi-Store Support**: Extract domains from Google Play, App Store, Amazon, and Roku
+- **Multi-Store Support**: Extract domains from Google Play, App Store, Amazon, Roku, and Samsung
 - **Batch Processing**: Process multiple app bundle IDs simultaneously
 - **app-ads.txt Analysis**: Check for and analyze app-ads.txt files automatically
 - **Multi-Term Search**: Search for multiple terms within app-ads.txt files with highlighted results
@@ -28,8 +26,8 @@ Extract developer domains from app bundle IDs across multiple app stores with en
 
 1. Clone the repository
    ```
-   git clone https://github.com/yourusername/app-developer-domain-extractor.git
-   cd app-developer-domain-extractor
+   git clone https://github.com/truehxckid/app-ads.txt-extractor.git
+   cd app-ads.txt-extractor
    ```
 
 2. Install dependencies
@@ -37,18 +35,19 @@ Extract developer domains from app bundle IDs across multiple app stores with en
    npm install
    ```
 
-3. Start the server
+3. Create a `.env` file with the following configuration:
+   ```
+   PORT=3000
+   NODE_ENV=development
+   REDIS_URL=redis://localhost:6379  # Optional
+   ```
+
+4. Start the server
    ```
    npm start
    ```
 
-4. Open your browser and navigate to `http://localhost:3000`
-
-### Environment Variables
-
-- `PORT`: Port to run the server on (default: 3000)
-- `REDIS_URL`: Redis connection URL (optional)
-- `NODE_ENV`: Set to 'production' for production environment
+5. Open your browser and navigate to `http://localhost:3000`
 
 ## Usage
 
@@ -59,7 +58,7 @@ Extract developer domains from app bundle IDs across multiple app stores with en
 3. Click "Extract All Developer Domains"
 4. View results in the table, with options to:
    - View app-ads.txt content
-   - View search matches
+   - View search matches with color-coded highlighting
    - Copy domains
    - Download results as CSV
 
@@ -71,6 +70,7 @@ The tool automatically detects the app store based on the bundle ID format:
 - **App Store**: Numeric ID with/without 'id' prefix (e.g., `id389801252` or `389801252`)
 - **Amazon**: ASIN format (e.g., `B019DCHDZK`)
 - **Roku**: Simple ID (e.g., `41468`) or complex ID
+- **Samsung**: Galaxy Store ID (e.g., `G19068012619`)
 
 ### Searching app-ads.txt Files
 
@@ -119,6 +119,24 @@ See the [API Documentation](docs/api.md) for more details.
 - Processing is done in batches to manage memory usage and improve performance
 - Large app-ads.txt files are truncated in the UI for better display performance
 
+## Browser Support
+
+The application is optimized for:
+- Chrome 80+
+- Firefox 75+
+- Safari 13+
+- Edge 80+
+
+## Troubleshooting
+
+### Common Issues
+
+- **Multiple Search Terms Appearing**: If you experience issues with multiple search term inputs appearing when clicking "Add Search Term", please update to the latest version which fixes this issue.
+
+- **Nginx Configuration**: When setting up Nginx, ensure you use the correct path `/etc/nginx/` (not "ngnix") in your configuration commands.
+
+- **Search or Extract Not Working**: Make sure to check the console for any errors. The application includes debug mode which you can activate by pressing Ctrl+D.
+
 ## Development
 
 ### Running in Development Mode
@@ -127,19 +145,23 @@ See the [API Documentation](docs/api.md) for more details.
 npm run dev
 ```
 
-### Running Tests
+### Project Structure
 
 ```
-npm test
+app-ads.txt-extractor/
+├── server.js                # Main server file
+├── app-ads-parser.worker.js # Worker thread for parsing
+├── public/
+│   ├── index.html          # Main HTML file
+│   ├── app.js              # Main client application
+│   ├── fix-errors.js       # Error handling and fixes
+│   ├── validation.js       # Form validation
+│   └── styles.css          # CSS styles
+├── cache/                  # Cache directory
+└── docs/                   # Documentation
 ```
 
-### Building for Production
-
-```
-npm run build
-```
-
-## Contributing
+### Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
