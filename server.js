@@ -935,6 +935,157 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   }
 }
 
+/**
+ * Extract developer information from a specific store
+ * @param {string} bundleId - The app bundle ID
+ * @param {string} storeType - The store type (googleplay, appstore, etc.)
+ * @param {string[]} searchTerms - Optional search terms for app-ads.txt
+ * @returns {Promise<Object>} Store extraction result
+ */
+async function extractFromStore(bundleId, storeType, searchTerms = null) {
+  try {
+    const store = STORES[storeType];
+    if (!store) {
+      throw new Error(`Unsupported store type: ${storeType}`);
+    }
+    
+    const validId = validateBundleId(bundleId);
+    const url = store.urlTemplate(validId);
+    const cacheKey = `store-${storeType}-${validId}`;
+    
+    // Check cache first
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      if (cached.success && cached.domain && searchTerms) {
+        const cachedTerms = cached.searchTerms || [];
+        const newTerms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
+        
+        // If search terms are different, recheck app-ads.txt with new terms
+        if (JSON.stringify(cachedTerms.sort()) !== JSON.stringify(newTerms.sort())) {
+          try {
+            const appAdsTxt = await checkAppAdsTxt(cached.domain, searchTerms);
+            return {...cached, appAdsTxt, searchTerms: newTerms};
+          } catch (appAdsErr) {
+            logger.error({ appAdsErr, domain: cached.domain }, 'Error checking app-ads.txt with new search terms');
+            return cached; // Return cached result without new search terms
+          }
+        }
+      }
+      return cached;
+    }
+    
+    // Apply rate limiting
+    await applyRateLimit(storeType);
+    
+    logger.debug({ bundleId, storeType, url }, 'Extracting from store');
+    
+    // Fetch store page
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache'
+      }
+    });
+    
+    if (!response.data || typeof response.data !== 'string') {
+      throw new Error(`Empty or invalid response from ${storeType}`);
+    }
+    
+    const data = response.data;
+    let developerUrl = null;
+    
+    // Try pattern-based extractors first
+    for (const extractor of store.extractors) {
+      try {
+        developerUrl = extractor(data);
+        if (developerUrl) break;
+      } catch (extractErr) {
+        logger.error({ extractErr, storeType }, 'Error in extractor');
+      }
+    }
+    
+    // If pattern-based extraction failed, try using Cheerio
+    if (!developerUrl) {
+      try {
+        const $ = cheerio.load(data);
+        const selectors = [
+          'meta[name="appstore:developer_url"]',
+          'a[href*="/developer/"]',
+          'a.link.icon.icon-after.icon-external',
+          'a:contains("Visit the")',
+          'a:contains("More by")'
+        ];
+        
+        for (const selector of selectors) {
+          const el = $(selector);
+          if (el.length > 0) {
+            developerUrl = el.attr('content') || el.attr('href');
+            if (developerUrl) break;
+          }
+        }
+      } catch (cheerioErr) {
+        logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
+      }
+    }
+    
+    if (!developerUrl) {
+      throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
+    }
+    
+    // Extract domain from developer URL
+    const domain = extractDomain(developerUrl);
+    if (!domain) {
+      throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
+    }
+    
+    // Check for app-ads.txt
+    const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
+    
+    // Prepare result
+    const result = {
+      bundleId: validId,
+      developerUrl,
+      domain,
+      storeType,
+      appAdsTxt,
+      searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+      success: true,
+      timestamp: Date.now()
+    };
+    
+    // Cache result
+    cache.set(cacheKey, result, 24);
+    return result;
+  } catch (err) {
+    const errorMessage = err.response?.status 
+      ? `HTTP ${err.response.status}: ${err.response.statusText || err.message}`
+      : err.message;
+    
+    logger.error({ 
+      err: errorMessage, 
+      bundleId, 
+      storeType,
+      url: err.config?.url,
+      status: err.response?.status
+    }, 'Error extracting from store');
+    
+    const errorResult = { 
+      bundleId: validateBundleId(bundleId), 
+      storeType, 
+      success: false, 
+      error: errorMessage,
+      timestamp: Date.now()
+    };
+    
+    // Cache errors for a shorter period
+    cache.set(`store-${storeType}-${bundleId}`, errorResult, 1);
+    throw err;
+  }
+}
+
 // Enhanced store trying with better error handling and logging
 async function tryAllStores(bundleId, searchTerms = null) {
   const validId = validateBundleId(bundleId);
