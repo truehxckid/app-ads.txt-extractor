@@ -33,6 +33,8 @@ const pino = require('pino');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', true);
+
 // Initialize Redis for rate limiting (optional)
 let redis = null;
 try {
@@ -123,31 +125,35 @@ class RedisStore {
     this.prefix = prefix || 'rate-limit:';
   }
 
-  // Required method: increment
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
+    const ttlSeconds = 60 * 15; // 15 minutes in seconds
     
     try {
-      // Increment the key and set expiry in a transaction
+      // Use Redis transaction to increment and set expiry
       const [incr] = await this.client
         .multi()
         .incr(redisKey)
-        .expire(redisKey, 60 * 15) // 15 minutes in seconds
+        .expire(redisKey, ttlSeconds)
         .exec();
-        
-      // Express-rate-limit expects an object with the hits property
+      
+      const totalHits = incr[1];
+      
+      // Important: Return an object with resetTime as a Date object
       return {
-        totalHits: incr[1],
-        resetTime: Date.now() + (60 * 15 * 1000)
+        totalHits,
+        resetTime: new Date(Date.now() + ttlSeconds * 1000) // Convert to Date object
       };
     } catch (err) {
       console.error('Redis increment error:', err);
-      // Return a default object on error
-      return { totalHits: 1, resetTime: Date.now() + (60 * 15 * 1000) };
+      // Return default response that follows the expected format
+      return {
+        totalHits: 1,
+        resetTime: new Date(Date.now() + ttlSeconds * 1000)
+      };
     }
   }
 
-  // Required method: decrement
   async decrement(key) {
     const redisKey = `${this.prefix}${key}`;
     try {
@@ -157,7 +163,6 @@ class RedisStore {
     }
   }
 
-  // Required method: resetKey
   async resetKey(key) {
     const redisKey = `${this.prefix}${key}`;
     try {
