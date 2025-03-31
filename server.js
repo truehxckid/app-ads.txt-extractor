@@ -20,47 +20,6 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-// Simple axios retry mechanism using interceptors
-axios.interceptors.response.use(null, async (error) => {
-  const { config } = error;
-  
-  // If no config or retry not specified, reject
-  if (!config || config.retry === undefined) {
-    return Promise.reject(error);
-  }
-  
-  // Set retry count
-  config.retryCount = config.retryCount || 0;
-  
-  // Check if we've reached the max retries
-  if (config.retryCount >= config.retry) {
-    return Promise.reject(error);
-  }
-  
-  // Increase retry count
-  config.retryCount += 1;
-  
-  // Create a new promise with exponential backoff
-  const delayTime = config.retryDelay || 1000 * Math.pow(2, config.retryCount - 1);
-  
-  // Log retry (if logger is available)
-  if (typeof logger !== 'undefined') {
-    logger.debug({ url: config.url, attempt: config.retryCount, delay: delayTime }, 'Retrying request');
-  } else {
-    console.log(`Retrying request to ${config.url}, attempt ${config.retryCount} after ${delayTime}ms`);
-  }
-  
-  // Wait before retrying
-  await new Promise(resolve => setTimeout(resolve, delayTime));
-  
-  // Return the retry request
-  return axios(config);
-});
-
-// Configure default retry options for all requests
-axios.defaults.retry = 3;        // Number of retries
-axios.defaults.retryDelay = 1000; // Base delay in ms
-
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -86,6 +45,51 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
+// Custom axios retry mechanism (replaces axios-retry)
+axios.interceptors.response.use(undefined, async (error) => {
+  const { config } = error;
+  
+  // If no config object or retry not specified, reject
+  if (!config || config.retry === undefined) {
+    return Promise.reject(error);
+  }
+  
+  // Set retry count if it doesn't exist
+  config.__retryCount = config.__retryCount || 0;
+  
+  // Check if we've reached max retries
+  if (config.__retryCount >= config.retry) {
+    return Promise.reject(error);
+  }
+  
+  // Increment retry count
+  config.__retryCount += 1;
+  
+  // Create new promise with delay (exponential backoff)
+  const delayTime = config.retryDelay || 1000 * Math.pow(2, config.__retryCount - 1);
+  
+  // Log retry attempt
+  if (typeof logger !== 'undefined') {
+    logger.debug({ 
+      url: config.url, 
+      attempt: config.__retryCount, 
+      maxRetries: config.retry,
+      delay: delayTime,
+      status: error.response?.status,
+      errorCode: error.code
+    }, 'Retrying request');
+  }
+  
+  // Wait for the delay
+  await new Promise(resolve => setTimeout(resolve, delayTime));
+  
+  // Return the new request
+  return axios(config);
+});
+
+// Set default retry values for all requests
+axios.defaults.retry = 3;        // Number of retries
+axios.defaults.retryDelay = 1000; // Base delay in ms
 
 // Initialize Redis for rate limiting (optional)
 let redis = null;
@@ -696,6 +700,18 @@ function getRandomUserAgent() {
   return agents[Math.floor(Math.random() * agents.length)];
 }
 
+// Helper function for generating case-aware cache keys
+function getCaseAwareCacheKey(storeType, bundleId) {
+  // Define stores where case matters in the ID
+  const caseSensitiveStores = ['googleplay', 'samsung'];
+  
+  // For these stores, use lowercase in the cache key for consistency
+  if (caseSensitiveStores.includes(storeType)) {
+    return `store-${storeType}-${bundleId.toLowerCase()}`;
+  }
+  return `store-${storeType}-${bundleId}`;
+}
+
 // Input validation
 function validateBundleId(id) {
   if (!id || typeof id !== 'string') {
@@ -763,11 +779,14 @@ function detectStoreType(bundleId) {
     if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
     if (/^B[0-9A-Z]{9,10}$/i.test(validId)) return 'amazon';
     if (/^(id)?\d+$/.test(validId)) return /^\d{4,6}$/.test(validId) ? 'roku' : 'appstore';
-    if (/^G\d{10,15}$/i.test(validId)) return 'samsung';
-    // More specific Roku pattern - not starting with 'G' (Samsung pattern)
+    
+    // Make Samsung detection case-insensitive
+    if (/^[gG]\d{10,15}$/i.test(validId)) return 'samsung';
+    
+    // More specific Roku pattern - not starting with 'G' or 'g' (Samsung pattern)
     // and either entirely numeric (not covered by earlier patterns) 
     // or alphanumeric but not meeting other patterns and NOT containing periods
-    if (/^(?!G\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
+    if (/^(?![gG]\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
     
     return 'unknown';
   } catch (err) {
@@ -949,6 +968,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         // Modified to follow redirects by default and capture the final URL
         const response = await axios.get(url, {
           timeout: 10000,
+          retry: 3, // Use custom retry
           headers: {
             'User-Agent': getRandomUserAgent(),
             'Accept': 'text/plain,text/html',
@@ -1027,6 +1047,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
                 
                 const newResponse = await axios.get(newDomainUrl, {
                   timeout: 10000,
+                  retry: 3,
                   headers: {
                     'User-Agent': getRandomUserAgent(),
                     'Accept': 'text/plain,text/html',
@@ -1221,9 +1242,9 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     
     const validId = validateBundleId(bundleId);
     const url = store.urlTemplate(validId);
-    const cacheKey = `store-${storeType}-${validId}`;
+    const cacheKey = getCaseAwareCacheKey(storeType, validId);
     
-    // Check cache first
+    // Check cache first - use case-aware cache key
     const cached = cache.get(cacheKey);
     if (cached) {
       if (cached.success && cached.domain && searchTerms) {
@@ -1249,180 +1270,306 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     
     logger.debug({ bundleId, storeType, url }, 'Extracting from store');
     
-    // Fetch store page
-    const response = await axios.get(url, {
-      timeout: 15000,
-      headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'Referer': 'https://www.google.com/'
+    try {
+      // Fetch store page
+      const response = await axios.get(url, {
+        timeout: 15000,
+        retry: 3, // Use our custom retry mechanism
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Referer': 'https://www.google.com/'
+        }
+      });
+      
+      if (!response.data || typeof response.data !== 'string') {
+        throw new Error(`Empty or invalid response from ${storeType}`);
       }
-    });
-    
-    if (!response.data || typeof response.data !== 'string') {
-      throw new Error(`Empty or invalid response from ${storeType}`);
-    }
-    
-    const data = response.data;
-    
-    // Save HTML for debugging if enabled
-    saveHtmlForDebugging(storeType, validId, data);
-    
-    // Check if the response might be a captcha or block page
-    if (data.includes('captcha') || data.includes('security check') || 
-        data.includes('automated access') || data.includes('blocked')) {
-      logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
-      throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
-    }
-    
-    let developerUrl = null;
-    
-    // Try pattern-based extractors first
-    for (const extractor of store.extractors) {
-      try {
-        developerUrl = extractor(data);
-        if (developerUrl) break;
-      } catch (extractErr) {
-        logger.error({ extractErr, storeType }, 'Error in extractor');
+      
+      const data = response.data;
+      
+      // Save HTML for debugging if enabled
+      saveHtmlForDebugging(storeType, validId, data);
+      
+      // Check if the response might be a captcha or block page
+      if (data.includes('captcha') || data.includes('security check') || 
+          data.includes('automated access') || data.includes('blocked')) {
+        logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
+        throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
       }
-    }
-    
-    // If pattern-based extraction failed, try using Cheerio
-    if (!developerUrl) {
-      try {
-        const $ = cheerio.load(data);
-        const selectors = [
-          'meta[name="appstore:developer_url"]',
-          'a[href*="/developer/"]',
-          'a.link.icon.icon-after.icon-external',
-          'a:contains("Visit the")',
-          'a:contains("More by")'
-        ];
+      
+      let developerUrl = null;
+      
+      // Try pattern-based extractors first
+      for (const extractor of store.extractors) {
+        try {
+          developerUrl = extractor(data);
+          if (developerUrl) break;
+        } catch (extractErr) {
+          logger.error({ extractErr, storeType }, 'Error in extractor');
+        }
+      }
+      
+      // If pattern-based extraction failed, try using Cheerio
+      if (!developerUrl) {
+        try {
+          const $ = cheerio.load(data);
+          const selectors = [
+            'meta[name="appstore:developer_url"]',
+            'a[href*="/developer/"]',
+            'a.link.icon.icon-after.icon-external',
+            'a:contains("Visit the")',
+            'a:contains("More by")'
+          ];
+          
+          for (const selector of selectors) {
+            const el = $(selector);
+            if (el.length > 0) {
+              developerUrl = el.attr('content') || el.attr('href');
+              if (developerUrl) break;
+            }
+          }
+        } catch (cheerioErr) {
+          logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
+        }
+      }
+      
+      // When checking for developer URL, add more detailed logging
+      if (!developerUrl) {
+        // Log a sample of the HTML to help debug extraction patterns
+        const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
+        logger.warn({ 
+          bundleId, 
+          storeType,
+          htmlSample,
+          patternCount: store.extractors.length
+        }, 'Developer URL extraction failed');
         
-        for (const selector of selectors) {
-          const el = $(selector);
-          if (el.length > 0) {
-            developerUrl = el.attr('content') || el.attr('href');
-            if (developerUrl) break;
+        // Try to guess the domain from the bundle ID for Google Play apps
+        if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/i.test(validId)) {
+          const parts = validId.toLowerCase().split('.');
+          if (parts.length >= 2) {
+            // Try to construct a domain from the bundle parts
+            const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+            logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
+            
+            // Check if this is a valid domain with app-ads.txt
+            try {
+              const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
+              if (appAdsCheck.exists) {
+                // We found a valid app-ads.txt at the guessed domain!
+                logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
+                return {
+                  bundleId: validId,
+                  developerUrl: `https://${possibleDomain}`,
+                  domain: possibleDomain,
+                  storeType,
+                  appAdsTxt: appAdsCheck,
+                  searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+                  success: true,
+                  guessedDomain: true,
+                  timestamp: Date.now()
+                };
+              }
+            } catch (guessErr) {
+              logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
+            }
           }
         }
-      } catch (cheerioErr) {
-        logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction');
+        
+        throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
       }
-    }
-    
-    // When checking for developer URL, add more detailed logging
-    if (!developerUrl) {
-      // Log a sample of the HTML to help debug extraction patterns
-      const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
-      logger.warn({ 
+      
+      // Extract domain from developer URL
+      const domain = extractDomain(developerUrl);
+      if (!domain) {
+        throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
+      }
+      
+      // Check for app-ads.txt
+      const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
+      
+      // Prepare result
+      const result = {
+        bundleId: validId,
+        developerUrl,
+        domain,
+        storeType,
+        appAdsTxt,
+        searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+        success: true,
+        timestamp: Date.now()
+      };
+      
+      // Cache result using case-aware key
+      cache.set(cacheKey, result, 24);
+      return result;
+    } catch (err) {
+      // Case sensitivity handling for 404 errors
+      if (err.response?.status === 404) {
+        // Define which stores are case-sensitive and the alternative case to try
+        const caseSensitivityOptions = {
+          'googleplay': validId !== validId.toLowerCase() ? validId.toLowerCase() : null,
+          'samsung': validId.startsWith('G') ? 'g' + validId.substring(1) : 
+                    validId.startsWith('g') ? 'G' + validId.substring(1) : null
+        };
+        
+        // If this is a case-sensitive store and we have an alternative to try
+        const alternativeId = caseSensitivityOptions[storeType];
+        
+        if (alternativeId) {
+          logger.info({ 
+            originalId: validId, 
+            alternativeId,
+            storeType 
+          }, 'Trying alternative case for bundle ID');
+          
+          try {
+            // Try with alternative case bundle ID
+            const alternativeUrl = store.urlTemplate(alternativeId);
+            const alternativeResponse = await axios.get(alternativeUrl, {
+              timeout: 15000,
+              retry: 3,
+              headers: {
+                'User-Agent': getRandomUserAgent(),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Cache-Control': 'no-cache'
+              }
+            });
+            
+            // If we get here, the alternative case worked
+            if (!alternativeResponse.data || typeof alternativeResponse.data !== 'string') {
+              throw new Error(`Empty or invalid response from ${storeType} with alternative case`);
+            }
+            
+            // Process the successful response with alternative case
+            const alternativeData = alternativeResponse.data;
+            
+            // Save HTML for debugging if enabled
+            saveHtmlForDebugging(storeType, alternativeId, alternativeData);
+            
+            let alternativeDeveloperUrl = null;
+            
+            // Try pattern-based extractors with alternative case
+            for (const extractor of store.extractors) {
+              try {
+                alternativeDeveloperUrl = extractor(alternativeData);
+                if (alternativeDeveloperUrl) break;
+              } catch (extractErr) {
+                logger.error({ extractErr, storeType }, 'Error in extractor with alternative case');
+              }
+            }
+            
+            // If pattern-based extraction failed, try using Cheerio
+            if (!alternativeDeveloperUrl) {
+              try {
+                const $ = cheerio.load(alternativeData);
+                const selectors = [
+                  'meta[name="appstore:developer_url"]',
+                  'a[href*="/developer/"]',
+                  'a.link.icon.icon-after.icon-external',
+                  'a:contains("Visit the")',
+                  'a:contains("More by")'
+                ];
+                
+                for (const selector of selectors) {
+                  const el = $(selector);
+                  if (el.length > 0) {
+                    alternativeDeveloperUrl = el.attr('content') || el.attr('href');
+                    if (alternativeDeveloperUrl) break;
+                  }
+                }
+              } catch (cheerioErr) {
+                logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction with alternative case');
+              }
+            }
+            
+            if (!alternativeDeveloperUrl) {
+              throw new Error(`Could not find developer URL for ${alternativeId} in ${storeType}`);
+            }
+            
+            // Extract domain from developer URL
+            const alternativeDomain = extractDomain(alternativeDeveloperUrl);
+            if (!alternativeDomain) {
+              throw new Error(`Could not extract valid domain from developer URL: ${alternativeDeveloperUrl}`);
+            }
+            
+            // Check for app-ads.txt
+            const alternativeAppAdsTxt = await checkAppAdsTxt(alternativeDomain, searchTerms);
+            
+            // Prepare result with alternative ID
+            const alternativeResult = {
+              bundleId: validId, // Keep original ID in result
+              alternativeBundleId: alternativeId, // Store the ID that actually worked
+              developerUrl: alternativeDeveloperUrl,
+              domain: alternativeDomain,
+              storeType,
+              appAdsTxt: alternativeAppAdsTxt,
+              searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+              success: true,
+              caseCorrected: true, // Indicate case was corrected
+              timestamp: Date.now()
+            };
+            
+            // Cache result with both original and alternative keys
+            cache.set(getCaseAwareCacheKey(storeType, validId), alternativeResult, 24);
+            cache.set(getCaseAwareCacheKey(storeType, alternativeId), alternativeResult, 24);
+            
+            return alternativeResult;
+          } catch (altErr) {
+            // Alternative case also failed, log and continue with original error
+            logger.debug({
+              alternativeId,
+              error: altErr.message
+            }, 'Alternative case bundle ID also failed');
+          }
+        }
+      }
+      
+      // Process the original error if we couldn't handle it with case sensitivity
+      let errorMessage;
+      if (err.code === 'ECONNABORTED') {
+        errorMessage = 'The request timed out. The app store might be temporarily unavailable.';
+      } else if (err.response?.status === 404) {
+        errorMessage = 'The bundle ID was not found in this store.';
+      } else if (err.response?.status === 429) {
+        errorMessage = 'Too many requests. Please try again later.';
+      } else {
+        errorMessage = err.message || 'An unknown error occurred';
+      }
+      
+      logger.error({ 
+        err: errorMessage, 
         bundleId, 
         storeType,
-        htmlSample,
-        patternCount: store.extractors.length
-      }, 'Developer URL extraction failed');
+        url: err.config?.url,
+        status: err.response?.status
+      }, 'Error extracting from store');
       
-      // Try to guess the domain from the bundle ID for Google Play apps
-      if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/.test(validId)) {
-        const parts = validId.split('.');
-        if (parts.length >= 2) {
-          // Try to construct a domain from the bundle parts
-          const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
-          logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
-          
-          // Check if this is a valid domain with app-ads.txt
-          try {
-            const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
-            if (appAdsCheck.exists) {
-              // We found a valid app-ads.txt at the guessed domain!
-              logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
-              return {
-                bundleId: validId,
-                developerUrl: `https://${possibleDomain}`,
-                domain: possibleDomain,
-                storeType,
-                appAdsTxt: appAdsCheck,
-                searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-                success: true,
-                guessedDomain: true,
-                timestamp: Date.now()
-              };
-            }
-          } catch (guessErr) {
-            logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
-          }
-        }
-      }
+      const errorResult = { 
+        bundleId: validId, 
+        storeType, 
+        success: false, 
+        error: errorMessage,
+        suggestedAction: err.code === 'ECONNABORTED' ? 'retry' : undefined,
+        timestamp: Date.now()
+      };
       
-      throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
+      // Cache errors for a shorter period, using case-aware key
+      cache.set(getCaseAwareCacheKey(storeType, validId), errorResult, 1);
+      throw err;
     }
-    
-    // Extract domain from developer URL
-    const domain = extractDomain(developerUrl);
-    if (!domain) {
-      throw new Error(`Could not extract valid domain from developer URL: ${developerUrl}`);
-    }
-    
-    // Check for app-ads.txt
-    const appAdsTxt = await checkAppAdsTxt(domain, searchTerms);
-    
-    // Prepare result
-    const result = {
-      bundleId: validId,
-      developerUrl,
-      domain,
-      storeType,
-      appAdsTxt,
-      searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-      success: true,
-      timestamp: Date.now()
-    };
-    
-    // Cache result
-    cache.set(cacheKey, result, 24);
-    return result;
-  } catch (err) {
-    let errorMessage;
-    
-    if (err.code === 'ECONNABORTED') {
-      errorMessage = 'The request timed out. The app store might be temporarily unavailable.';
-    } else if (err.response?.status === 404) {
-      errorMessage = 'The bundle ID was not found in this store.';
-    } else if (err.response?.status === 429) {
-      errorMessage = 'Too many requests. Please try again later.';
-    } else {
-      errorMessage = err.message || 'An unknown error occurred';
-    }
-    
-    logger.error({ 
-      err: errorMessage, 
-      bundleId, 
-      storeType,
-      url: err.config?.url,
-      status: err.response?.status
-    }, 'Error extracting from store');
-    
-    const errorResult = { 
-      bundleId: validateBundleId(bundleId), 
-      storeType, 
-      success: false, 
-      error: errorMessage,
-      suggestedAction: err.code === 'ECONNABORTED' ? 'retry' : undefined,
-      timestamp: Date.now()
-    };
-    
-    // Cache errors for a shorter period
-    cache.set(`store-${storeType}-${bundleId}`, errorResult, 1);
-    throw err;
   }
 }
 
@@ -1641,13 +1788,32 @@ app.post('/api/extract-multiple', async (req, res) => {
     
     const normalizedSearchTerms = validateSearchTerms(searchTerms);
     
-    // Filter and deduplicate bundle IDs
-    const uniqueIds = [...new Set(
-      bundleIds
-        .filter(id => id && typeof id === 'string')
-        .map(id => id.trim())
-        .filter(Boolean)
-    )];
+    // Define case-sensitive stores
+    const caseSensitiveStores = ['googleplay', 'samsung'];
+    
+    // Filter and deduplicate bundle IDs with case sensitivity awareness
+    const uniqueIdsMap = new Map();
+    
+    bundleIds
+      .filter(id => id && typeof id === 'string')
+      .map(id => id.trim())
+      .filter(Boolean)
+      .forEach(id => {
+        const storeType = detectStoreType(id);
+        
+        // For case-sensitive stores, use lowercase as the key but preserve original case in value
+        const mapKey = caseSensitiveStores.includes(storeType) ? id.toLowerCase() : id;
+        
+        // Only add if we haven't seen this ID yet (case-insensitively for sensitive stores)
+        // or replace if the new ID is from a case-sensitive store but the existing one isn't
+        if (!uniqueIdsMap.has(mapKey) || 
+            (caseSensitiveStores.includes(storeType) && 
+             !caseSensitiveStores.includes(detectStoreType(uniqueIdsMap.get(mapKey))))) {
+          uniqueIdsMap.set(mapKey, id);
+        }
+      });
+    
+    const uniqueIds = Array.from(uniqueIdsMap.values());
     
     if (uniqueIds.length === 0) {
       return res.status(400).json({
