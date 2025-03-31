@@ -20,7 +20,7 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
+const axiosRetryLib = require('axios-retry');
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -47,14 +47,14 @@ const logger = pino({
 });
 
 // Configure axios-retry
-axiosRetry(axios, {
+axiosRetryLib(axios, {
   retries: 3,
   retryDelay: (retryCount) => {
     return retryCount * 1000;
   },
   retryCondition: (error) => {
     return (
-      axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+      axiosRetryLib.isNetworkOrIdempotentRequestError(error) ||
       (error.response && error.response.status === 429)
     );
   }
