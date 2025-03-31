@@ -20,7 +20,7 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-const axiosRetryLib = require('axios-retry');
+const { axiosRetry } = require('axios-retry');
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -47,14 +47,14 @@ const logger = pino({
 });
 
 // Configure axios-retry
-axiosRetryLib(axios, {
+axiosRetry(axios, {
   retries: 3,
-  retryDelay: (retryCount) => {
-    return retryCount * 1000;
-  },
-  retryCondition: (error) => {
+  retryDelay: retryCount => retryCount * 1000,
+  retryCondition: error => {
     return (
-      axiosRetryLib.isNetworkOrIdempotentRequestError(error) ||
+      error.code === 'ECONNABORTED' ||
+      (!error.response && error.code !== 'ECONNREFUSED') ||
+      (error.response && error.response.status >= 500) ||
       (error.response && error.response.status === 429)
     );
   }
