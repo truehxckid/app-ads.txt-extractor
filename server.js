@@ -20,8 +20,7 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-// Fix: Import axios-retry correctly
-const axiosRetry = require('axios-retry'); // This returns the function itself
+const axiosRetry = require('axios-retry');
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -35,21 +34,6 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', true);
 
-// Initialize Redis for rate limiting (optional)
-let redis = null;
-try {
-  if (process.env.REDIS_URL) {
-  const Redis = require('ioredis');
-  redis = new Redis(process.env.REDIS_URL, {
-    tls: {
-      rejectUnauthorized: true // Set to false only for testing if you have certificate issues
-    }
-  });
-}
-} catch (err) {
-  console.error('Redis initialization failed:', err);
-}
-
 // Initialize logger
 const logger = pino({
   transport: {
@@ -62,33 +46,61 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
-// Comment out or remove the axios-retry code
-// const axiosRetry = require('axios-retry');
-// 
-// axiosRetry(axios, {
-//   retries: 3,
-//   retryDelay: (retryCount) => {
-//     return retryCount * 1000;
-//   },
-//   retryCondition: (error) => {
-//     return (
-//       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-//       (error.response && error.response.status === 429)
-//     );
-//   }
-// });
+// Configure axios-retry
+axiosRetry(axios, {
+  retries: 3,
+  retryDelay: (retryCount) => {
+    return retryCount * 1000;
+  },
+  retryCondition: (error) => {
+    return (
+      axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+      (error.response && error.response.status === 429)
+    );
+  }
+});
+
+// Initialize Redis for rate limiting (optional)
+let redis = null;
+try {
+  if (process.env.REDIS_URL) {
+    const Redis = require('ioredis');
+    redis = new Redis(process.env.REDIS_URL, {
+      tls: {
+        rejectUnauthorized: true // Set to false only for testing if you have certificate issues
+      },
+      reconnectOnError: (err) => {
+        logger.warn({ err }, 'Redis reconnect triggered by error');
+        return true;
+      },
+      maxRetriesPerRequest: 3
+    });
+    
+    // Test connection
+    redis.on('error', (err) => {
+      logger.error({ err }, 'Redis connection error');
+      redis = null; // Fall back to memory store
+    });
+  }
+} catch (err) {
+  logger.error('Redis initialization failed:', err);
+  redis = null;
+}
 
 // Enable security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
       upgradeInsecureRequests: []
     }
   }
@@ -105,7 +117,8 @@ app.use(compression());
 // Create necessary directories
 const DIRS = {
   logs: path.join(__dirname, 'logs'),
-  cache: path.join(__dirname, 'cache')
+  cache: path.join(__dirname, 'cache'),
+  debug: path.join(__dirname, 'debug') // Add a debug directory
 };
 
 for (const dir of Object.values(DIRS)) {
@@ -145,7 +158,7 @@ class RedisStore {
         resetTime: new Date(Date.now() + ttlSeconds * 1000) // Convert to Date object
       };
     } catch (err) {
-      console.error('Redis increment error:', err);
+      logger.error('Redis increment error:', err);
       // Return default response that follows the expected format
       return {
         totalHits: 1,
@@ -159,7 +172,7 @@ class RedisStore {
     try {
       await this.client.decr(redisKey);
     } catch (err) {
-      console.error('Redis decrement error:', err);
+      logger.error('Redis decrement error:', err);
     }
   }
 
@@ -168,7 +181,7 @@ class RedisStore {
     try {
       await this.client.del(redisKey);
     } catch (err) {
-      console.error('Redis resetKey error:', err);
+      logger.error('Redis resetKey error:', err);
     }
   }
 }
@@ -195,7 +208,22 @@ const STORES = {
     extractors: [
       html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
       html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/dev[^"]+)"/i)?.[1] || 
-              html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?[^"]+)"/i)?.[1]
+              html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?[^"]+)"/i)?.[1],
+      // Add new patterns for Google Play
+      html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?id=[^"]+)"/i)?.[1],
+      html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/details\?id=[^"]+).*?developer/i)?.[1],
+      // Add Cheerio-based extraction as a last resort
+      html => {
+        try {
+          const $ = cheerio.load(html);
+          return $('a[href*="developer?id="]').attr('href') ||
+                 $('a[itemprop="url"][href*="/dev"]').attr('href') ||
+                 $('a:contains("View Developer")').attr('href');
+        } catch (err) {
+          logger.error({ err }, 'Cheerio extraction failed for Google Play');
+          return null;
+        }
+      }
     ],
     rateLimit: { requests: 10, windowMs: 1000 }
   },
@@ -203,7 +231,22 @@ const STORES = {
     urlTemplate: id => `https://apps.apple.com/us/app/${encodeURIComponent(/^\d+$/.test(id) ? 'id' + id : id)}`,
     extractors: [
       html => html.match(/<a[^>]*class=['"]link\s+icon\s+icon-after\s+icon-external['"][^>]*href=['"]([^'"]+)['"]/i)?.[1],
-      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+\/developer\/[^"]+)"/i)?.[1]
+      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+\/developer\/[^"]+)"/i)?.[1],
+      // Add new patterns for App Store
+      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+(?:\/developer|\/company)\/[^"]+)"/i)?.[1],
+      html => html.match(/developer.*?href="([^"]+)"/i)?.[1],
+      // Add Cheerio-based extraction as a last resort
+      html => {
+        try {
+          const $ = cheerio.load(html);
+          return $('.app-header a[href*="/developer/"]').attr('href') ||
+                 $('.app-header a[href*="/company/"]').attr('href') ||
+                 $('a:contains("Developer Website")').attr('href');
+        } catch (err) {
+          logger.error({ err }, 'Cheerio extraction failed for App Store');
+          return null;
+        }
+      }
     ],
     rateLimit: { requests: 12, windowMs: 1000 }
   },
@@ -211,7 +254,22 @@ const STORES = {
     urlTemplate: id => `https://www.amazon.com/dp/${encodeURIComponent(id)}`,
     extractors: [
       html => html.match(/href="(https:\/\/www\.amazon\.com\/[^"]+\/developer\/[^"]+)"/i)?.[1],
-      html => html.match(/href="([^"]+)"[^>]*>Visit the ([^<]+) Store</i)?.[1]
+      html => html.match(/href="([^"]+)"[^>]*>Visit the ([^<]+) Store</i)?.[1],
+      // Add new patterns for Amazon
+      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer['"]?s\s+Website</i)?.[1],
+      html => html.match(/href="(https:\/\/www\.amazon\.com\/gp\/product\/[^"]+)"/i)?.[1],
+      // Add Cheerio-based extraction as a last resort
+      html => {
+        try {
+          const $ = cheerio.load(html);
+          return $('.a-section a[href*="/dev/"]').attr('href') ||
+                 $('a:contains("Visit the")').attr('href') ||
+                 $('.author-name').parent('a').attr('href');
+        } catch (err) {
+          logger.error({ err }, 'Cheerio extraction failed for Amazon');
+          return null;
+        }
+      }
     ],
     rateLimit: { requests: 8, windowMs: 1500 }
   },
@@ -220,7 +278,22 @@ const STORES = {
     extractors: [
       html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
       html => html.match(/href="(https:\/\/channelstore\.roku\.com\/[^"]*?\/developer\/[^"]+)"/i)?.[1],
-      html => html.match(/href="([^"]+)"[^>]*>More by ([^<]+)</i)?.[1]
+      html => html.match(/href="([^"]+)"[^>]*>More by ([^<]+)</i)?.[1],
+      // Add new patterns for Roku
+      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer/i)?.[1],
+      html => html.match(/Developer.*?href="([^"]+)"/i)?.[1],
+      // Add Cheerio-based extraction as a last resort
+      html => {
+        try {
+          const $ = cheerio.load(html);
+          return $('.developer-link a').attr('href') ||
+                 $('a:contains("More by")').attr('href') ||
+                 $('a:contains("Developer")').attr('href');
+        } catch (err) {
+          logger.error({ err }, 'Cheerio extraction failed for Roku');
+          return null;
+        }
+      }
     ],
     rateLimit: { requests: 10, windowMs: 1200 }
   },
@@ -230,7 +303,23 @@ const STORES = {
       html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
       html => html.match(/href="(https:\/\/www\.samsung\.com\/[^"]*?\/developer\/[^"]+)"/i)?.[1],
       html => html.match(/href="([^"]+)"[^>]*>More from Developer</i)?.[1],
-      html => html.match(/Developer<\/dt>[^<]*<dd[^>]*>[^<]*<a[^>]*href="([^"]+)"/i)?.[1]
+      html => html.match(/Developer<\/dt>[^<]*<dd[^>]*>[^<]*<a[^>]*href="([^"]+)"/i)?.[1],
+      // Add new patterns for Samsung
+      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer</i)?.[1],
+      html => html.match(/developer.*?href="([^"]+)"/i)?.[1],
+      // Add Cheerio-based extraction as a last resort
+      html => {
+        try {
+          const $ = cheerio.load(html);
+          return $('.developer-link').attr('href') ||
+                 $('a:contains("Developer")').attr('href') ||
+                 $('a[href*="/developer/"]').attr('href') ||
+                 $('.app-dev-name a').attr('href');
+        } catch (err) {
+          logger.error({ err }, 'Cheerio extraction failed for Samsung');
+          return null;
+        }
+      }
     ],
     rateLimit: { requests: 8, windowMs: 1500 }
   }
@@ -244,8 +333,9 @@ class EnhancedCache {
   constructor() {
     this.memoryCache = new Map();
     this.stats = { hits: 0, misses: 0 };
-    this.maxMemorySize = 1000; // Maximum number of items in memory cache
+    this.maxMemorySize = Math.min(1000, parseInt(process.env.MAX_MEMORY_CACHE_SIZE) || 1000);
     this.cleanupInterval = 60 * 60 * 1000; // 1 hour
+    this.memoryPruneThreshold = 0.9; // Prune at 90% capacity
     this.startCleanupInterval();
   }
   
@@ -334,6 +424,25 @@ class EnhancedCache {
     });
   }
   
+  // Prune the memory cache when it gets too large
+  prune() {
+    if (this.memoryCache.size >= this.maxMemorySize * this.memoryPruneThreshold) {
+      logger.debug('Memory cache reached prune threshold, removing oldest items');
+      
+      // Get entries sorted by expiry
+      const entries = [...this.memoryCache.entries()]
+        .sort((a, b) => a[1].expiry - b[1].expiry);
+      
+      // Remove oldest 20%
+      const removeCount = Math.ceil(this.memoryCache.size * 0.2);
+      for (let i = 0; i < removeCount && i < entries.length; i++) {
+        this.memoryCache.delete(entries[i][0]);
+      }
+      
+      logger.debug({ removed: removeCount, newSize: this.memoryCache.size }, 'Memory cache pruned');
+    }
+  }
+  
   get(key) {
     if (!key) {
       return null;
@@ -393,6 +502,9 @@ class EnhancedCache {
     if (!key || value === undefined || value === null) {
       return false;
     }
+    
+    // Run prune before adding new items
+    this.prune();
     
     try {
       const expiry = Date.now() + (ttlHours * 60 * 60 * 1000);
@@ -518,6 +630,29 @@ function runWorker(content, searchTerms) {
   });
 }
 
+// Function to save HTML responses for debugging
+function saveHtmlForDebugging(storeType, bundleId, html) {
+  try {
+    if (!process.env.DEBUG_STORE_RESPONSES && process.env.DEBUG_STORE_RESPONSES !== 'true') {
+      return;
+    }
+    
+    const debugDir = path.join(__dirname, 'debug');
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+    
+    const safeId = bundleId.replace(/[^a-zA-Z0-9]/g, '_');
+    fs.writeFileSync(
+      path.join(debugDir, `${storeType}_${safeId}_${Date.now()}.html`),
+      html
+    );
+    logger.debug({ storeType, bundleId }, 'Saved HTML for debugging');
+  } catch (err) {
+    logger.error({ err }, 'Failed to save HTML for debugging');
+  }
+}
+
 // Enhanced user agent rotation
 function getRandomUserAgent() {
   const agents = [
@@ -525,7 +660,11 @@ function getRandomUserAgent() {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
   ];
   return agents[Math.floor(Math.random() * agents.length)];
 }
@@ -554,13 +693,25 @@ function validateSearchTerms(terms) {
   
   if (typeof terms === 'string') {
     const trimmed = terms.toLowerCase().trim();
-    return trimmed ? [trimmed] : null;
+    // Limit length and reject potentially dangerous inputs
+    if (!trimmed || trimmed.length > 100 || /[<>{}()[\]"`\\]/.test(trimmed)) {
+      return null;
+    }
+    return [trimmed];
   }
   
   if (Array.isArray(terms)) {
+    // Limit number of terms
+    if (terms.length > 10) return null;
+    
     const validTerms = terms
       .filter(term => term && typeof term === 'string')
-      .map(term => term.toLowerCase().trim())
+      .map(term => {
+        const trimmed = term.toLowerCase().trim();
+        // Reject potentially dangerous terms
+        if (trimmed.length > 100 || /[<>{}()[\]"`\\]/.test(trimmed)) return null;
+        return trimmed;
+      })
       .filter(Boolean);
     
     return validTerms.length > 0 ? validTerms : null;
@@ -755,6 +906,8 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     let usedProtocol = null;
     let fetchErrors = [];
     let redirectUrl = null;
+    let analyzed = null;
+    let searchResults = null;
     
     for (const protocol of protocols) {
       if (content) break;
@@ -772,7 +925,14 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
           headers: {
             'User-Agent': getRandomUserAgent(),
             'Accept': 'text/plain,text/html',
-            'Accept-Encoding': 'gzip, deflate'
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Upgrade-Insecure-Requests': '1'
           },
           validateStatus: status => status === 200,
           maxRedirects: 5, // Follow up to 5 redirects
@@ -843,7 +1003,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
                   headers: {
                     'User-Agent': getRandomUserAgent(),
                     'Accept': 'text/plain,text/html',
-                    'Accept-Encoding': 'gzip, deflate'
+                    'Accept-Encoding': 'gzip, deflate, br'
                   },
                   validateStatus: status => status === 200
                 });
@@ -892,9 +1052,91 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     
     fileSize = content.length;
     
-    // Rest of the function remains the same...
+    // Process content with worker
+    try {
+      processingMethod = 'worker';
+      const workerResult = await runWorker(content, normalizedSearchTerms);
+      if (workerResult.success) {
+        analyzed = workerResult.analyzed;
+        searchResults = workerResult.searchResults;
+      } else {
+        // If worker fails, log the error and continue with default values
+        logger.error({ 
+          err: workerResult.error, 
+          domain: finalDomain 
+        }, 'Worker processing failed');
+        
+        // Set defaults
+        analyzed = {
+          totalLines: content.split(/\r\n|\n|\r/).length,
+          validLines: 0,
+          commentLines: 0,
+          emptyLines: 0,
+          invalidLines: 0,
+          uniquePublishers: 0,
+          relationships: { direct: 0, reseller: 0, other: 0 }
+        };
+        
+        searchResults = normalizedSearchTerms ? {
+          terms: normalizedSearchTerms,
+          count: 0,
+          matchingLines: []
+        } : null;
+      }
+    } catch (workerErr) {
+      logger.error({ err: workerErr, domain: finalDomain }, 'Worker execution failed');
+      
+      // Process without worker as fallback
+      processingMethod = 'fallback';
+      const lines = content.split(/\r\n|\n|\r/);
+      
+      // Basic analysis
+      analyzed = {
+        totalLines: lines.length,
+        validLines: lines.filter(line => {
+          const cleanLine = line.split('#')[0].trim();
+          return cleanLine && cleanLine.split(',').length >= 3;
+        }).length,
+        commentLines: lines.filter(line => line.trim().startsWith('#')).length,
+        emptyLines: lines.filter(line => !line.trim()).length,
+        uniquePublishers: new Set(
+          lines
+            .map(line => line.split('#')[0].trim())
+            .filter(Boolean)
+            .map(line => line.split(',')[0]?.trim()?.toLowerCase())
+            .filter(Boolean)
+        ).size,
+        relationships: { direct: 0, reseller: 0, other: 0 }
+      };
+      
+      analyzed.invalidLines = analyzed.totalLines - analyzed.validLines - 
+        analyzed.commentLines - analyzed.emptyLines;
+      
+      // Basic search if search terms provided
+      if (normalizedSearchTerms && normalizedSearchTerms.length > 0) {
+        const matchingLines = [];
+        
+        lines.forEach((line, index) => {
+          const lowerLine = line.toLowerCase();
+          if (normalizedSearchTerms.some(term => lowerLine.includes(term))) {
+            matchingLines.push({
+              lineNumber: index + 1,
+              content: line
+            });
+          }
+        });
+        
+        searchResults = {
+          terms: normalizedSearchTerms,
+          count: matchingLines.length,
+          matchingLines
+        };
+      } else {
+        searchResults = null;
+      }
+    }
     
-    // Update the result to include both original and final domains
+    // Create the result object
     const result = {
       exists: true,
       url: `${usedProtocol}://${finalDomain}/app-ads.txt`,
@@ -905,7 +1147,8 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         : content,
       contentLength: content.length,
       analyzed,
-      searchResults
+      searchResults,
+      processingMethod
     };
     
     const processingTime = Date.now() - startTime;
@@ -984,9 +1227,17 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       timeout: 15000,
       headers: {
         'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache'
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Referer': 'https://www.google.com/'
       }
     });
     
@@ -995,6 +1246,17 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     }
     
     const data = response.data;
+    
+    // Save HTML for debugging if enabled
+    saveHtmlForDebugging(storeType, validId, data);
+    
+    // Check if the response might be a captcha or block page
+    if (data.includes('captcha') || data.includes('security check') || 
+        data.includes('automated access') || data.includes('blocked')) {
+      logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
+      throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
+    }
+    
     let developerUrl = null;
     
     // Try pattern-based extractors first
@@ -1031,7 +1293,49 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       }
     }
     
+    // When checking for developer URL, add more detailed logging
     if (!developerUrl) {
+      // Log a sample of the HTML to help debug extraction patterns
+      const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
+      logger.warn({ 
+        bundleId, 
+        storeType,
+        htmlSample,
+        patternCount: store.extractors.length
+      }, 'Developer URL extraction failed');
+      
+      // Try to guess the domain from the bundle ID for Google Play apps
+      if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/.test(validId)) {
+        const parts = validId.split('.');
+        if (parts.length >= 2) {
+          // Try to construct a domain from the bundle parts
+          const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
+          logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
+          
+          // Check if this is a valid domain with app-ads.txt
+          try {
+            const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
+            if (appAdsCheck.exists) {
+              // We found a valid app-ads.txt at the guessed domain!
+              logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
+              return {
+                bundleId: validId,
+                developerUrl: `https://${possibleDomain}`,
+                domain: possibleDomain,
+                storeType,
+                appAdsTxt: appAdsCheck,
+                searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+                success: true,
+                guessedDomain: true,
+                timestamp: Date.now()
+              };
+            }
+          } catch (guessErr) {
+            logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
+          }
+        }
+      }
+      
       throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
     }
     
@@ -1060,9 +1364,17 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     cache.set(cacheKey, result, 24);
     return result;
   } catch (err) {
-    const errorMessage = err.response?.status 
-      ? `HTTP ${err.response.status}: ${err.response.statusText || err.message}`
-      : err.message;
+    let errorMessage;
+    
+    if (err.code === 'ECONNABORTED') {
+      errorMessage = 'The request timed out. The app store might be temporarily unavailable.';
+    } else if (err.response?.status === 404) {
+      errorMessage = 'The bundle ID was not found in this store.';
+    } else if (err.response?.status === 429) {
+      errorMessage = 'Too many requests. Please try again later.';
+    } else {
+      errorMessage = err.message || 'An unknown error occurred';
+    }
     
     logger.error({ 
       err: errorMessage, 
@@ -1077,6 +1389,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       storeType, 
       success: false, 
       error: errorMessage,
+      suggestedAction: err.code === 'ECONNABORTED' ? 'retry' : undefined,
       timestamp: Date.now()
     };
     
@@ -1096,6 +1409,11 @@ async function tryAllStores(bundleId, searchTerms = null) {
   
   for (const storeType of Object.keys(STORES)) {
     try {
+      // Add delay between store attempts
+      if (storeType !== Object.keys(STORES)[0]) {  // Skip delay for first store
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      
       const result = await extractFromStore(validId, storeType, searchTerms);
       
       if (result.success) {
@@ -1105,7 +1423,12 @@ async function tryAllStores(bundleId, searchTerms = null) {
       
       results.push(result);
     } catch (err) {
-      logger.error({ err: err.message, bundleId: validId, storeType }, 'Error trying store');
+      logger.error({ 
+        err: err.message, 
+        bundleId: validId, 
+        storeType,
+        storeErrors: errors // Include all store errors
+      }, 'Error trying store');
       
       errors.push({
         storeType,
