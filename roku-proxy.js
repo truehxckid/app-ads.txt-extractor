@@ -269,16 +269,28 @@ async function tryRokuApi(bundleId) {
  * Get fallback data for Roku channels
  */
 async function getRokuFallbackData(bundleId, searchTerms) {
-  // Check in cache first
-  const cacheKey = `roku-fallback-${bundleId}`;
-  const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  // Debug log to see what's happening
+  logger.debug({ bundleId, fallbacksAvailable: Object.keys(ROKU_FALLBACKS).length }, 'Checking fallback data');
   
-  // Try to find in our local database
-  const fallbackData = ROKU_FALLBACKS[bundleId];
+  // Check in cache first if available
+  if (cache) {
+    const cacheKey = `roku-fallback-${bundleId}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return cached;
+  }
+  
+  // Try to find in our local database - Add explicit logging
+  logger.debug({ 
+    bundleId, 
+    keys: Object.keys(ROKU_FALLBACKS),
+    hasExactMatch: ROKU_FALLBACKS.hasOwnProperty(bundleId)
+  }, 'Checking for exact fallback match');
+  
+  // Extract fallback data with better defensive coding
+  const fallbackData = ROKU_FALLBACKS[bundleId] || null;
   
   if (fallbackData) {
-    logger.info({ bundleId }, 'Using fallback data for Roku channel');
+    logger.info({ bundleId, fallbackData }, 'Using fallback data for Roku channel');
     
     // Check for app-ads.txt if domain is available
     let appAdsTxt = { exists: false };
@@ -303,14 +315,60 @@ async function getRokuFallbackData(bundleId, searchTerms) {
       timestamp: Date.now()
     };
     
-    // Cache result
-    cache.set(cacheKey, result, 72); // Cache for 3 days
+    // Cache result if cache available
+    if (cache) {
+      const cacheKey = `roku-fallback-${bundleId}`;
+      cache.set(cacheKey, result, 72); // Cache for 3 days
+    }
+    
     return result;
   }
   
-  // Try guessing based on common patterns
+  // Add specific handling for complex IDs as they can be problematic
+  if (bundleId.includes(':')) {
+    logger.info({ bundleId }, 'Using default fallback for complex Roku ID');
+    
+    // For complex IDs, provide a default fallback if we don't have specific data
+    const defaultComplexFallback = {
+      domain: 'roku.com',
+      developerName: 'Roku Channel',
+      developerUrl: 'https://roku.com'
+    };
+    
+    // Check for app-ads.txt
+    let appAdsTxt = { exists: false };
+    try {
+      appAdsTxt = await checkAppAdsTxt(defaultComplexFallback.domain, searchTerms);
+    } catch (err) {
+      logger.debug({ err: err.message }, 'Failed to check app-ads.txt');
+    }
+    
+    const result = {
+      bundleId,
+      developerUrl: defaultComplexFallback.developerUrl,
+      domain: defaultComplexFallback.domain,
+      storeType: 'roku',
+      appAdsTxt,
+      searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
+      success: true,
+      method: 'default-complex-fallback',
+      developerName: defaultComplexFallback.developerName,
+      guessed: true,
+      timestamp: Date.now()
+    };
+    
+    // Cache result if cache available
+    if (cache) {
+      const cacheKey = `roku-fallback-${bundleId}`;
+      cache.set(cacheKey, result, 24); // Cache for 24 hours
+    }
+    
+    return result;
+  }
+  
+  // Try guessing based on common patterns for numeric IDs
   if (/^\d+$/.test(bundleId)) {
-    // Common Roku channels by their IDs
+    // Rest of your existing code for numeric IDs
     const commonChannels = {
       '2285': { domain: 'netflix.com', developerName: 'Netflix, Inc.' },
       '13': { domain: 'amazon.com', developerName: 'Amazon' },
@@ -350,7 +408,8 @@ async function getRokuFallbackData(bundleId, searchTerms) {
     }
   }
   
-  // Last resort: return a partial result
+// Last resort: return a partial result
+  logger.warn({ bundleId }, 'No fallback data found for Roku channel');
   return {
     bundleId,
     storeType: 'roku',
@@ -616,13 +675,12 @@ const ROKU_FALLBACKS = {
     developerName: 'Roku, Inc.',
     developerUrl: 'https://roku.com' 
   },
-  // Complex ID example
+  // Make sure the complex ID uses exactly the same format as in the request
   '628b9da6dfad4351c27c11ac5bbdbb1c:0fe5bedf19da3a3cbb5444c4da1797f6': {
     domain: 'roku.com',
     developerName: 'Roku, Inc.',
     developerUrl: 'https://roku.com'
-  },
-  // Add more known channels as needed
+  }
 };
 
 // Public API
