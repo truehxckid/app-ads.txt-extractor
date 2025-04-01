@@ -280,6 +280,9 @@ detectStoreType(bundleId) {
   // Check for complex Roku ID (most specific pattern first)
   if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
   
+  // Check for simple Roku ID (2-6 digits)
+  if (/^\d{2,6}$/i.test(trimmedId)) return 'roku';
+  
   // Check for Samsung ID (G/g followed by 11 digits)
   if (/^[gG]\d{11}$/i.test(trimmedId)) return 'samsung';
   
@@ -288,9 +291,6 @@ detectStoreType(bundleId) {
   
   // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
   if (/^(id)?\d{9}$/i.test(trimmedId)) return 'appstore';
-  
-  // Check for simple Roku ID (2-6 digits)
-  if (/^\d{2,6}$/i.test(trimmedId)) return 'roku';
   
   // Check for Google Play ID (package name format)
   if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';

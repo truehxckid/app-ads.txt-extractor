@@ -6,7 +6,7 @@
  * - Robust rate limiting with Redis support
  * - Comprehensive error handling
  * - Structured logging
- * - Security enhancements
+ * - Specialized Roku handling
  */
 
 'use strict';
@@ -27,11 +27,17 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const pino = require('pino');
 
+// Custom modules
+const rokuProxy = require('./roku-proxy');
+
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', true);
+
+// Startup tracking
+const startupId = Math.random().toString(36).substring(2, 10);
 
 // Initialize logger
 const logger = pino({
@@ -45,13 +51,21 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
-const startupId = Math.random().toString(36).substring(2, 10);
+// Log startup
 logger.info({ 
   startupId,
   timestamp: new Date().toISOString(),
   nodeVersion: process.version,
-  environment: process.env.NODE_ENV || 'development'
+  environment: process.env.NODE_ENV || 'development',
+  pid: process.pid,
+  ppid: process.ppid
 }, 'Server initializing');
+
+// Initialize Roku proxy module
+rokuProxy.initialize({
+  logger,
+  cache: null  // Will set this after cache initialization
+});
 
 // Custom axios retry mechanism (replaces axios-retry)
 axios.interceptors.response.use(undefined, async (error) => {
@@ -312,30 +326,6 @@ const STORES = {
     ],
     rateLimit: { requests: 8, windowMs: 1500 }
   },
-  roku: {
-    urlTemplate: id => `https://channelstore.roku.com/details/${encodeURIComponent(id)}`,
-    extractors: [
-      html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
-      html => html.match(/href="(https:\/\/channelstore\.roku\.com\/[^"]*?\/developer\/[^"]+)"/i)?.[1],
-      html => html.match(/href="([^"]+)"[^>]*>More by ([^<]+)</i)?.[1],
-      // Add new patterns for Roku
-      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer/i)?.[1],
-      html => html.match(/Developer.*?href="([^"]+)"/i)?.[1],
-      // Add Cheerio-based extraction as a last resort
-      html => {
-        try {
-          const $ = cheerio.load(html);
-          return $('.developer-link a').attr('href') ||
-                 $('a:contains("More by")').attr('href') ||
-                 $('a:contains("Developer")').attr('href');
-        } catch (err) {
-          logger.error({ err }, 'Cheerio extraction failed for Roku');
-          return null;
-        }
-      }
-    ],
-    rateLimit: { requests: 4, windowMs: 3000 }
-  },
   samsung: {
     urlTemplate: id => `https://www.samsung.com/us/appstore/app/${encodeURIComponent(id)}`,
     extractors: [
@@ -585,6 +575,9 @@ class EnhancedCache {
 // Initialize cache
 const cache = new EnhancedCache();
 
+// Update Roku proxy with cache reference
+rokuProxy.setAppAdsTxtChecker(checkAppAdsTxt);
+
 // Worker pool implementation
 class WorkerPool {
   constructor(filename, maxWorkers = 4) {
@@ -695,14 +688,19 @@ function saveHtmlForDebugging(storeType, bundleId, html) {
 // Enhanced user agent rotation
 function getRandomUserAgent() {
   const agents = [
-    // Your existing agents plus additional ones:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15'
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    // TV devices
+    'Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/79.0.3945.116 Safari/537.36 RokuStreamingStick/12.5.0.0 (7000X)'
   ];
   return agents[Math.floor(Math.random() * agents.length)];
 }
@@ -779,8 +777,8 @@ function detectStoreType(bundleId) {
   try {
     const validId = validateBundleId(bundleId);
     
-    // Check for complex Roku ID (most specific pattern first)
-    if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
+    // Check for Roku IDs using the dedicated module
+    if (rokuProxy.isRokuBundleId(validId)) return 'roku';
     
     // Check for Samsung ID (G/g followed by 11 digits)
     if (/^[gG]\d{11}$/i.test(validId)) return 'samsung';
@@ -791,9 +789,6 @@ function detectStoreType(bundleId) {
     // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
     if (/^(id)?\d{9}$/i.test(validId)) return 'appstore';
     
-    // Check for simple Roku ID (2-6 digits)
-    if (/^\d{2,6}$/i.test(validId)) return 'roku';
-    
     // Check for Google Play ID (package name format)
     if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
     
@@ -802,50 +797,6 @@ function detectStoreType(bundleId) {
   } catch (err) {
     logger.error({ err, bundleId }, 'Error detecting store type');
     return 'unknown';
-  }
-}
-
-// Enhanced domain extraction with validation
-function extractDomain(url) {
-  try {
-    if (!url || typeof url !== 'string') return '';
-    
-    // Remove protocol and path
-    const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
-    if (!match) return '';
-    
-    const hostname = match[1];
-    const parts = hostname.split('.');
-    
-    // If only two parts (e.g., example.com), return the whole thing
-    if (parts.length <= 2) return hostname;
-    
-    // Expanded list of special TLDs that should be treated as a single unit
-    const specialTlds = [
-      'co.uk', 'co.jp', 'co.nz', 'co.za', 'co.kr', 'co.id', 'co.il', 'co.th', 
-      'com.au', 'com.br', 'com.tw', 'com.sg', 'com.tr', 'com.mx', 'com.ar', 'com.hk',
-      'com.ph', 'com.my', 'com.vn', 'org.uk', 'net.au', 'or.jp', 'ne.jp', 'ac.uk',
-      'edu.au', 'gov.au', 'org.au'
-    ];
-    
-    // Check if the last two parts form a special TLD
-    const lastTwo = parts.slice(-2).join('.');
-    
-    // If it's a special TLD, take the last three parts; otherwise just the last two
-    const extractedDomain = specialTlds.includes(lastTwo) ? 
-      parts.slice(-3).join('.') : 
-      parts.slice(-2).join('.');
-    
-    // Basic domain validation
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(extractedDomain)) {
-      logger.warn({ url, extractedDomain }, 'Potentially invalid domain extracted');
-      return '';
-    }
-    
-    return extractedDomain;
-  } catch (err) {
-    logger.error({ err, url }, 'Error extracting domain');
-    return '';
   }
 }
 
@@ -1243,6 +1194,154 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   }
 }
 
+// Helper function to extract domain from URL
+function extractDomain(url) {
+  try {
+    if (!url || typeof url !== 'string') return '';
+    
+    // Remove protocol and path
+    const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
+    if (!match) return '';
+    
+    const hostname = match[1];
+    const parts = hostname.split('.');
+    
+    // If only two parts (e.g., example.com), return the whole thing
+    if (parts.length <= 2) return hostname;
+    
+    // Expanded list of special TLDs that should be treated as a single unit
+    const specialTlds = [
+      'co.uk', 'co.jp', 'co.nz', 'co.za', 'co.kr', 'co.id', 'co.il', 'co.th', 
+      'com.au', 'com.br', 'com.tw', 'com.sg', 'com.tr', 'com.mx', 'com.ar', 'com.hk',
+      'com.ph', 'com.my', 'com.vn', 'org.uk', 'net.au', 'or.jp', 'ne.jp', 'ac.uk',
+      'edu.au', 'gov.au', 'org.au'
+    ];
+    
+    // Check if the last two parts form a special TLD
+    const lastTwo = parts.slice(-2).join('.');
+    
+    // If it's a special TLD, take the last three parts; otherwise just the last two
+    const extractedDomain = specialTlds.includes(lastTwo) ? 
+      parts.slice(-3).join('.') : 
+      parts.slice(-2).join('.');
+    
+    // Basic domain validation
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(extractedDomain)) {
+      logger.warn({ url, extractedDomain }, 'Potentially invalid domain extracted');
+      return '';
+    }
+    
+    return extractedDomain;
+  } catch (err) {
+    logger.error({ err, url }, 'Error extracting domain');
+    return '';
+  }
+}
+
+/**
+ * Get developer info for a bundle ID
+ * @param {string} bundleId - The bundle ID
+ * @param {array} searchTerms - Optional search terms
+ * @returns {Promise<object>} Developer info
+ */
+async function getDeveloperInfo(bundleId, searchTerms = null) {
+  try {
+    const validId = validateBundleId(bundleId);
+    
+    // First, detect the store type
+    const storeType = detectStoreType(validId);
+    
+    logger.debug({ bundleId: validId, storeType, hasSearchTerms: !!searchTerms }, 'Getting developer info');
+    
+    // If we detected a known store type, go directly to that store
+    if (storeType !== 'unknown') {
+      try {
+        // For Roku, use the specialized module
+        if (storeType === 'roku') {
+          return await rokuProxy.getRokuDeveloperInfo(validId, searchTerms);
+        }
+        
+        // For other known stores, use the standard extraction
+        return await extractFromStore(validId, storeType, searchTerms);
+      } catch (err) {
+        // Log the error but don't try other stores since we've established
+        // that store detection is reliable and non-overlapping
+        logger.info({ 
+          err: err.message, 
+          bundleId: validId, 
+          detectedStoreType: storeType 
+        }, 'Failed with detected store type');
+        
+        // Just throw the error - no fallback needed
+        throw err;
+      }
+    } else {
+      // Unknown store type, try a limited set of stores
+      logger.info({ bundleId: validId }, 'Unknown store type, trying a limited set of stores');
+      return await tryLimitedStores(validId, searchTerms);
+    }
+  } catch (err) {
+    logger.error({ err, bundleId }, 'Error getting developer info');
+    throw err;
+  }
+}
+
+/**
+ * Try a limited set of stores for unknown bundle ID types
+ */
+async function tryLimitedStores(bundleId, searchTerms = null) {
+  // Check bundle ID characteristics to decide which stores to try
+  const storesByCharacteristics = [];
+  
+  // For numeric IDs, try Roku only if it's 2-6 digits, otherwise App Store
+  if (/^\d+$/.test(bundleId)) {
+    if (bundleId.length >= 2 && bundleId.length <= 6) {
+      storesByCharacteristics.push('roku');
+    } else if (bundleId.length === 9) {
+      storesByCharacteristics.push('appstore');
+    }
+  } 
+  // For hex IDs with colon, try Roku
+  else if (/^[a-f0-9]+:[a-f0-9]+$/i.test(bundleId)) {
+    storesByCharacteristics.push('roku');
+  } 
+  // For IDs with dots, try Google Play
+  else if (bundleId.includes('.')) {
+    storesByCharacteristics.push('googleplay');
+  }
+  
+  // Add fallback stores if we couldn't determine from characteristics
+  const storesToTry = storesByCharacteristics.length > 0 ? 
+    storesByCharacteristics : ['googleplay', 'appstore'];
+  
+  for (const storeType of storesToTry) {
+    try {
+      // Add delay between store attempts
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      logger.info({ bundleId, attemptingStore: storeType }, 'Trying store for unknown ID type');
+      
+      // For Roku, use specialized module
+      if (storeType === 'roku') {
+        return await rokuProxy.getRokuDeveloperInfo(bundleId, searchTerms);
+      }
+      
+      // For other stores, use standard extraction
+      return await extractFromStore(bundleId, storeType, searchTerms);
+    } catch (storeErr) {
+      logger.debug({ 
+        err: storeErr.message, 
+        bundleId, 
+        storeType 
+      }, 'Store attempt failed for unknown ID type');
+      // Continue to next store
+    }
+  }
+  
+  // If we get here, all attempts failed
+  throw new Error(`Could not identify store type for ${bundleId}`);
+}
+
 async function extractFromStore(bundleId, storeType, searchTerms = null) {
   try {
     const store = STORES[storeType];
@@ -1284,27 +1383,25 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     let data;
     let response;
     
-try {
-  response = await axios.get(url, {
-    timeout: 15000,
-    retry: 3,
-    headers: {
-      'User-Agent': getRandomUserAgent(),
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'Upgrade-Insecure-Requests': '1',
-      'Referer': storeType === 'roku' ? 'https://www.roku.com/search/browse' : 'https://www.google.com/',
-      // Add this Cookie header for Roku
-      ...(storeType === 'roku' ? {'Cookie': 'visitor_id='+Math.random().toString(36).substring(2,15)} : {})
-    }
-  });
+    try {
+      response = await axios.get(url, {
+        timeout: 15000,
+        retry: 3, // Use our custom retry mechanism
+        headers: {
+          'User-Agent': getRandomUserAgent(),
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Referer': 'https://www.google.com/'
+        }
+      });
       
       if (!response.data || typeof response.data !== 'string') {
         throw new Error(`Empty or invalid response from ${storeType}`);
@@ -1317,12 +1414,12 @@ try {
       
       // Check if the response might be a captcha or block page
       if (data.includes('captcha') || data.includes('security check') || 
-    data.includes('automated access') || data.includes('blocked') ||
-    data.includes('suspicious activity') || data.includes('verify you are a human') ||
-    (storeType === 'roku' && (data.includes('unusual traffic') || data.includes('access denied')))) {
-  logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
-  throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
-}
+          data.includes('automated access') || data.includes('blocked') ||
+          data.includes('suspicious activity') || data.includes('verify you are a human') ||
+          (storeType === 'roku' && (data.includes('unusual traffic') || data.includes('access denied')))) {
+        logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
+        throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
+      }
     } catch (fetchErr) {
       // Case sensitivity handling for 404 errors
       if (fetchErr.response?.status === 404) {
@@ -1600,115 +1697,6 @@ try {
   }
 }
 
-// Enhanced store trying with better error handling and logging
-async function tryAllStores(bundleId, searchTerms = null) {
-  const validId = validateBundleId(bundleId);
-  const results = [];
-  const errors = [];
-  
-  logger.info({ bundleId: validId }, 'Trying all stores');
-  
-   for (const storeType of Object.keys(STORES)) {
-    try {
-      // Add delay between store attempts
-      if (storeType !== Object.keys(STORES)[0]) {  // Skip delay for first store
-        // Add longer delay for Roku
-        const delay = storeType === 'roku' ? 3000 : 1500;
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-      
-      // If Roku failed in the last hour, skip it to avoid blocking
-      if (storeType === 'roku' && cache.get(`roku-blocked-${new Date().getHours()}`)) {
-        logger.info({ bundleId, storeType }, 'Skipping Roku due to recent blocking');
-        continue;
-      }
-      
-      const result = await extractFromStore(validId, storeType, searchTerms);
-      
-      if (result.success) {
-        logger.info({ bundleId: validId, storeType, domain: result.domain }, 'Successfully extracted from store');
-        return result;
-      }
-      
-      results.push(result);
-    } catch (err) {
-      // If this is a Roku blocking error, mark Roku as blocked for this hour
-      if (storeType === 'roku' && 
-          (err.message.includes('blocked') || err.message.includes('captcha'))) {
-        cache.set(`roku-blocked-${new Date().getHours()}`, true, 1); // Cache for 1 hour
-        logger.warn({ bundleId }, 'Marking Roku API as blocked for this hour');
-      }
-      logger.error({ 
-        err: err.message, 
-        bundleId: validId, 
-        storeType,
-        storeErrors: errors // Include all store errors
-      }, 'Error trying store');
-      
-      errors.push({
-        storeType,
-        error: err.message,
-        statusCode: err.response?.status
-      });
-      
-      results.push({ 
-        bundleId: validId, 
-        storeType, 
-        error: err.message, 
-        success: false,
-        timestamp: Date.now()
-      });
-    }
-  }
-  
-  // If we get here, all stores failed
-  const errorResult = {
-    bundleId: validId,
-    success: false,
-    error: 'Failed to extract from any store',
-    attemptedStores: Object.keys(STORES),
-    storeErrors: errors,
-    timestamp: Date.now()
-  };
-  
-  // Cache the combined error result
-  cache.set(`all-stores-${validId}`, errorResult, 1);
-  
-  throw new Error('Failed to extract from any store');
-}
-
-// Enhanced main extraction function with better error handling
-async function getDeveloperInfo(bundleId, searchTerms = null) {
-  try {
-    const validId = validateBundleId(bundleId);
-    const storeType = detectStoreType(validId);
-    
-    logger.debug({ bundleId: validId, storeType, hasSearchTerms: !!searchTerms }, 'Getting developer info');
-    
-    // Try the detected store type first, if known
-    if (storeType !== 'unknown') {
-      try {
-        return await extractFromStore(validId, storeType, searchTerms);
-      } catch (err) {
-        logger.info({ 
-          err: err.message, 
-          bundleId: validId, 
-          detectedStoreType: storeType 
-        }, 'Failed with detected store type, trying all stores');
-        
-        // If the detected store failed, try all stores
-        return await tryAllStores(validId, searchTerms);
-      }
-    } else {
-      // Unknown store type, try all stores
-      return await tryAllStores(validId, searchTerms);
-    }
-  } catch (err) {
-    logger.error({ err, bundleId }, 'Error getting developer info');
-    throw err;
-  }
-}
-
 // Enhanced domain relationship analysis with improved safety
 function analyzeDomainRelationships(results) {
   try {
@@ -1893,6 +1881,7 @@ app.post('/api/extract-multiple', async (req, res) => {
             };
           }
           
+          // Use the consolidated function for all stores
           const result = await getDeveloperInfo(bundleId, normalizedSearchTerms);
           completed++;
           return result;
@@ -2004,7 +1993,7 @@ const server = app.listen(PORT, () => {
   }, 'Server started');
 });
 
-// Add these event listeners right after that:
+// Server event listeners for tracking issues
 server.on('listening', () => {
   logger.info({
     startupId,
@@ -2020,6 +2009,25 @@ server.on('error', (err) => {
     stack: err.stack,
     timestamp: new Date().toISOString()
   }, 'Server encountered an error during startup');
+});
+
+// Global error handlers
+process.on('uncaughtException', (err) => {
+  logger.error({
+    startupId,
+    error: err.message,
+    stack: err.stack,
+    timestamp: new Date().toISOString()
+  }, 'Uncaught exception');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({
+    startupId,
+    error: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+    timestamp: new Date().toISOString()
+  }, 'Unhandled promise rejection');
 });
 
 // Graceful shutdown
@@ -2051,23 +2059,5 @@ function gracefulShutdown() {
     process.exit(1);
   }, 10000);
 }
-
-process.on('uncaughtException', (err) => {
-  logger.error({
-    startupId,
-    error: err.message,
-    stack: err.stack,
-    timestamp: new Date().toISOString()
-  }, 'Uncaught exception');
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error({
-    startupId,
-    error: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-    timestamp: new Date().toISOString()
-  }, 'Unhandled promise rejection');
-});
 
 module.exports = app; // For testing
