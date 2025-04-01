@@ -36,10 +36,9 @@ async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
   logger.info({ bundleId }, 'Using Roku store proxy');
   
   // Check cache first if available
-  let cached = null;
   if (cache) {
     const cacheKey = `roku-store-${bundleId}`;
-    cache.set(cacheKey, result, 24);
+    const cached = cache.get(cacheKey);
     if (cached) {
       logger.debug({ bundleId }, 'Returning cached Roku data');
       return cached;
@@ -49,22 +48,25 @@ async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
   // Try different approaches in sequence
   try {
     // Approach 1: Try alternative URL format
-    const result = await tryRokuAlternativeUrl(bundleId);
-    if (result.success) {
+    const urlResult = await tryRokuAlternativeUrl(bundleId);
+    if (urlResult.success) {
       // If successful, check for app-ads.txt
-      if (result.domain) {
+      if (urlResult.domain) {
         try {
-          result.appAdsTxt = await checkAppAdsTxt(result.domain, searchTerms);
-          result.searchTerms = searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null;
+          urlResult.appAdsTxt = await checkAppAdsTxt(urlResult.domain, searchTerms);
+          urlResult.searchTerms = searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null;
         } catch (adsTxtErr) {
-          logger.debug({ err: adsTxtErr.message, domain: result.domain }, 'Error checking app-ads.txt');
-          result.appAdsTxt = { exists: false };
+          logger.debug({ err: adsTxtErr.message, domain: urlResult.domain }, 'Error checking app-ads.txt');
+          urlResult.appAdsTxt = { exists: false };
         }
       }
       
       // Cache successful result
-      cache.set(cacheKey, result, 24); // 24 hours
-      return result;
+      if (cache) {
+        const cacheKey = `roku-store-${bundleId}`;
+        cache.set(cacheKey, urlResult, 24); // 24 hours
+      }
+      return urlResult;
     }
     
     // Approach 2: Try API-based access
@@ -82,7 +84,10 @@ async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
       }
       
       // Cache successful result
-      cache.set(cacheKey, apiResult, 24); // 24 hours
+      if (cache) {
+        const cacheKey = `roku-store-${bundleId}`;
+        cache.set(cacheKey, apiResult, 24); // 24 hours
+      }
       return apiResult;
     }
     
@@ -90,8 +95,11 @@ async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
     const fallbackResult = await getRokuFallbackData(bundleId, searchTerms);
     
     // Cache the result (even if unsuccessful)
-    const cacheDuration = fallbackResult.success ? 72 : 6; // Longer for success, shorter for failure
-    cache.set(cacheKey, fallbackResult, cacheDuration);
+    if (cache) {
+      const cacheKey = `roku-store-${bundleId}`;
+      const cacheDuration = fallbackResult.success ? 72 : 6; // Longer for success, shorter for failure
+      cache.set(cacheKey, fallbackResult, cacheDuration);
+    }
     
     return fallbackResult;
     
@@ -107,7 +115,10 @@ async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
     };
     
     // Cache error result for a short time
-    cache.set(cacheKey, errorResult, 1); // 1 hour
+    if (cache) {
+      const cacheKey = `roku-store-${bundleId}`;
+      cache.set(cacheKey, errorResult, 1); // 1 hour
+    }
     
     throw new Error(`Could not access Roku data for ${bundleId} through any available method`);
   }
