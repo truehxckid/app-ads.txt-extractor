@@ -122,23 +122,59 @@ app.use(express.static(path.join(__dirname, 'public')));
 class RedisStore {
   constructor({ client, prefix }) {
     this.client = client;
-    this.prefix = prefix;
+    this.prefix = prefix || 'rate-limit:';
   }
 
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
     
     try {
-      const [count] = await this.client
+      const results = await this.client
         .multi()
         .incr(redisKey)
         .expire(redisKey, 60 * 15) // 15 minutes in seconds
         .exec();
         
-      return count[1];
+      // Extract the incremented value from multi results
+      return results[0][1]; // This accesses the value from the INCR operation
     } catch (err) {
       logger.error({ err, key: redisKey }, 'Redis increment error');
       return 1; // Allow request on error
+    }
+  }
+  
+  // Implement the required methods for the Store interface
+  async decrement(key) {
+    const redisKey = `${this.prefix}${key}`;
+    try {
+      return await this.client.decr(redisKey);
+    } catch (err) {
+      logger.error({ err, key: redisKey }, 'Redis decrement error');
+      return 0;
+    }
+  }
+  
+  async resetKey(key) {
+    const redisKey = `${this.prefix}${key}`;
+    try {
+      return await this.client.del(redisKey);
+    } catch (err) {
+      logger.error({ err, key: redisKey }, 'Redis resetKey error');
+      return 0;
+    }
+  }
+  
+  async resetAll() {
+    try {
+      // This is a simplified version - in production, you might want a more targeted approach
+      const keys = await this.client.keys(`${this.prefix}*`);
+      if (keys.length) {
+        return await this.client.del(keys);
+      }
+      return 0;
+    } catch (err) {
+      logger.error({ err }, 'Redis resetAll error');
+      return 0;
     }
   }
 }
