@@ -267,37 +267,25 @@
       return storeNames[storeType] || 'Unknown';
     },
     
-/**
- * Detect store type from bundle ID format
- * @param {string} bundleId - Bundle ID
- * @returns {string} Store type
- */
-detectStoreType(bundleId) {
-  if (!bundleId || typeof bundleId !== 'string') return 'unknown';
-  
-  const trimmedId = bundleId.trim();
-  
-  // Check for complex Roku ID (most specific pattern first)
-  if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
-  
-  // Check for simple Roku ID (2-6 digits)
-  if (/^\d{2,6}$/i.test(trimmedId)) return 'roku';
-  
-  // Check for Samsung ID (G/g followed by 11 digits)
-  if (/^[gG]\d{11}$/i.test(trimmedId)) return 'samsung';
-  
-  // Check for Amazon ID (B/b followed by 9 alphanumeric characters)
-  if (/^[bB][0-9A-Z]{9}$/i.test(trimmedId)) return 'amazon';
-  
-  // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
-  if (/^(id)?\d{9}$/i.test(trimmedId)) return 'appstore';
-  
-  // Check for Google Play ID (package name format)
-  if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';
-  
-  // Unknown store type
-  return 'unknown';
-},
+    /**
+     * Detect store type from bundle ID format
+     * @param {string} bundleId - Bundle ID
+     * @returns {string} Store type
+     */
+    detectStoreType(bundleId) {
+      if (!bundleId || typeof bundleId !== 'string') return 'unknown';
+      
+      const trimmedId = bundleId.trim();
+      
+      if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) return 'roku';
+      if (/^B[0-9A-Z]{9,10}$/i.test(trimmedId)) return 'amazon';
+      if (/^(id)?\d+$/.test(trimmedId)) return /^\d{4,6}$/.test(trimmedId) ? 'roku' : 'appstore';
+      if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(trimmedId)) return 'googleplay';
+      if (/^[a-zA-Z0-9]{4,}$/.test(trimmedId) && !trimmedId.includes('.')) return 'roku';
+      if (/^G\d{10,15}$/i.test(trimmedId)) return 'samsung';
+      
+      return 'unknown';
+    },
     
     /**
      * Parse CSV data with header detection
@@ -445,16 +433,16 @@ detectStoreType(bundleId) {
      * @returns {HTMLElement} Table wrapper element
      */
     generateResultsTable(results, searchTermText) {
-      // Check if results are empty
-      if (!results || results.length === 0) {
-        const emptyStateTemplate = document.getElementById('empty-state-template');
-        if (emptyStateTemplate) {
-          const emptyState = document.importNode(emptyStateTemplate.content, true);
-          const wrapper = Utilities.createElement('div', { className: 'results-wrapper' });
-          wrapper.appendChild(emptyState);
-          return wrapper;
-        }
-      }
+  // Check if results are empty
+  if (!results || results.length === 0) {
+    const emptyStateTemplate = document.getElementById('empty-state-template');
+    if (emptyStateTemplate) {
+      const emptyState = document.importNode(emptyStateTemplate.content, true);
+      const wrapper = Utilities.createElement('div', { className: 'results-wrapper' });
+      wrapper.appendChild(emptyState);
+      return wrapper;
+    }
+  }
       const fragment = document.createDocumentFragment();
       const tableContainer = Utilities.createElement('div', { className: 'results-table-container' });
       const table = Utilities.createElement('table', { className: 'results-table' });
@@ -618,7 +606,7 @@ detectStoreType(bundleId) {
                     <strong>Stats:</strong> 
                     ${result.appAdsTxt.analyzed.totalLines} lines, 
                     ${result.appAdsTxt.analyzed.validLines} valid entries
-                </div>
+                  </div>
                   <div class="app-ads-content">
                     <pre>${Utilities.escapeHtml(contentText)}</pre>
                   </div>
@@ -831,8 +819,19 @@ detectStoreType(bundleId) {
       // Global keyboard shortcuts
       document.addEventListener('keydown', this.handleKeydown);
       
-      // Initialize search terms container - Don't handle the "Add Search Term" button here
-      // This is now handled by fix-errors.js
+      // Initialize search terms container
+      this.initializeSearchTerms();
+    },
+    
+    /**
+     * Initialize search terms container
+     */
+    initializeSearchTerms() {
+      // Add first search term field if none exist
+      const container = document.getElementById('searchTermsContainer');
+      if (container && container.children.length === 0) {
+        this.addNewSearchTerm();
+      }
     },
     
     /**
@@ -1000,6 +999,48 @@ detectStoreType(bundleId) {
     },
     
     /**
+     * Handle adding a new search term
+     */
+    handleAddSearchTerm() {
+      EventHandler.addNewSearchTerm();
+    },
+    
+    /**
+     * Add a new search term input
+     */
+    addNewSearchTerm() {
+      const container = document.getElementById('searchTermsContainer');
+      if (!container) return;
+      
+      const template = document.getElementById('search-term-template');
+      if (!template) return;
+      
+      const clone = document.importNode(template.content, true);
+      container.appendChild(clone);
+      
+      // Focus the new input
+      const newInput = container.lastElementChild.querySelector('.search-term-input');
+      if (newInput) newInput.focus();
+    },
+    
+    /**
+     * Handle removing a search term
+     * @param {HTMLElement} button - Remove button
+     */
+    handleRemoveSearchTerm(button) {
+      const row = button.closest('.search-term-row');
+      if (row) {
+        row.remove();
+        
+        // Make sure at least one search term input exists
+        const container = document.getElementById('searchTermsContainer');
+        if (container && container.children.length === 0) {
+          EventHandler.addNewSearchTerm();
+        }
+      }
+    },
+    
+    /**
      * Handle document click events (delegation)
      * @param {Event} event - Click event
      */
@@ -1025,7 +1066,12 @@ detectStoreType(bundleId) {
         case 'download-csv':
           EventHandler.handleDownloadCSV();
           break;
-        // Removed handlers for add-term and remove-term as they're now in fix-errors.js
+        case 'remove-term':
+          EventHandler.handleRemoveSearchTerm(target);
+          break;
+        case 'add-term':
+          EventHandler.handleAddSearchTerm();
+          break;
       }
     },
     

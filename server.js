@@ -6,7 +6,7 @@
  * - Robust rate limiting with Redis support
  * - Comprehensive error handling
  * - Structured logging
- * - Specialized Roku handling
+ * - Security enhancements
  */
 
 'use strict';
@@ -20,6 +20,8 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
+// Fix: Import axios-retry correctly
+const axiosRetry = require('axios-retry'); // This returns the function itself
 const cheerio = require('cheerio');
 const compression = require('compression');
 const cors = require('cors');
@@ -27,17 +29,26 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const pino = require('pino');
 
-// Custom modules
-const rokuProxy = require('./roku-proxy');
-
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', true);
-
-// Startup tracking
-const startupId = Math.random().toString(36).substring(2, 10);
+// Initialize Redis for rate limiting (optional)
+let redis = null;
+try {
+  if (process.env.REDIS_URL) {
+    const Redis = require('ioredis');
+    redis = new Redis(process.env.REDIS_URL);
+    
+    // Test connection
+    redis.on('error', (err) => {
+      logger.error({ err }, 'Redis connection error. Falling back to memory store');
+      redis = null;
+    });
+  }
+} catch (err) {
+  console.error('Redis initialization failed:', err);
+}
 
 // Initialize logger
 const logger = pino({
@@ -51,103 +62,33 @@ const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug'
 });
 
-// Log startup
-logger.info({ 
-  startupId,
-  timestamp: new Date().toISOString(),
-  nodeVersion: process.version,
-  environment: process.env.NODE_ENV || 'development',
-  pid: process.pid,
-  ppid: process.ppid
-}, 'Server initializing');
-
-// Custom axios retry mechanism (replaces axios-retry)
-axios.interceptors.response.use(undefined, async (error) => {
-  const { config } = error;
-  
-  // If no config object or retry not specified, reject
-  if (!config || config.retry === undefined) {
-    return Promise.reject(error);
-  }
-  
-  // Set retry count if it doesn't exist
-  config.__retryCount = config.__retryCount || 0;
-  
-  // Check if we've reached max retries
-  if (config.__retryCount >= config.retry) {
-    return Promise.reject(error);
-  }
-  
-  // Increment retry count
-  config.__retryCount += 1;
-  
-  // Create new promise with delay (exponential backoff)
-  const delayTime = config.retryDelay || 1000 * Math.pow(2, config.__retryCount - 1);
-  
-  // Log retry attempt
-  if (typeof logger !== 'undefined') {
-    logger.debug({ 
-      url: config.url, 
-      attempt: config.__retryCount, 
-      maxRetries: config.retry,
-      delay: delayTime,
-      status: error.response?.status,
-      errorCode: error.code
-    }, 'Retrying request');
-  }
-  
-  // Wait for the delay
-  await new Promise(resolve => setTimeout(resolve, delayTime));
-  
-  // Return the new request
-  return axios(config);
-});
-
-// Set default retry values for all requests
-axios.defaults.retry = 3;        // Number of retries
-axios.defaults.retryDelay = 1000; // Base delay in ms
-
-// Initialize Redis for rate limiting (optional)
-let redis = null;
-try {
-  if (process.env.REDIS_URL) {
-    const Redis = require('ioredis');
-    redis = new Redis(process.env.REDIS_URL, {
-      tls: {
-        rejectUnauthorized: true // Set to false only for testing if you have certificate issues
-      },
-      reconnectOnError: (err) => {
-        logger.warn({ err }, 'Redis reconnect triggered by error');
-        return true;
-      },
-      maxRetriesPerRequest: 3
-    });
-    
-    // Test connection
-    redis.on('error', (err) => {
-      logger.error({ err }, 'Redis connection error');
-      redis = null; // Fall back to memory store
-    });
-  }
-} catch (err) {
-  logger.error('Redis initialization failed:', err);
-  redis = null;
-}
+// Comment out or remove the axios-retry code
+// const axiosRetry = require('axios-retry');
+// 
+// axiosRetry(axios, {
+//   retries: 3,
+//   retryDelay: (retryCount) => {
+//     return retryCount * 1000;
+//   },
+//   retryCondition: (error) => {
+//     return (
+//       axiosRetry.isNetworkOrIdempotentRequestError(error) ||
+//       (error.response && error.response.status === 429)
+//     );
+//   }
+// });
 
 // Enable security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
       upgradeInsecureRequests: []
     }
   }
@@ -164,8 +105,7 @@ app.use(compression());
 // Create necessary directories
 const DIRS = {
   logs: path.join(__dirname, 'logs'),
-  cache: path.join(__dirname, 'cache'),
-  debug: path.join(__dirname, 'debug') // Add a debug directory
+  cache: path.join(__dirname, 'cache')
 };
 
 for (const dir of Object.values(DIRS)) {
@@ -182,53 +122,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 class RedisStore {
   constructor({ client, prefix }) {
     this.client = client;
-    this.prefix = prefix || 'rate-limit:';
+    this.prefix = prefix;
   }
 
   async increment(key) {
     const redisKey = `${this.prefix}${key}`;
-    const ttlSeconds = 60 * 15; // 15 minutes in seconds
     
     try {
-      // Use Redis transaction to increment and set expiry
-      const [incr] = await this.client
+      const [count] = await this.client
         .multi()
         .incr(redisKey)
-        .expire(redisKey, ttlSeconds)
+        .expire(redisKey, 60 * 15) // 15 minutes in seconds
         .exec();
-      
-      const totalHits = incr[1];
-      
-      // Important: Return an object with resetTime as a Date object
-      return {
-        totalHits,
-        resetTime: new Date(Date.now() + ttlSeconds * 1000) // Convert to Date object
-      };
+        
+      return count[1];
     } catch (err) {
-      logger.error('Redis increment error:', err);
-      // Return default response that follows the expected format
-      return {
-        totalHits: 1,
-        resetTime: new Date(Date.now() + ttlSeconds * 1000)
-      };
-    }
-  }
-
-  async decrement(key) {
-    const redisKey = `${this.prefix}${key}`;
-    try {
-      await this.client.decr(redisKey);
-    } catch (err) {
-      logger.error('Redis decrement error:', err);
-    }
-  }
-
-  async resetKey(key) {
-    const redisKey = `${this.prefix}${key}`;
-    try {
-      await this.client.del(redisKey);
-    } catch (err) {
-      logger.error('Redis resetKey error:', err);
+      logger.error({ err, key: redisKey }, 'Redis increment error');
+      return 1; // Allow request on error
     }
   }
 }
@@ -255,22 +165,7 @@ const STORES = {
     extractors: [
       html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
       html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/dev[^"]+)"/i)?.[1] || 
-              html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?[^"]+)"/i)?.[1],
-      // Add new patterns for Google Play
-      html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?id=[^"]+)"/i)?.[1],
-      html => html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/details\?id=[^"]+).*?developer/i)?.[1],
-      // Add Cheerio-based extraction as a last resort
-      html => {
-        try {
-          const $ = cheerio.load(html);
-          return $('a[href*="developer?id="]').attr('href') ||
-                 $('a[itemprop="url"][href*="/dev"]').attr('href') ||
-                 $('a:contains("View Developer")').attr('href');
-        } catch (err) {
-          logger.error({ err }, 'Cheerio extraction failed for Google Play');
-          return null;
-        }
-      }
+              html.match(/href="(https:\/\/play\.google\.com\/store\/apps\/developer\?[^"]+)"/i)?.[1]
     ],
     rateLimit: { requests: 10, windowMs: 1000 }
   },
@@ -278,22 +173,7 @@ const STORES = {
     urlTemplate: id => `https://apps.apple.com/us/app/${encodeURIComponent(/^\d+$/.test(id) ? 'id' + id : id)}`,
     extractors: [
       html => html.match(/<a[^>]*class=['"]link\s+icon\s+icon-after\s+icon-external['"][^>]*href=['"]([^'"]+)['"]/i)?.[1],
-      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+\/developer\/[^"]+)"/i)?.[1],
-      // Add new patterns for App Store
-      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+(?:\/developer|\/company)\/[^"]+)"/i)?.[1],
-      html => html.match(/developer.*?href="([^"]+)"/i)?.[1],
-      // Add Cheerio-based extraction as a last resort
-      html => {
-        try {
-          const $ = cheerio.load(html);
-          return $('.app-header a[href*="/developer/"]').attr('href') ||
-                 $('.app-header a[href*="/company/"]').attr('href') ||
-                 $('a:contains("Developer Website")').attr('href');
-        } catch (err) {
-          logger.error({ err }, 'Cheerio extraction failed for App Store');
-          return null;
-        }
-      }
+      html => html.match(/href="(https:\/\/apps\.apple\.com[^"]+\/developer\/[^"]+)"/i)?.[1]
     ],
     rateLimit: { requests: 12, windowMs: 1000 }
   },
@@ -301,24 +181,18 @@ const STORES = {
     urlTemplate: id => `https://www.amazon.com/dp/${encodeURIComponent(id)}`,
     extractors: [
       html => html.match(/href="(https:\/\/www\.amazon\.com\/[^"]+\/developer\/[^"]+)"/i)?.[1],
-      html => html.match(/href="([^"]+)"[^>]*>Visit the ([^<]+) Store</i)?.[1],
-      // Add new patterns for Amazon
-      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer['"]?s\s+Website</i)?.[1],
-      html => html.match(/href="(https:\/\/www\.amazon\.com\/gp\/product\/[^"]+)"/i)?.[1],
-      // Add Cheerio-based extraction as a last resort
-      html => {
-        try {
-          const $ = cheerio.load(html);
-          return $('.a-section a[href*="/dev/"]').attr('href') ||
-                 $('a:contains("Visit the")').attr('href') ||
-                 $('.author-name').parent('a').attr('href');
-        } catch (err) {
-          logger.error({ err }, 'Cheerio extraction failed for Amazon');
-          return null;
-        }
-      }
+      html => html.match(/href="([^"]+)"[^>]*>Visit the ([^<]+) Store</i)?.[1]
     ],
     rateLimit: { requests: 8, windowMs: 1500 }
+  },
+  roku: {
+    urlTemplate: id => `https://channelstore.roku.com/details/${encodeURIComponent(id)}`,
+    extractors: [
+      html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
+      html => html.match(/href="(https:\/\/channelstore\.roku\.com\/[^"]*?\/developer\/[^"]+)"/i)?.[1],
+      html => html.match(/href="([^"]+)"[^>]*>More by ([^<]+)</i)?.[1]
+    ],
+    rateLimit: { requests: 10, windowMs: 1200 }
   },
   samsung: {
     urlTemplate: id => `https://www.samsung.com/us/appstore/app/${encodeURIComponent(id)}`,
@@ -326,23 +200,7 @@ const STORES = {
       html => html.match(/<meta\s+name=['"]appstore:developer_url['"][^>]*content=['"]([^'"]+)['"]/i)?.[1],
       html => html.match(/href="(https:\/\/www\.samsung\.com\/[^"]*?\/developer\/[^"]+)"/i)?.[1],
       html => html.match(/href="([^"]+)"[^>]*>More from Developer</i)?.[1],
-      html => html.match(/Developer<\/dt>[^<]*<dd[^>]*>[^<]*<a[^>]*href="([^"]+)"/i)?.[1],
-      // Add new patterns for Samsung
-      html => html.match(/href="([^"]+)"[^>]*>Visit\s+Developer</i)?.[1],
-      html => html.match(/developer.*?href="([^"]+)"/i)?.[1],
-      // Add Cheerio-based extraction as a last resort
-      html => {
-        try {
-          const $ = cheerio.load(html);
-          return $('.developer-link').attr('href') ||
-                 $('a:contains("Developer")').attr('href') ||
-                 $('a[href*="/developer/"]').attr('href') ||
-                 $('.app-dev-name a').attr('href');
-        } catch (err) {
-          logger.error({ err }, 'Cheerio extraction failed for Samsung');
-          return null;
-        }
-      }
+      html => html.match(/Developer<\/dt>[^<]*<dd[^>]*>[^<]*<a[^>]*href="([^"]+)"/i)?.[1]
     ],
     rateLimit: { requests: 8, windowMs: 1500 }
   }
@@ -356,9 +214,8 @@ class EnhancedCache {
   constructor() {
     this.memoryCache = new Map();
     this.stats = { hits: 0, misses: 0 };
-    this.maxMemorySize = Math.min(1000, parseInt(process.env.MAX_MEMORY_CACHE_SIZE) || 1000);
+    this.maxMemorySize = 1000; // Maximum number of items in memory cache
     this.cleanupInterval = 60 * 60 * 1000; // 1 hour
-    this.memoryPruneThreshold = 0.9; // Prune at 90% capacity
     this.startCleanupInterval();
   }
   
@@ -447,25 +304,6 @@ class EnhancedCache {
     });
   }
   
-  // Prune the memory cache when it gets too large
-  prune() {
-    if (this.memoryCache.size >= this.maxMemorySize * this.memoryPruneThreshold) {
-      logger.debug('Memory cache reached prune threshold, removing oldest items');
-      
-      // Get entries sorted by expiry
-      const entries = [...this.memoryCache.entries()]
-        .sort((a, b) => a[1].expiry - b[1].expiry);
-      
-      // Remove oldest 20%
-      const removeCount = Math.ceil(this.memoryCache.size * 0.2);
-      for (let i = 0; i < removeCount && i < entries.length; i++) {
-        this.memoryCache.delete(entries[i][0]);
-      }
-      
-      logger.debug({ removed: removeCount, newSize: this.memoryCache.size }, 'Memory cache pruned');
-    }
-  }
-  
   get(key) {
     if (!key) {
       return null;
@@ -526,9 +364,6 @@ class EnhancedCache {
       return false;
     }
     
-    // Run prune before adding new items
-    this.prune();
-    
     try {
       const expiry = Date.now() + (ttlHours * 60 * 60 * 1000);
       
@@ -568,15 +403,6 @@ class EnhancedCache {
 
 // Initialize cache
 const cache = new EnhancedCache();
-
-// Initialize Roku proxy module
-rokuProxy.initialize({
-  logger,
-  cache  // Will set this after cache initialization
-});
-
-// Update Roku proxy with cache reference
-rokuProxy.setAppAdsTxtChecker(checkAppAdsTxt);
 
 // Worker pool implementation
 class WorkerPool {
@@ -662,59 +488,16 @@ function runWorker(content, searchTerms) {
   });
 }
 
-// Function to save HTML responses for debugging
-function saveHtmlForDebugging(storeType, bundleId, html) {
-  try {
-    if (!process.env.DEBUG_STORE_RESPONSES && process.env.DEBUG_STORE_RESPONSES !== 'true') {
-      return;
-    }
-    
-    const debugDir = path.join(__dirname, 'debug');
-    if (!fs.existsSync(debugDir)) {
-      fs.mkdirSync(debugDir, { recursive: true });
-    }
-    
-    const safeId = bundleId.replace(/[^a-zA-Z0-9]/g, '_');
-    fs.writeFileSync(
-      path.join(debugDir, `${storeType}_${safeId}_${Date.now()}.html`),
-      html
-    );
-    logger.debug({ storeType, bundleId }, 'Saved HTML for debugging');
-  } catch (err) {
-    logger.error({ err }, 'Failed to save HTML for debugging');
-  }
-}
-
 // Enhanced user agent rotation
 function getRandomUserAgent() {
   const agents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    // TV devices
-    'Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-    'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/79.0.3945.116 Safari/537.36 RokuStreamingStick/12.5.0.0 (7000X)'
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
   ];
   return agents[Math.floor(Math.random() * agents.length)];
-}
-
-// Helper function for generating case-aware cache keys
-function getCaseAwareCacheKey(storeType, bundleId) {
-  // Define stores where case matters in the ID
-  const caseSensitiveStores = ['googleplay', 'samsung'];
-  
-  // For these stores, use lowercase in the cache key for consistency
-  if (caseSensitiveStores.includes(storeType)) {
-    return `store-${storeType}-${bundleId.toLowerCase()}`;
-  }
-  return `store-${storeType}-${bundleId}`;
 }
 
 // Input validation
@@ -741,25 +524,13 @@ function validateSearchTerms(terms) {
   
   if (typeof terms === 'string') {
     const trimmed = terms.toLowerCase().trim();
-    // Limit length and reject potentially dangerous inputs
-    if (!trimmed || trimmed.length > 100 || /[<>{}()[\]"`\\]/.test(trimmed)) {
-      return null;
-    }
-    return [trimmed];
+    return trimmed ? [trimmed] : null;
   }
   
   if (Array.isArray(terms)) {
-    // Limit number of terms
-    if (terms.length > 10) return null;
-    
     const validTerms = terms
       .filter(term => term && typeof term === 'string')
-      .map(term => {
-        const trimmed = term.toLowerCase().trim();
-        // Reject potentially dangerous terms
-        if (trimmed.length > 100 || /[<>{}()[\]"`\\]/.test(trimmed)) return null;
-        return trimmed;
-      })
+      .map(term => term.toLowerCase().trim())
       .filter(Boolean);
     
     return validTerms.length > 0 ? validTerms : null;
@@ -768,35 +539,59 @@ function validateSearchTerms(terms) {
   throw new Error('Invalid search terms: must be a string or array of strings');
 }
 
-/**
- * Detect store type from bundle ID format
- * @param {string} bundleId - Bundle ID
- * @returns {string} Store type
- */
-function detectStoreType(bundleId) {
+// Enhanced store type detection
+function detectStoreType(id) {
   try {
-    const validId = validateBundleId(bundleId);
+    const validId = validateBundleId(id);
     
-    // Check for Roku IDs using the dedicated module
-    if (rokuProxy.isRokuBundleId(validId)) return 'roku';
-    
-    // Check for Samsung ID (G/g followed by 11 digits)
-    if (/^[gG]\d{11}$/i.test(validId)) return 'samsung';
-    
-    // Check for Amazon ID (B/b followed by 9 alphanumeric characters)
-    if (/^[bB][0-9A-Z]{9}$/i.test(validId)) return 'amazon';
-    
-    // Check for Apple App Store ID (exactly 9 digits, with optional "id" prefix)
-    if (/^(id)?\d{9}$/i.test(validId)) return 'appstore';
-    
-    // Check for Google Play ID (package name format)
+    if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
+    if (/^B[0-9A-Z]{9,10}$/i.test(validId)) return 'amazon';
+    if (/^(id)?\d+$/.test(validId)) return /^\d{4,6}$/.test(validId) ? 'roku' : 'appstore';
     if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
+    if (/^G\d{10,15}$/i.test(validId)) return 'samsung';
+    // More specific Roku pattern - not starting with 'G' (Samsung pattern)
+    // and either entirely numeric (not covered by earlier patterns) 
+    // or alphanumeric but not meeting other patterns
+    if (/^(?!G\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
     
-    // Unknown store type
     return 'unknown';
   } catch (err) {
-    logger.error({ err, bundleId }, 'Error detecting store type');
+    logger.error({ err, id }, 'Error detecting store type');
     return 'unknown';
+  }
+}
+
+// Enhanced domain extraction with validation
+function extractDomain(url) {
+  try {
+    if (!url || typeof url !== 'string') return '';
+    
+    // Remove protocol and path
+    const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
+    if (!match) return '';
+    
+    const parts = match[1].split('.');
+    if (parts.length <= 2) return match[1];
+    
+    // Handle special TLDs
+    const specialTlds = ['co.uk', 'co.jp', 'co.nz', 'com.au', 'com.br', 'com.tw'];
+    const lastTwo = parts.slice(-2).join('.');
+    
+    // Validate domain format
+    const extractedDomain = specialTlds.includes(lastTwo) ? 
+      parts.slice(-3).join('.') : 
+      parts.slice(-2).join('.');
+    
+    // Basic domain validation
+    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(extractedDomain)) {
+      logger.warn({ url, extractedDomain }, 'Potentially invalid domain extracted');
+      return '';
+    }
+    
+    return extractedDomain;
+  } catch (err) {
+    logger.error({ err, url }, 'Error extracting domain');
+    return '';
   }
 }
 
@@ -805,13 +600,6 @@ async function applyRateLimit(storeType) {
   try {
     const store = STORES[storeType];
     if (!store?.rateLimit) return;
-    
-    // Special handling for Roku
-    if (storeType === 'roku') {
-      // Add a random delay between 1-3 seconds for Roku
-      const jitter = Math.floor(Math.random() * 2000) + 1000;
-      await new Promise(resolve => setTimeout(resolve, jitter));
-    }
     
     const { requests, windowMs } = store.rateLimit;
     
@@ -893,7 +681,6 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   const startTime = Date.now();
   let fileSize = 0;
   let processingMethod = 'none';
-  let finalDomain = domain;  // Track the final domain after redirects
   
   if (!domain) {
     return { exists: false };
@@ -919,9 +706,6 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     let content = null;
     let usedProtocol = null;
     let fetchErrors = [];
-    let redirectUrl = null;
-    let analyzed = null;
-    let searchResults = null;
     
     for (const protocol of protocols) {
       if (content) break;
@@ -933,58 +717,15 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         const url = `${protocol}://${domain}/app-ads.txt`;
         logger.debug({ url }, 'Fetching app-ads.txt');
         
-        // Modified to follow redirects by default and capture the final URL
         const response = await axios.get(url, {
           timeout: 10000,
-          retry: 3, // Use custom retry
           headers: {
             'User-Agent': getRandomUserAgent(),
             'Accept': 'text/plain,text/html',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Upgrade-Insecure-Requests': '1'
+            'Accept-Encoding': 'gzip, deflate'
           },
-          validateStatus: status => status === 200,
-          maxRedirects: 5, // Follow up to 5 redirects
-          withCredentials: false // Ensure cookies aren't sent for security
+          validateStatus: status => status === 200
         });
-        
-        // Check if we were redirected and update the domain
-        if (response.request.res.responseUrl) {
-          redirectUrl = response.request.res.responseUrl;
-          try {
-            const redirectUrlObj = new URL(redirectUrl);
-            // Only update if it's a different domain
-            const redirectDomain = extractDomain(redirectUrlObj.hostname);
-            if (redirectDomain && redirectDomain !== domain) {
-              finalDomain = redirectDomain;
-              logger.info({ 
-                originalDomain: domain, 
-                redirectDomain: finalDomain 
-              }, 'Followed redirect to new domain');
-            }
-          } catch (urlErr) {
-            logger.warn({ 
-              redirectUrl, 
-              error: urlErr.message 
-            }, 'Failed to parse redirect URL');
-          }
-        }
-        
-        // If response.request.path doesn't end with app-ads.txt, we might have been redirected elsewhere
-        const finalPath = response.request.path;
-        if (!finalPath.endsWith('/app-ads.txt') && !finalPath.endsWith('/app-ads.txt/')) {
-          logger.warn({ 
-            originalUrl: url, 
-            finalPath: finalPath 
-          }, 'Redirected to non-app-ads.txt path');
-          continue; // Skip this result as it might not be app-ads.txt content
-        }
         
         if (response.data && typeof response.data === 'string') {
           content = response.data.trim();
@@ -992,56 +733,6 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
           break;
         }
       } catch (err) {
-        // Check if we were redirected before the error
-        if (err.response?.request?.res?.responseUrl) {
-          redirectUrl = err.response.request.res.responseUrl;
-          try {
-            const redirectUrlObj = new URL(redirectUrl);
-            const redirectDomain = extractDomain(redirectUrlObj.hostname);
-            if (redirectDomain && redirectDomain !== domain) {
-              finalDomain = redirectDomain;
-              
-              // If we got redirected to a new domain but still had an error,
-              // try the new domain directly in the next iteration
-              logger.info({ 
-                originalDomain: domain, 
-                redirectDomain: finalDomain 
-              }, 'Redirect detected before error, will try new domain');
-              
-              // Now try the new domain directly
-              try {
-                const newDomainUrl = `${protocol}://${finalDomain}/app-ads.txt`;
-                logger.debug({ url: newDomainUrl }, 'Fetching app-ads.txt from redirect domain');
-                
-                const newResponse = await axios.get(newDomainUrl, {
-                  timeout: 10000,
-                  retry: 3,
-                  headers: {
-                    'User-Agent': getRandomUserAgent(),
-                    'Accept': 'text/plain,text/html',
-                    'Accept-Encoding': 'gzip, deflate, br'
-                  },
-                  validateStatus: status => status === 200
-                });
-                
-                if (newResponse.data && typeof newResponse.data === 'string') {
-                  content = newResponse.data.trim();
-                  usedProtocol = protocol;
-                  break;
-                }
-              } catch (newErr) {
-                // Log but continue with the next protocol
-                logger.debug({ 
-                  error: newErr.message, 
-                  redirectDomain: finalDomain 
-                }, 'Failed to fetch from redirect domain');
-              }
-            }
-          } catch (urlErr) {
-            logger.debug({ redirectUrl }, 'Failed to parse redirect URL');
-          }
-        }
-        
         const errorDetails = {
           protocol,
           domain,
@@ -1058,9 +749,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     if (!content) {
       const result = { 
         exists: false,
-        fetchErrors: fetchErrors.length > 0 ? fetchErrors : undefined,
-        originalDomain: domain,
-        finalDomain: finalDomain !== domain ? finalDomain : undefined
+        fetchErrors: fetchErrors.length > 0 ? fetchErrors : undefined
       };
       cache.set(cacheKey, result, 6); // Cache non-existing files for shorter period
       return result;
@@ -1068,109 +757,55 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     
     fileSize = content.length;
     
-    // Process content with worker
-    try {
-      processingMethod = 'worker';
+    // Check if content is too large for synchronous processing
+    const isLargeFile = content.length > 100000; // Adjust this threshold as needed
+    processingMethod = isLargeFile ? 'worker' : 'sync';
+    
+    logger.debug({
+      domain,
+      fileSize,
+      processingMethod
+    }, 'Processing app-ads.txt');
+    
+    let analyzed, searchResults;
+    
+    if (isLargeFile) {
+      // Use worker thread for large files
       const workerResult = await runWorker(content, normalizedSearchTerms);
-      if (workerResult.success) {
-        analyzed = workerResult.analyzed;
-        searchResults = workerResult.searchResults;
-      } else {
-        // If worker fails, log the error and continue with default values
-        logger.error({ 
-          err: workerResult.error, 
-          domain: finalDomain 
-        }, 'Worker processing failed');
-        
-        // Set defaults
-        analyzed = {
-          totalLines: content.split(/\r\n|\n|\r/).length,
-          validLines: 0,
-          commentLines: 0,
-          emptyLines: 0,
-          invalidLines: 0,
-          uniquePublishers: 0,
-          relationships: { direct: 0, reseller: 0, other: 0 }
-        };
-        
-        searchResults = normalizedSearchTerms ? {
-          terms: normalizedSearchTerms,
-          count: 0,
-          matchingLines: []
-        } : null;
-      }
-    } catch (workerErr) {
-      logger.error({ err: workerErr, domain: finalDomain }, 'Worker execution failed');
       
-      // Process without worker as fallback
-      processingMethod = 'fallback';
+      if (!workerResult.success) {
+        throw new Error(`Worker thread error: ${workerResult.error}`);
+      }
+      
+      analyzed = workerResult.analyzed;
+      searchResults = workerResult.searchResults;
+    } else {
+      // Process smaller files synchronously
       const lines = content.split(/\r\n|\n|\r/);
       
-      // Basic analysis
-      analyzed = {
-        totalLines: lines.length,
-        validLines: lines.filter(line => {
-          const cleanLine = line.split('#')[0].trim();
-          return cleanLine && cleanLine.split(',').length >= 3;
-        }).length,
-        commentLines: lines.filter(line => line.trim().startsWith('#')).length,
-        emptyLines: lines.filter(line => !line.trim()).length,
-        uniquePublishers: new Set(
-          lines
-            .map(line => line.split('#')[0].trim())
-            .filter(Boolean)
-            .map(line => line.split(',')[0]?.trim()?.toLowerCase())
-            .filter(Boolean)
-        ).size,
-        relationships: { direct: 0, reseller: 0, other: 0 }
-      };
+      // Analyze the file content
+      analyzed = analyzeAppAdsTxt(lines);
       
-      analyzed.invalidLines = analyzed.totalLines - analyzed.validLines - 
-        analyzed.commentLines - analyzed.emptyLines;
-      
-      // Basic search if search terms provided
-      if (normalizedSearchTerms && normalizedSearchTerms.length > 0) {
-        const matchingLines = [];
-        
-        lines.forEach((line, index) => {
-          const lowerLine = line.toLowerCase();
-          if (normalizedSearchTerms.some(term => lowerLine.includes(term))) {
-            matchingLines.push({
-              lineNumber: index + 1,
-              content: line
-            });
-          }
-        });
-        
-        searchResults = {
-          terms: normalizedSearchTerms,
-          count: matchingLines.length,
-          matchingLines
-        };
-      } else {
-        searchResults = null;
+      // Process search terms if provided
+      if (normalizedSearchTerms?.length > 0) {
+        searchResults = processSearchTerms(lines, normalizedSearchTerms);
       }
     }
     
-    // Create the result object
     const result = {
       exists: true,
-      url: `${usedProtocol}://${finalDomain}/app-ads.txt`,
-      originalDomain: domain,
-      finalDomain: finalDomain !== domain ? finalDomain : undefined,
+      url: `${usedProtocol}://${domain}/app-ads.txt`,
       content: content.length > 100000 
         ? content.substring(0, 100000) + '\n... (truncated, file too large)' 
         : content,
       contentLength: content.length,
       analyzed,
-      searchResults,
-      processingMethod
+      searchResults
     };
     
     const processingTime = Date.now() - startTime;
     logger.debug({
       domain,
-      finalDomain,
       fileSize,
       processingMethod,
       processingTime: `${processingTime}ms`,
@@ -1184,9 +819,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     
     const result = { 
       exists: false, 
-      error: 'Internal error processing app-ads.txt',
-      originalDomain: domain,
-      finalDomain: finalDomain !== domain ? finalDomain : undefined
+      error: 'Internal error processing app-ads.txt'
     };
     
     cache.set(cacheKey, result, 1); // Short cache time for errors
@@ -1194,154 +827,131 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
   }
 }
 
-// Helper function to extract domain from URL
-function extractDomain(url) {
-  try {
-    if (!url || typeof url !== 'string') return '';
+// Process search terms against lines of content
+function processSearchTerms(lines, searchTerms) {
+  const searchResults = {
+    terms: searchTerms,
+    termResults: searchTerms.map(term => ({
+      term,
+      matchingLines: [],
+      count: 0
+    })),
+    matchingLines: [],
+    count: 0
+  };
+  
+  // Process each line
+  lines.forEach((line, lineIndex) => {
+    const lineContent = line.trim();
+    if (!lineContent) return;
     
-    // Remove protocol and path
-    const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
-    if (!match) return '';
+    const lineNumber = lineIndex + 1;
+    let anyMatch = false;
     
-    const hostname = match[1];
-    const parts = hostname.split('.');
+    // Check each search term
+    searchTerms.forEach((term, termIndex) => {
+      try {
+        if (lineContent.toLowerCase().includes(term)) {
+          searchResults.termResults[termIndex].matchingLines.push({
+            lineNumber,
+            content: lineContent,
+            termIndex
+          });
+          anyMatch = true;
+        }
+      } catch (err) {
+        logger.error({ err, term, lineContent }, 'Error matching search term');
+      }
+    });
     
-    // If only two parts (e.g., example.com), return the whole thing
-    if (parts.length <= 2) return hostname;
-    
-    // Expanded list of special TLDs that should be treated as a single unit
-    const specialTlds = [
-      'co.uk', 'co.jp', 'co.nz', 'co.za', 'co.kr', 'co.id', 'co.il', 'co.th', 
-      'com.au', 'com.br', 'com.tw', 'com.sg', 'com.tr', 'com.mx', 'com.ar', 'com.hk',
-      'com.ph', 'com.my', 'com.vn', 'org.uk', 'net.au', 'or.jp', 'ne.jp', 'ac.uk',
-      'edu.au', 'gov.au', 'org.au'
-    ];
-    
-    // Check if the last two parts form a special TLD
-    const lastTwo = parts.slice(-2).join('.');
-    
-    // If it's a special TLD, take the last three parts; otherwise just the last two
-    const extractedDomain = specialTlds.includes(lastTwo) ? 
-      parts.slice(-3).join('.') : 
-      parts.slice(-2).join('.');
-    
-    // Basic domain validation
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(extractedDomain)) {
-      logger.warn({ url, extractedDomain }, 'Potentially invalid domain extracted');
-      return '';
+    // If any term matched, add to overall results
+    if (anyMatch) {
+      searchResults.matchingLines.push({
+        lineNumber,
+        content: lineContent
+      });
     }
-    
-    return extractedDomain;
-  } catch (err) {
-    logger.error({ err, url }, 'Error extracting domain');
-    return '';
-  }
+  });
+  
+  // Update counts
+  searchResults.termResults.forEach(result => {
+    result.count = result.matchingLines.length;
+  });
+  searchResults.count = searchResults.matchingLines.length;
+  
+  return searchResults;
 }
 
-/**
- * Get developer info for a bundle ID
- * @param {string} bundleId - The bundle ID
- * @param {array} searchTerms - Optional search terms
- * @returns {Promise<object>} Developer info
- */
-async function getDeveloperInfo(bundleId, searchTerms = null) {
-  try {
-    const validId = validateBundleId(bundleId);
+// Analyze app-ads.txt content
+function analyzeAppAdsTxt(lines) {
+  let validLineCount = 0;
+  let commentLineCount = 0;
+  let emptyLineCount = 0;
+  let invalidLineCount = 0;
+  
+  const publishers = new Set();
+  const relationships = {
+    direct: 0,
+    reseller: 0,
+    other: 0
+  };
+  
+  lines.forEach(line => {
+    // Skip empty lines
+    if (!line.trim()) {
+      emptyLineCount++;
+      return;
+    }
     
-    // First, detect the store type
-    const storeType = detectStoreType(validId);
+    // Handle comments
+    const commentIndex = line.indexOf('#');
+    if (commentIndex === 0) {
+      commentLineCount++;
+      return;
+    }
     
-    logger.debug({ bundleId: validId, storeType, hasSearchTerms: !!searchTerms }, 'Getting developer info');
+    const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
+    if (!cleanLine) {
+      emptyLineCount++;
+      return;
+    }
     
-    // If we detected a known store type, go directly to that store
-    if (storeType !== 'unknown') {
-      try {
-        // For Roku, use the specialized module
-        if (storeType === 'roku') {
-          return await rokuProxy.getRokuDeveloperInfo(validId, searchTerms);
-        }
-        
-        // For other known stores, use the standard extraction
-        return await extractFromStore(validId, storeType, searchTerms);
-      } catch (err) {
-        // Log the error but don't try other stores since we've established
-        // that store detection is reliable and non-overlapping
-        logger.info({ 
-          err: err.message, 
-          bundleId: validId, 
-          detectedStoreType: storeType 
-        }, 'Failed with detected store type');
-        
-        // Just throw the error - no fallback needed
-        throw err;
+    // Parse fields
+    const fields = cleanLine.split(',').map(f => f.trim());
+    
+    if (fields.length >= 3) {
+      validLineCount++;
+      
+      // Extract publisher
+      const domain = fields[0].toLowerCase();
+      publishers.add(domain);
+      
+      // Extract relationship
+      const relationship = fields[2].toLowerCase();
+      if (relationship === 'direct') {
+        relationships.direct++;
+      } else if (relationship === 'reseller') {
+        relationships.reseller++;
+      } else {
+        relationships.other++;
       }
     } else {
-      // Unknown store type, try a limited set of stores
-      logger.info({ bundleId: validId }, 'Unknown store type, trying a limited set of stores');
-      return await tryLimitedStores(validId, searchTerms);
+      invalidLineCount++;
     }
-  } catch (err) {
-    logger.error({ err, bundleId }, 'Error getting developer info');
-    throw err;
-  }
+  });
+  
+  return {
+    totalLines: lines.length,
+    validLines: validLineCount,
+    commentLines: commentLineCount,
+    emptyLines: emptyLineCount,
+    invalidLines: invalidLineCount,
+    uniquePublishers: publishers.size,
+    relationships
+  };
 }
 
-/**
- * Try a limited set of stores for unknown bundle ID types
- */
-async function tryLimitedStores(bundleId, searchTerms = null) {
-  // Check bundle ID characteristics to decide which stores to try
-  const storesByCharacteristics = [];
-  
-  // For numeric IDs, try Roku only if it's 2-6 digits, otherwise App Store
-  if (/^\d+$/.test(bundleId)) {
-    if (bundleId.length >= 2 && bundleId.length <= 6) {
-      storesByCharacteristics.push('roku');
-    } else if (bundleId.length === 9) {
-      storesByCharacteristics.push('appstore');
-    }
-  } 
-  // For hex IDs with colon, try Roku
-  else if (/^[a-f0-9]+:[a-f0-9]+$/i.test(bundleId)) {
-    storesByCharacteristics.push('roku');
-  } 
-  // For IDs with dots, try Google Play
-  else if (bundleId.includes('.')) {
-    storesByCharacteristics.push('googleplay');
-  }
-  
-  // Add fallback stores if we couldn't determine from characteristics
-  const storesToTry = storesByCharacteristics.length > 0 ? 
-    storesByCharacteristics : ['googleplay', 'appstore'];
-  
-  for (const storeType of storesToTry) {
-    try {
-      // Add delay between store attempts
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      logger.info({ bundleId, attemptingStore: storeType }, 'Trying store for unknown ID type');
-      
-      // For Roku, use specialized module
-      if (storeType === 'roku') {
-        return await rokuProxy.getRokuDeveloperInfo(bundleId, searchTerms);
-      }
-      
-      // For other stores, use standard extraction
-      return await extractFromStore(bundleId, storeType, searchTerms);
-    } catch (storeErr) {
-      logger.debug({ 
-        err: storeErr.message, 
-        bundleId, 
-        storeType 
-      }, 'Store attempt failed for unknown ID type');
-      // Continue to next store
-    }
-  }
-  
-  // If we get here, all attempts failed
-  throw new Error(`Could not identify store type for ${bundleId}`);
-}
-
+// Enhanced store extraction with better error handling
 async function extractFromStore(bundleId, storeType, searchTerms = null) {
   try {
     const store = STORES[storeType];
@@ -1351,9 +961,9 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     
     const validId = validateBundleId(bundleId);
     const url = store.urlTemplate(validId);
-    const cacheKey = getCaseAwareCacheKey(storeType, validId);
+    const cacheKey = `store-${storeType}-${validId}`;
     
-    // Check cache first - use case-aware cache key
+    // Check cache first
     const cached = cache.get(cacheKey);
     if (cached) {
       if (cached.success && cached.domain && searchTerms) {
@@ -1380,205 +990,21 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     logger.debug({ bundleId, storeType, url }, 'Extracting from store');
     
     // Fetch store page
-    let data;
-    let response;
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': getRandomUserAgent(),
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache'
+      }
+    });
     
-    try {
-      response = await axios.get(url, {
-        timeout: 15000,
-        retry: 3, // Use our custom retry mechanism
-        headers: {
-          'User-Agent': getRandomUserAgent(),
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-          'Referer': 'https://www.google.com/'
-        }
-      });
-      
-      if (!response.data || typeof response.data !== 'string') {
-        throw new Error(`Empty or invalid response from ${storeType}`);
-      }
-      
-      data = response.data;
-      
-      // Save HTML for debugging if enabled
-      saveHtmlForDebugging(storeType, validId, data);
-      
-      // Check if the response might be a captcha or block page
-      if (data.includes('captcha') || data.includes('security check') || 
-          data.includes('automated access') || data.includes('blocked') ||
-          data.includes('suspicious activity') || data.includes('verify you are a human') ||
-          (storeType === 'roku' && (data.includes('unusual traffic') || data.includes('access denied')))) {
-        logger.warn({ bundleId, storeType }, 'Possible captcha or access blocked');
-        throw new Error(`Access to ${storeType} might be temporarily blocked. Try changing your IP address.`);
-      }
-    } catch (fetchErr) {
-      // Case sensitivity handling for 404 errors
-      if (fetchErr.response?.status === 404) {
-        // Define which stores are case-sensitive and the alternative case to try
-        const caseSensitivityOptions = {
-          'googleplay': validId !== validId.toLowerCase() ? validId.toLowerCase() : null,
-          'samsung': validId.startsWith('G') ? 'g' + validId.substring(1) : 
-                    validId.startsWith('g') ? 'G' + validId.substring(1) : null
-        };
-        
-        // If this is a case-sensitive store and we have an alternative to try
-        const alternativeId = caseSensitivityOptions[storeType];
-        
-        if (alternativeId) {
-          logger.info({ 
-            originalId: validId, 
-            alternativeId,
-            storeType 
-          }, 'Trying alternative case for bundle ID');
-          
-          try {
-            // Try with alternative case bundle ID
-            const alternativeUrl = store.urlTemplate(alternativeId);
-            const alternativeResponse = await axios.get(alternativeUrl, {
-              timeout: 15000,
-              retry: 3,
-              headers: {
-                'User-Agent': getRandomUserAgent(),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Cache-Control': 'no-cache'
-              }
-            });
-            
-            // If we get here, the alternative case worked
-            if (!alternativeResponse.data || typeof alternativeResponse.data !== 'string') {
-              throw new Error(`Empty or invalid response from ${storeType} with alternative case`);
-            }
-            
-            // Process the successful response with alternative case
-            const alternativeData = alternativeResponse.data;
-            
-            // Save HTML for debugging if enabled
-            saveHtmlForDebugging(storeType, alternativeId, alternativeData);
-            
-            let alternativeDeveloperUrl = null;
-            
-            // Try pattern-based extractors with alternative case
-            for (const extractor of store.extractors) {
-              try {
-                alternativeDeveloperUrl = extractor(alternativeData);
-                if (alternativeDeveloperUrl) break;
-              } catch (extractErr) {
-                logger.error({ extractErr, storeType }, 'Error in extractor with alternative case');
-              }
-            }
-            
-            // If pattern-based extraction failed, try using Cheerio
-            if (!alternativeDeveloperUrl) {
-              try {
-                const $ = cheerio.load(alternativeData);
-                const selectors = [
-                  'meta[name="appstore:developer_url"]',
-                  'a[href*="/developer/"]',
-                  'a.link.icon.icon-after.icon-external',
-                  'a:contains("Visit the")',
-                  'a:contains("More by")'
-                ];
-                
-                for (const selector of selectors) {
-                  const el = $(selector);
-                  if (el.length > 0) {
-                    alternativeDeveloperUrl = el.attr('content') || el.attr('href');
-                    if (alternativeDeveloperUrl) break;
-                  }
-                }
-              } catch (cheerioErr) {
-                logger.error({ cheerioErr, storeType }, 'Error using Cheerio for extraction with alternative case');
-              }
-            }
-            
-            if (!alternativeDeveloperUrl) {
-              throw new Error(`Could not find developer URL for ${alternativeId} in ${storeType}`);
-            }
-            
-            // Extract domain from developer URL
-            const alternativeDomain = extractDomain(alternativeDeveloperUrl);
-            if (!alternativeDomain) {
-              throw new Error(`Could not extract valid domain from developer URL: ${alternativeDeveloperUrl}`);
-            }
-            
-            // Check for app-ads.txt
-            const alternativeAppAdsTxt = await checkAppAdsTxt(alternativeDomain, searchTerms);
-            
-            // Prepare result with alternative ID
-            const alternativeResult = {
-              bundleId: validId, // Keep original ID in result
-              alternativeBundleId: alternativeId, // Store the ID that actually worked
-              developerUrl: alternativeDeveloperUrl,
-              domain: alternativeDomain,
-              storeType,
-              appAdsTxt: alternativeAppAdsTxt,
-              searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-              success: true,
-              caseCorrected: true, // Indicate case was corrected
-              timestamp: Date.now()
-            };
-            
-            // Cache result with both original and alternative keys
-            cache.set(getCaseAwareCacheKey(storeType, validId), alternativeResult, 24);
-            cache.set(getCaseAwareCacheKey(storeType, alternativeId), alternativeResult, 24);
-            
-            return alternativeResult;
-          } catch (altErr) {
-            // Alternative case also failed, log and continue with original error
-            logger.debug({
-              alternativeId,
-              error: altErr.message
-            }, 'Alternative case bundle ID also failed');
-          }
-        }
-      }
-      
-      // Process the original error if we couldn't handle it with case sensitivity
-      let errorMessage;
-      if (fetchErr.code === 'ECONNABORTED') {
-        errorMessage = 'The request timed out. The app store might be temporarily unavailable.';
-      } else if (fetchErr.response?.status === 404) {
-        errorMessage = 'The bundle ID was not found in this store.';
-      } else if (fetchErr.response?.status === 429) {
-        errorMessage = 'Too many requests. Please try again later.';
-      } else {
-        errorMessage = fetchErr.message || 'An unknown error occurred';
-      }
-      
-      logger.error({ 
-        err: errorMessage, 
-        bundleId, 
-        storeType,
-        url: fetchErr.config?.url,
-        status: fetchErr.response?.status
-      }, 'Error extracting from store');
-      
-      const errorResult = { 
-        bundleId: validId, 
-        storeType, 
-        success: false, 
-        error: errorMessage,
-        suggestedAction: fetchErr.code === 'ECONNABORTED' ? 'retry' : undefined,
-        timestamp: Date.now()
-      };
-      
-      // Cache errors for a shorter period, using case-aware key
-      cache.set(getCaseAwareCacheKey(storeType, validId), errorResult, 1);
-      throw fetchErr;
+    if (!response.data || typeof response.data !== 'string') {
+      throw new Error(`Empty or invalid response from ${storeType}`);
     }
     
-    // If we get here, we have a successful response
+    const data = response.data;
     let developerUrl = null;
     
     // Try pattern-based extractors first
@@ -1615,49 +1041,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       }
     }
     
-    // When checking for developer URL, add more detailed logging
     if (!developerUrl) {
-      // Log a sample of the HTML to help debug extraction patterns
-      const htmlSample = data.length > 500 ? data.substring(0, 500) + '...' : data;
-      logger.warn({ 
-        bundleId, 
-        storeType,
-        htmlSample,
-        patternCount: store.extractors.length
-      }, 'Developer URL extraction failed');
-      
-      // Try to guess the domain from the bundle ID for Google Play apps
-      if (storeType === 'googleplay' && /^[a-zA-Z0-9.]+\.[a-zA-Z0-9.]+(\.[a-zA-Z0-9]+)+$/i.test(validId)) {
-        const parts = validId.toLowerCase().split('.');
-        if (parts.length >= 2) {
-          // Try to construct a domain from the bundle parts
-          const possibleDomain = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
-          logger.info({ bundleId: validId, guessedDomain: possibleDomain }, 'Attempting domain guess from bundle ID');
-          
-          // Check if this is a valid domain with app-ads.txt
-          try {
-            const appAdsCheck = await checkAppAdsTxt(possibleDomain, searchTerms);
-            if (appAdsCheck.exists) {
-              // We found a valid app-ads.txt at the guessed domain!
-              logger.info({ bundleId: validId, domain: possibleDomain }, 'Successfully guessed domain from bundle ID');
-              return {
-                bundleId: validId,
-                developerUrl: `https://${possibleDomain}`,
-                domain: possibleDomain,
-                storeType,
-                appAdsTxt: appAdsCheck,
-                searchTerms: searchTerms ? (Array.isArray(searchTerms) ? searchTerms : [searchTerms]) : null,
-                success: true,
-                guessedDomain: true,
-                timestamp: Date.now()
-              };
-            }
-          } catch (guessErr) {
-            logger.debug({ err: guessErr.message, domain: possibleDomain }, 'Domain guess did not have app-ads.txt');
-          }
-        }
-      }
-      
       throw new Error(`Could not find developer URL for ${bundleId} in ${storeType}`);
     }
     
@@ -1682,17 +1066,117 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       timestamp: Date.now()
     };
     
-    // Cache result using case-aware key
+    // Cache result
     cache.set(cacheKey, result, 24);
     return result;
   } catch (err) {
-    // This is the main error handler for the function
-    logger.error({ 
-      err: err.message, 
-      bundleId, 
-      storeType
-    }, 'Final error in extractFromStore');
+    const errorMessage = err.response?.status 
+      ? `HTTP ${err.response.status}: ${err.response.statusText || err.message}`
+      : err.message;
     
+    logger.error({ 
+      err: errorMessage, 
+      bundleId, 
+      storeType,
+      url: err.config?.url,
+      status: err.response?.status
+    }, 'Error extracting from store');
+    
+    const errorResult = { 
+      bundleId: validateBundleId(bundleId), 
+      storeType, 
+      success: false, 
+      error: errorMessage,
+      timestamp: Date.now()
+    };
+    
+    // Cache errors for a shorter period
+    cache.set(`store-${storeType}-${bundleId}`, errorResult, 1);
+    throw err;
+  }
+}
+
+// Enhanced store trying with better error handling and logging
+async function tryAllStores(bundleId, searchTerms = null) {
+  const validId = validateBundleId(bundleId);
+  const results = [];
+  const errors = [];
+  
+  logger.info({ bundleId: validId }, 'Trying all stores');
+  
+  for (const storeType of Object.keys(STORES)) {
+    try {
+      const result = await extractFromStore(validId, storeType, searchTerms);
+      
+      if (result.success) {
+        logger.info({ bundleId: validId, storeType, domain: result.domain }, 'Successfully extracted from store');
+        return result;
+      }
+      
+      results.push(result);
+    } catch (err) {
+      logger.error({ err: err.message, bundleId: validId, storeType }, 'Error trying store');
+      
+      errors.push({
+        storeType,
+        error: err.message,
+        statusCode: err.response?.status
+      });
+      
+      results.push({ 
+        bundleId: validId, 
+        storeType, 
+        error: err.message, 
+        success: false,
+        timestamp: Date.now()
+      });
+    }
+  }
+  
+  // If we get here, all stores failed
+  const errorResult = {
+    bundleId: validId,
+    success: false,
+    error: 'Failed to extract from any store',
+    attemptedStores: Object.keys(STORES),
+    storeErrors: errors,
+    timestamp: Date.now()
+  };
+  
+  // Cache the combined error result
+  cache.set(`all-stores-${validId}`, errorResult, 1);
+  
+  throw new Error('Failed to extract from any store');
+}
+
+// Enhanced main extraction function with better error handling
+async function getDeveloperInfo(bundleId, searchTerms = null) {
+  try {
+    const validId = validateBundleId(bundleId);
+    const storeType = detectStoreType(validId);
+    
+    logger.debug({ bundleId: validId, storeType, hasSearchTerms: !!searchTerms }, 'Getting developer info');
+    
+    // Try the detected store type first, if known
+    if (storeType !== 'unknown') {
+      try {
+        return await extractFromStore(validId, storeType, searchTerms);
+      } catch (err) {
+        logger.info({ 
+          err: err.message, 
+          bundleId: validId, 
+          detectedStoreType: storeType 
+        }, 'Failed with detected store type, trying all stores');
+        
+        // If the detected store failed, try all stores
+        return await tryAllStores(validId, searchTerms);
+      }
+    } else {
+      // Unknown store type, try all stores
+      return await tryAllStores(validId, searchTerms);
+    }
+  } catch (err) {
+    logger.error({ err, bundleId }, 'Error getting developer info');
     throw err;
   }
 }
@@ -1817,32 +1301,13 @@ app.post('/api/extract-multiple', async (req, res) => {
     
     const normalizedSearchTerms = validateSearchTerms(searchTerms);
     
-    // Define case-sensitive stores
-    const caseSensitiveStores = ['googleplay', 'samsung'];
-    
-    // Filter and deduplicate bundle IDs with case sensitivity awareness
-    const uniqueIdsMap = new Map();
-    
-    bundleIds
-      .filter(id => id && typeof id === 'string')
-      .map(id => id.trim())
-      .filter(Boolean)
-      .forEach(id => {
-        const storeType = detectStoreType(id);
-        
-        // For case-sensitive stores, use lowercase as the key but preserve original case in value
-        const mapKey = caseSensitiveStores.includes(storeType) ? id.toLowerCase() : id;
-        
-        // Only add if we haven't seen this ID yet (case-insensitively for sensitive stores)
-        // or replace if the new ID is from a case-sensitive store but the existing one isn't
-        if (!uniqueIdsMap.has(mapKey) || 
-            (caseSensitiveStores.includes(storeType) && 
-             !caseSensitiveStores.includes(detectStoreType(uniqueIdsMap.get(mapKey))))) {
-          uniqueIdsMap.set(mapKey, id);
-        }
-      });
-    
-    const uniqueIds = Array.from(uniqueIdsMap.values());
+    // Filter and deduplicate bundle IDs
+    const uniqueIds = [...new Set(
+      bundleIds
+        .filter(id => id && typeof id === 'string')
+        .map(id => id.trim())
+        .filter(Boolean)
+    )];
     
     if (uniqueIds.length === 0) {
       return res.status(400).json({
@@ -1881,7 +1346,6 @@ app.post('/api/extract-multiple', async (req, res) => {
             };
           }
           
-          // Use the consolidated function for all stores
           const result = await getDeveloperInfo(bundleId, normalizedSearchTerms);
           completed++;
           return result;
@@ -1991,43 +1455,6 @@ const server = app.listen(PORT, () => {
     environment: process.env.NODE_ENV || 'development',
     nodeVersion: process.version
   }, 'Server started');
-});
-
-// Server event listeners for tracking issues
-server.on('listening', () => {
-  logger.info({
-    startupId,
-    port: PORT,
-    timestamp: new Date().toISOString()
-  }, 'Server successfully started and listening');
-});
-
-server.on('error', (err) => {
-  logger.error({
-    startupId,
-    error: err.message,
-    stack: err.stack,
-    timestamp: new Date().toISOString()
-  }, 'Server encountered an error during startup');
-});
-
-// Global error handlers
-process.on('uncaughtException', (err) => {
-  logger.error({
-    startupId,
-    error: err.message,
-    stack: err.stack,
-    timestamp: new Date().toISOString()
-  }, 'Uncaught exception');
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error({
-    startupId,
-    error: reason instanceof Error ? reason.message : String(reason),
-    stack: reason instanceof Error ? reason.stack : undefined,
-    timestamp: new Date().toISOString()
-  }, 'Unhandled promise rejection');
 });
 
 // Graceful shutdown

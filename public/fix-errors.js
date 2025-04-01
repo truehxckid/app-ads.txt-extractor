@@ -7,9 +7,6 @@
 (function() {
   console.log('Running error fixes script');
   
-  // Global flag to prevent duplicate event handlers
-  window._searchTermHandlersAdded = window._searchTermHandlersAdded || false;
-  
   // Make sure DOM is loaded before accessing elements
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initFixScript);
@@ -121,9 +118,6 @@
    */
   function addNewSearchTerm() {
     try {
-      // Debug statement to track function calls
-      console.log('addNewSearchTerm called from fix-errors.js');
-      
       const container = document.getElementById('searchTermsContainer');
       if (!container) {
         console.error('Search terms container not found');
@@ -151,6 +145,16 @@
         button.setAttribute('aria-label', 'Remove search term');
         button.textContent = '−';
         
+        // Add event listener directly
+        button.addEventListener('click', function() {
+          row.remove();
+          
+          // Ensure at least one search term row exists
+          if (container.children.length === 0) {
+            addNewSearchTerm();
+          }
+        });
+        
         row.appendChild(input);
         row.appendChild(button);
         container.appendChild(row);
@@ -161,6 +165,22 @@
       // Use template if available
       const clone = document.importNode(template.content, true);
       container.appendChild(clone);
+      
+      // Add event listener to the remove button
+      const newRow = container.lastElementChild;
+      if (newRow) {
+        const removeButton = newRow.querySelector('[data-action="remove-term"]');
+        if (removeButton) {
+          removeButton.addEventListener('click', function() {
+            newRow.remove();
+            
+            // Ensure at least one search term row exists
+            if (container.children.length === 0) {
+              addNewSearchTerm();
+            }
+          });
+        }
+      }
     } catch (err) {
       console.error('Error adding search term:', err);
     }
@@ -170,12 +190,6 @@
    * Add safe event handlers for buttons
    */
   function addSafeButtonHandlers() {
-    // Only add handlers if they haven't been added yet
-    if (window._searchTermHandlersAdded) {
-      console.log('Search term handlers already added, skipping');
-      return;
-    }
-    
     // Handle add term button
     const addTermButton = document.querySelector('[data-action="add-term"]');
     if (addTermButton) {
@@ -185,56 +199,41 @@
       const newButton = addTermButton.cloneNode(true);
       addTermButton.parentNode.replaceChild(newButton, addTermButton);
       
-      // Add a single click handler
+      // Add new listener
       newButton.addEventListener('click', function(event) {
-        console.log('Add term button clicked');
         event.preventDefault();
-        
-        // Use a flag to prevent multiple adds on a single click
-        if (!window._addingSearchTerm) {
-          window._addingSearchTerm = true;
-          
-          setTimeout(() => {
-            addNewSearchTerm();
-            window._addingSearchTerm = false;
-          }, 10);
-        }
+        addNewSearchTerm();
       });
+    }
+    
+    // Global click handler for delegation
+    document.addEventListener('click', function(event) {
+      const target = event.target;
+      const action = target.dataset.action || target.closest('[data-action]')?.dataset.action;
       
-      // Mark that handlers have been added
-      window._searchTermHandlersAdded = true;
-    }
-    
-    // Handle document click for delegation with proper flags to prevent multiple handlers
-    document.removeEventListener('click', documentClickHandler); // Remove any existing handler
-    document.addEventListener('click', documentClickHandler);
-  }
-  
-  /**
-   * Document click handler for delegation
-   */
-  function documentClickHandler(event) {
-    const target = event.target;
-    const action = target.dataset.action || target.closest('[data-action]')?.dataset.action;
-    
-    if (!action) return;
-    
-    switch (action) {
-      case 'remove-term':
-        const row = target.closest('.search-term-row');
-        if (row) {
-          row.remove();
-          
-          // Ensure at least one search term exists
-          const container = document.getElementById('searchTermsContainer');
-          if (container && container.children.length === 0) {
-            addNewSearchTerm();
+      if (!action) return;
+      
+      switch (action) {
+        case 'add-term':
+          event.preventDefault();
+          addNewSearchTerm();
+          break;
+        case 'remove-term':
+          const row = target.closest('.search-term-row');
+          if (row) {
+            row.remove();
+            
+            // Ensure at least one search term exists
+            const container = document.getElementById('searchTermsContainer');
+            if (container && container.children.length === 0) {
+              addNewSearchTerm();
+            }
           }
-        }
-        break;
-      case 'close-error':
-        hideErrorDialog();
-        break;
-    }
+          break;
+        case 'close-error':
+          hideErrorDialog();
+          break;
+      }
+    });
   }
 })();
