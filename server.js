@@ -122,80 +122,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 class RedisStore {
   constructor({ client, prefix }) {
     this.client = client;
-    this.prefix = prefix || 'rate-limit:';
+    this.prefix = prefix;
   }
 
-  async increment(key, { windowMs }) {
+  async increment(key) {
     const redisKey = `${this.prefix}${key}`;
-    const ttlSeconds = Math.ceil(windowMs / 1000);
     
     try {
-      const results = await this.client
+      const [count] = await this.client
         .multi()
         .incr(redisKey)
-        .expire(redisKey, ttlSeconds)
+        .expire(redisKey, 60 * 15) // 15 minutes in seconds
         .exec();
         
-      // Extract the incremented value from multi results
-      return {
-        totalHits: results[0][1], // This accesses the value from the INCR operation
-        resetTime: Date.now() + windowMs
-      };
+      return count[1];
     } catch (err) {
       logger.error({ err, key: redisKey }, 'Redis increment error');
-      return { 
-        totalHits: 1, 
-        resetTime: Date.now() + windowMs 
-      }; // Allow request on error
-    }
-  }
-  
-  // Get current hits - required by newer versions of express-rate-limit
-  async get(key) {
-    const redisKey = `${this.prefix}${key}`;
-    try {
-      const hits = await this.client.get(redisKey);
-      return hits !== null ? Number(hits) : 0;
-    } catch (err) {
-      logger.error({ err, key: redisKey }, 'Redis get error');
-      return 0;
-    }
-  }
-  
-  // Decrement the count
-  async decrement(key) {
-    const redisKey = `${this.prefix}${key}`;
-    try {
-      return await this.client.decr(redisKey);
-    } catch (err) {
-      logger.error({ err, key: redisKey }, 'Redis decrement error');
-      return 0;
-    }
-  }
-  
-  // Reset a specific key
-  async resetKey(key) {
-    const redisKey = `${this.prefix}${key}`;
-    try {
-      return await this.client.del(redisKey);
-    } catch (err) {
-      logger.error({ err, key: redisKey }, 'Redis resetKey error');
-      return 0;
-    }
-  }
-  
-  // Reset all rate limit counters
-  async resetAll() {
-    try {
-      // This is a simplified version - in production, you might want a more targeted approach
-      const keys = await this.client.keys(`${this.prefix}*`);
-      if (keys.length) {
-        return await this.client.del(keys);
-      }
-      return 0;
-    } catch (err) {
-      logger.error({ err }, 'Redis resetAll error');
-      return 0;
+      return 1; // Allow request on error
     }
   }
 }

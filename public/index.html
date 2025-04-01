@@ -3,11 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="description" content="Extract developer domains from app bundle IDs across multiple app stores">
   <meta name="theme-color" content="#3498db" id="theme-color-meta">
   <!-- Improved CSP with nonces instead of unsafe-inline where possible -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';">
   <meta http-equiv="X-Content-Type-Options" content="nosniff">
   <meta http-equiv="X-Frame-Options" content="DENY">
   <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
@@ -37,10 +36,10 @@
   <div class="theme-toggle-container">
     <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark mode" aria-pressed="false">
       <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon sun" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 12.728l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 1 1-8 0a4 4 0 0 1 8 0z" />
       </svg>
       <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon moon" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 0 1 8.646 3.646A9.003 9.003 0 0 0 12 21a9.003 9.003 0 0 0 8.354-5.646z" />
       </svg>
     </button>
   </div>
@@ -66,6 +65,7 @@
               placeholder="Enter one bundle ID per line" 
               aria-describedby="bundleIds-help bundleIds-validation"
               aria-label="Bundle IDs input"
+              required
               minlength="2"
             ></textarea>
             <div id="bundleIds-help" class="helper-text">
@@ -126,7 +126,7 @@
               Add Search Term
             </button>
             <small class="helper-text">
-              Search for multiple terms within app-ads.txt files (e.g., "google.com", "direct", specific publisher ID).<br>
+              Search for multiple terms within app-ads.txt files (e.g., "google.com", "direct", "specific publisher ID").<br>
               Results will show matches for any of the terms (OR logic).
             </small>
           </div>
@@ -160,11 +160,11 @@
         <!-- Debug information will be displayed here -->
       </section>
     </main>
-  
-    <footer class="app-footer">
-      <p>Press <kbd>Ctrl+D</kbd> to toggle debug mode | <span class="updated-date">Updated: April 2025</span></p>
-    </footer>
   </div>
+  
+  <footer class="app-footer">
+    <p>Press <kbd>Ctrl+D</kbd> to toggle debug mode | <span class="updated-date">Updated: March 2025</span></p>
+  </footer>
   
   <!-- Templates for dynamic content -->
   <template id="search-term-template">
@@ -207,11 +207,13 @@
     <!-- Notifications will be added here dynamically -->
   </div>
   
-  <!-- Load modular scripts -->
-  <script src="dom-utils.js"></script>
-  <script src="ui-components.js"></script>
-  <script src="validation-module.js"></script>
-  <script src="api-module.js"></script>
-  <script src="app.js"></script>
+  <!-- Load error fixes script first -->
+  <script src="fix-errors.js" defer></script>
+  
+  <!-- Load validation script -->
+  <script src="validation.js" defer></script>
+  
+  <!-- Load main app script -->
+  <script src="app.js" defer></script>
 </body>
 </html>
