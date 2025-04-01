@@ -61,12 +61,6 @@ logger.info({
   ppid: process.ppid
 }, 'Server initializing');
 
-// Initialize Roku proxy module
-rokuProxy.initialize({
-  logger,
-  cache: null  // Will set this after cache initialization
-});
-
 // Custom axios retry mechanism (replaces axios-retry)
 axios.interceptors.response.use(undefined, async (error) => {
   const { config } = error;
@@ -574,6 +568,12 @@ class EnhancedCache {
 
 // Initialize cache
 const cache = new EnhancedCache();
+
+// Initialize Roku proxy module
+rokuProxy.initialize({
+  logger,
+  cache  // Will set this after cache initialization
+});
 
 // Update Roku proxy with cache reference
 rokuProxy.setAppAdsTxtChecker(checkAppAdsTxt);

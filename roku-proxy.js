@@ -35,12 +35,15 @@ function initialize(deps) {
 async function getRokuDeveloperInfo(bundleId, searchTerms = null) {
   logger.info({ bundleId }, 'Using Roku store proxy');
   
-  // Check cache first
-  const cacheKey = `roku-store-${bundleId}`;
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    logger.debug({ bundleId }, 'Returning cached Roku data');
-    return cached;
+  // Check cache first if available
+  let cached = null;
+  if (cache) {
+    const cacheKey = `roku-store-${bundleId}`;
+    cache.set(cacheKey, result, 24);
+    if (cached) {
+      logger.debug({ bundleId }, 'Returning cached Roku data');
+      return cached;
+    }
   }
   
   // Try different approaches in sequence
