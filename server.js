@@ -125,25 +125,44 @@ class RedisStore {
     this.prefix = prefix || 'rate-limit:';
   }
 
-  async increment(key) {
+  async increment(key, { windowMs }) {
     const redisKey = `${this.prefix}${key}`;
+    const ttlSeconds = Math.ceil(windowMs / 1000);
     
     try {
       const results = await this.client
         .multi()
         .incr(redisKey)
-        .expire(redisKey, 60 * 15) // 15 minutes in seconds
+        .expire(redisKey, ttlSeconds)
         .exec();
         
       // Extract the incremented value from multi results
-      return results[0][1]; // This accesses the value from the INCR operation
+      return {
+        totalHits: results[0][1], // This accesses the value from the INCR operation
+        resetTime: Date.now() + windowMs
+      };
     } catch (err) {
       logger.error({ err, key: redisKey }, 'Redis increment error');
-      return 1; // Allow request on error
+      return { 
+        totalHits: 1, 
+        resetTime: Date.now() + windowMs 
+      }; // Allow request on error
     }
   }
   
-  // Implement the required methods for the Store interface
+  // Get current hits - required by newer versions of express-rate-limit
+  async get(key) {
+    const redisKey = `${this.prefix}${key}`;
+    try {
+      const hits = await this.client.get(redisKey);
+      return hits !== null ? Number(hits) : 0;
+    } catch (err) {
+      logger.error({ err, key: redisKey }, 'Redis get error');
+      return 0;
+    }
+  }
+  
+  // Decrement the count
   async decrement(key) {
     const redisKey = `${this.prefix}${key}`;
     try {
@@ -154,6 +173,7 @@ class RedisStore {
     }
   }
   
+  // Reset a specific key
   async resetKey(key) {
     const redisKey = `${this.prefix}${key}`;
     try {
@@ -164,6 +184,7 @@ class RedisStore {
     }
   }
   
+  // Reset all rate limit counters
   async resetAll() {
     try {
       // This is a simplified version - in production, you might want a more targeted approach
