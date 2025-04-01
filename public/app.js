@@ -433,16 +433,16 @@
      * @returns {HTMLElement} Table wrapper element
      */
     generateResultsTable(results, searchTermText) {
-  // Check if results are empty
-  if (!results || results.length === 0) {
-    const emptyStateTemplate = document.getElementById('empty-state-template');
-    if (emptyStateTemplate) {
-      const emptyState = document.importNode(emptyStateTemplate.content, true);
-      const wrapper = Utilities.createElement('div', { className: 'results-wrapper' });
-      wrapper.appendChild(emptyState);
-      return wrapper;
-    }
-  }
+      // Check if results are empty
+      if (!results || results.length === 0) {
+        const emptyStateTemplate = document.getElementById('empty-state-template');
+        if (emptyStateTemplate) {
+          const emptyState = document.importNode(emptyStateTemplate.content, true);
+          const wrapper = Utilities.createElement('div', { className: 'results-wrapper' });
+          wrapper.appendChild(emptyState);
+          return wrapper;
+        }
+      }
       const fragment = document.createDocumentFragment();
       const tableContainer = Utilities.createElement('div', { className: 'results-table-container' });
       const table = Utilities.createElement('table', { className: 'results-table' });
@@ -606,7 +606,7 @@
                     <strong>Stats:</strong> 
                     ${result.appAdsTxt.analyzed.totalLines} lines, 
                     ${result.appAdsTxt.analyzed.validLines} valid entries
-                  </div>
+                </div>
                   <div class="app-ads-content">
                     <pre>${Utilities.escapeHtml(contentText)}</pre>
                   </div>
@@ -819,19 +819,8 @@
       // Global keyboard shortcuts
       document.addEventListener('keydown', this.handleKeydown);
       
-      // Initialize search terms container
-      this.initializeSearchTerms();
-    },
-    
-    /**
-     * Initialize search terms container
-     */
-    initializeSearchTerms() {
-      // Add first search term field if none exist
-      const container = document.getElementById('searchTermsContainer');
-      if (container && container.children.length === 0) {
-        this.addNewSearchTerm();
-      }
+      // Initialize search terms container - Don't handle the "Add Search Term" button here
+      // This is now handled by fix-errors.js
     },
     
     /**
@@ -999,48 +988,6 @@
     },
     
     /**
-     * Handle adding a new search term
-     */
-    handleAddSearchTerm() {
-      EventHandler.addNewSearchTerm();
-    },
-    
-    /**
-     * Add a new search term input
-     */
-    addNewSearchTerm() {
-      const container = document.getElementById('searchTermsContainer');
-      if (!container) return;
-      
-      const template = document.getElementById('search-term-template');
-      if (!template) return;
-      
-      const clone = document.importNode(template.content, true);
-      container.appendChild(clone);
-      
-      // Focus the new input
-      const newInput = container.lastElementChild.querySelector('.search-term-input');
-      if (newInput) newInput.focus();
-    },
-    
-    /**
-     * Handle removing a search term
-     * @param {HTMLElement} button - Remove button
-     */
-    handleRemoveSearchTerm(button) {
-      const row = button.closest('.search-term-row');
-      if (row) {
-        row.remove();
-        
-        // Make sure at least one search term input exists
-        const container = document.getElementById('searchTermsContainer');
-        if (container && container.children.length === 0) {
-          EventHandler.addNewSearchTerm();
-        }
-      }
-    },
-    
-    /**
      * Handle document click events (delegation)
      * @param {Event} event - Click event
      */
@@ -1066,12 +1013,7 @@
         case 'download-csv':
           EventHandler.handleDownloadCSV();
           break;
-        case 'remove-term':
-          EventHandler.handleRemoveSearchTerm(target);
-          break;
-        case 'add-term':
-          EventHandler.handleAddSearchTerm();
-          break;
+        // Removed handlers for add-term and remove-term as they're now in fix-errors.js
       }
     },
     
