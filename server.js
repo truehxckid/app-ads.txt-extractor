@@ -20,9 +20,9 @@ const { Worker } = require('worker_threads');
 // External dependencies
 const express = require('express');
 const axios = require('axios');
-// Fix: Import axios-retry correctly
 const axiosRetry = require('axios-retry'); // This returns the function itself
 const cheerio = require('cheerio');
+const psl = require('psl');
 const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -597,7 +597,7 @@ function detectStoreType(id) {
   }
 }
 
-// Enhanced domain extraction with validation
+// Enhanced domain extraction using PSL library
 function extractDomain(url) {
   try {
     if (!url || typeof url !== 'string') return '';
@@ -606,25 +606,15 @@ function extractDomain(url) {
     const match = url.match(/^(?:https?:\/\/)?([^\/]+)/i);
     if (!match) return '';
     
-    const parts = match[1].split('.');
-    if (parts.length <= 2) return match[1];
+    const hostname = match[1];
+    const parsed = psl.parse(hostname);
     
-    // Handle special TLDs
-    const specialTlds = ['co.uk', 'co.jp', 'co.nz', 'com.au', 'com.br', 'com.tw'];
-    const lastTwo = parts.slice(-2).join('.');
-    
-    // Validate domain format
-    const extractedDomain = specialTlds.includes(lastTwo) ? 
-      parts.slice(-3).join('.') : 
-      parts.slice(-2).join('.');
-    
-    // Basic domain validation
-    if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(extractedDomain)) {
-      logger.warn({ url, extractedDomain }, 'Potentially invalid domain extracted');
-      return '';
+    if (parsed.domain) {
+      return parsed.domain;
     }
     
-    return extractedDomain;
+    // Fallback to hostname if parsing fails
+    return hostname;
   } catch (err) {
     logger.error({ err, url }, 'Error extracting domain');
     return '';
