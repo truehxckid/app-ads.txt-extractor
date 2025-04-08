@@ -575,20 +575,40 @@ function validateSearchTerms(terms) {
   throw new Error('Invalid search terms: must be a string or array of strings');
 }
 
-// Enhanced store type detection
+// Enhanced store type detection with case-insensitive pattern matching
 function detectStoreType(id) {
   try {
     const validId = validateBundleId(id);
     
-    if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) return 'roku';
-    if (/^B[0-9A-Z]{9,10}$/i.test(validId)) return 'amazon';
-    if (/^(id)?\d+$/.test(validId)) return /^\d{4,6}$/.test(validId) ? 'roku' : 'appstore';
-    if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) return 'googleplay';
-    if (/^G\d{10,15}$/i.test(validId)) return 'samsung';
-    // More specific Roku pattern - not starting with 'G' (Samsung pattern)
-    // and either entirely numeric (not covered by earlier patterns) 
-    // or alphanumeric but not meeting other patterns
-    if (/^(?!G\d)[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) return 'roku';
+    // Normalize Amazon IDs to uppercase
+    if (/^[bB][0-9A-Za-z]{9,10}$/i.test(validId)) {
+      return 'amazon';
+    }
+    
+    // Samsung - Case-insensitive check for Galaxy Store IDs
+    if (/^[gG]\d{8,15}$/i.test(validId)) {
+      return 'samsung';
+    }
+    
+    // App Store - iOS apps with numeric IDs 
+    if (/^(id)?\d{8,12}$/i.test(validId)) {
+      return 'appstore';
+    }
+    
+    // Google Play - standard package name format
+    if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(validId)) {
+      return 'googleplay';
+    }
+    
+    // Roku - shorter numeric IDs or specific format
+    if (/^\d{4,6}$/.test(validId) || /^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(validId)) {
+      return 'roku';
+    }
+    
+    // Fallback for other Roku formats - after checking other patterns
+    if (/^[a-zA-Z0-9]{4,}$/.test(validId) && !validId.includes('.')) {
+      return 'roku';
+    }
     
     return 'unknown';
   } catch (err) {
