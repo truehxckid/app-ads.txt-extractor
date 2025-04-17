@@ -66,7 +66,6 @@ const axiosInstance = axios.create({
 /**
  * Manual implementation of retry functionality to replace axios-retry
  * @param {object} axiosInstance - Axios instance
- * @param {object} config - Retry configuration
  */
 function configureRetry(axiosInstance) {
   // Create request interceptor to handle retries
@@ -74,12 +73,29 @@ function configureRetry(axiosInstance) {
     const { config } = error;
     
     // Skip if request was already retried or no config
-    if (!config || config.__retryCount >= config.http.retries) {
+    if (!config) {
       return Promise.reject(error);
     }
     
+    // Ensure we have a valid config.http object
+    if (!config.http) {
+      config.http = {};
+    }
+    
+    // Make sure retries is a valid number
+    const retries = typeof config.http.retries === 'number' && !isNaN(config.http.retries) && config.http.retries > 0
+      ? config.http.retries
+      : (typeof config.http?.retries === 'number' && !isNaN(config.http.retries) && config.http.retries > 0
+         ? config.http.retries
+         : 3); // Default to 3 retries
+         
     // Initialize retry count if not set
     config.__retryCount = config.__retryCount || 0;
+    
+    // Skip if we've already reached max retries
+    if (config.__retryCount >= retries) {
+      return Promise.reject(error);
+    }
     
     // Check if error should be retried
     const shouldRetry = isRetryableError(error);
@@ -91,9 +107,18 @@ function configureRetry(axiosInstance) {
     // Increment retry count
     config.__retryCount += 1;
     
-    // Calculate delay
-    const delay = config.__retryCount * config.http.retryDelay;
-    logger.debug({ retryCount: config.__retryCount, delay }, 'Retrying request');
+    // Calculate delay - make sure it's a valid number
+    const retryDelay = typeof config.http.retryDelay === 'number' && !isNaN(config.http.retryDelay) && config.http.retryDelay > 0
+      ? config.http.retryDelay
+      : 1000; // Default to 1 second
+      
+    const delay = config.__retryCount * retryDelay;
+    
+    logger.debug({ 
+      retryCount: config.__retryCount, 
+      delay,
+      url: config.url
+    }, 'Retrying request');
     
     // Wait for delay
     await new Promise(resolve => setTimeout(resolve, delay));
@@ -154,14 +179,25 @@ axiosInstance.interceptors.response.use(
  */
 axiosInstance.interceptors.request.use(
   (config) => {
-    // Add retry configuration to each request
-    config.http = config.http || {};
-    config.http.retries = config.http?.retries || config.http.retries;
-    config.http.retryDelay = config.http?.retryDelay || config.http.retryDelay;
+    // Make sure config.http exists
+    if (!config.http) {
+      config.http = {};
+    }
     
+    // Ensure http config properties are valid
+    config.http.retries = typeof config.http.retries === 'number' && !isNaN(config.http.retries)
+      ? config.http.retries
+      : (typeof config.retries === 'number' ? config.retries : 3);
+      
+    config.http.retryDelay = typeof config.http.retryDelay === 'number' && !isNaN(config.http.retryDelay)
+      ? config.http.retryDelay
+      : 1000;
+    
+    // Set User-Agent if rotation is enabled
     if (config.headers && config.http?.userAgentRotation !== false) {
       config.headers['User-Agent'] = getRandomUserAgent();
     }
+    
     return config;
   },
   (error) => {
