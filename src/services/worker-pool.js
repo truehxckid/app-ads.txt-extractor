@@ -40,15 +40,16 @@ class WorkerPool {
     const defaultTaskTimeout = 30000; // 30 seconds
     const defaultIdleTimeout = 60000; // 60 seconds
     
-    this.taskTimeout = typeof options.taskTimeout === 'number' && !isNaN(options.taskTimeout) 
+    // Properly validate and set timeout values
+    this.taskTimeout = typeof options.taskTimeout === 'number' && !isNaN(options.taskTimeout) && options.taskTimeout > 0
       ? options.taskTimeout 
-      : (typeof config.workers.taskTimeout === 'number' && !isNaN(config.workers.taskTimeout)
+      : (typeof config.workers.taskTimeout === 'number' && !isNaN(config.workers.taskTimeout) && config.workers.taskTimeout > 0
          ? config.workers.taskTimeout 
          : defaultTaskTimeout);
          
-    this.idleTimeout = typeof options.idleTimeout === 'number' && !isNaN(options.idleTimeout)
+    this.idleTimeout = typeof options.idleTimeout === 'number' && !isNaN(options.idleTimeout) && options.idleTimeout > 0
       ? options.idleTimeout
-      : (typeof config.workers.idleTimeout === 'number' && !isNaN(config.workers.idleTimeout)
+      : (typeof config.workers.idleTimeout === 'number' && !isNaN(config.workers.idleTimeout) && config.workers.idleTimeout > 0
          ? config.workers.idleTimeout
          : defaultIdleTimeout);
     
@@ -60,6 +61,12 @@ class WorkerPool {
     this.errors = 0;
     this.lastTaskTime = 0;
     
+    // Add logging to debug timeout values
+    logger.info({
+      taskTimeout: this.taskTimeout,
+      idleTimeout: this.idleTimeout
+    }, 'Worker pool timeouts initialized');
+    
     // Initialize minimum workers
     this._ensureMinimumWorkers();
     
@@ -70,7 +77,7 @@ class WorkerPool {
       script: this.filename,
       minWorkers: this.minWorkers,
       maxWorkers: this.maxWorkers,
-      taskTimeout: this.taskTimeout, // Log the timeout value for debugging
+      taskTimeout: this.taskTimeout,
       idleTimeout: this.idleTimeout
     }, 'Worker pool initialized');
   }
@@ -167,24 +174,26 @@ class WorkerPool {
         setImmediate(() => this._processQueue());
       };
       
-      // FIX: Ensure we have a valid timeout value
-      // If this.taskTimeout is not a valid number, use a safe default of 30 seconds
-      const timeoutMs = typeof this.taskTimeout === 'number' && !isNaN(this.taskTimeout) && this.taskTimeout > 0
-        ? this.taskTimeout
-        : 30000; // Safe default: 30 seconds
+      // Explicitly log the timeout value for debugging
+      logger.debug({
+        workerId,
+        taskId: task.id,
+        taskTimeout: this.taskTimeout
+      }, 'Setting up worker timeout');
       
+      // Use this.taskTimeout directly - we've already validated it in the constructor
       timeoutId = setTimeout(() => {
         logger.warn({
           workerId,
           taskId: task.id,
-          timeout: timeoutMs
+          timeout: this.taskTimeout
         }, 'Worker timeout, terminating');
         
         worker.terminate();
         task.reject(new Error('Worker processing timed out'));
         this.errors++;
         cleanup();
-      }, timeoutMs);
+      }, this.taskTimeout);
       
       worker.on('message', (result) => {
         this.totalProcessed++;
@@ -274,17 +283,13 @@ class WorkerPool {
     for (const [workerId, stats] of this.workerStats.entries()) {
       const duration = now - stats.startTime;
       
-      // FIX: Ensure we have a valid timeout value for comparison
-      const timeoutCheck = typeof this.taskTimeout === 'number' && !isNaN(this.taskTimeout) && this.taskTimeout > 0
-        ? this.taskTimeout * 1.5
-        : 45000; // Safe default: 45 seconds
-        
-      if (duration > timeoutCheck) {
+      // Using taskTimeout directly since we've already validated it
+      if (duration > this.taskTimeout * 1.5) {
         logger.warn({
           workerId,
           taskId: stats.taskId,
           duration: `${Math.round(duration / 1000)}s`,
-          timeout: `${Math.round(timeoutCheck / 1000)}s`
+          timeout: `${Math.round(this.taskTimeout / 1000)}s`
         }, 'Worker running longer than expected');
       }
     }
@@ -293,12 +298,8 @@ class WorkerPool {
     if (this.activeWorkers === 0 && this.queue.length === 0) {
       const idleTime = now - this.lastTaskTime;
       
-      // FIX: Ensure we have a valid idle timeout value for comparison
-      const idleTimeoutCheck = typeof this.idleTimeout === 'number' && !isNaN(this.idleTimeout) && this.idleTimeout > 0
-        ? this.idleTimeout
-        : 60000; // Safe default: 60 seconds
-        
-      if (idleTime > idleTimeoutCheck && this.workerStats.size > this.minWorkers) {
+      // Using idleTimeout directly since we've already validated it
+      if (idleTime > this.idleTimeout && this.workerStats.size > this.minWorkers) {
         logger.debug({
           currentWorkers: this.workerStats.size,
           minWorkers: this.minWorkers,
@@ -319,7 +320,9 @@ class WorkerPool {
       totalProcessed: this.totalProcessed,
       errors: this.errors,
       maxWorkers: this.maxWorkers,
-      minWorkers: this.minWorkers
+      minWorkers: this.minWorkers,
+      taskTimeout: this.taskTimeout,
+      idleTimeout: this.idleTimeout
     };
   }
   
