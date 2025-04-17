@@ -35,8 +35,9 @@ class WorkerPool {
     this.filename = filename;
     this.maxWorkers = options.maxWorkers || config.workers.maxWorkers;
     this.minWorkers = options.minWorkers || config.workers.minWorkers;
-    this.taskTimeout = options.taskTimeout || config.workers.taskTimeout;
-    this.idleTimeout = options.idleTimeout || config.workers.idleTimeout;
+    // Fix timeout issue - ensure taskTimeout is always a valid number
+    this.taskTimeout = options.taskTimeout || config.workers.taskTimeout || 30000; // Default to 30 seconds
+    this.idleTimeout = options.idleTimeout || config.workers.idleTimeout || 60000; // Default to 1 minute
     
     this.workers = [];
     this.queue = [];
@@ -55,7 +56,8 @@ class WorkerPool {
     logger.info({
       script: this.filename,
       minWorkers: this.minWorkers,
-      maxWorkers: this.maxWorkers
+      maxWorkers: this.maxWorkers,
+      taskTimeout: this.taskTimeout // Log the timeout value for debugging
     }, 'Worker pool initialized');
   }
   
@@ -151,19 +153,21 @@ class WorkerPool {
         setImmediate(() => this._processQueue());
       };
       
-      // Set timeout to prevent hanging workers
+      // Set timeout to prevent hanging workers - FIX: Ensure timeout value is valid
+      const timeoutMs = Math.max(1000, parseInt(this.taskTimeout, 10) || 30000);
+      
       timeoutId = setTimeout(() => {
         logger.warn({
           workerId,
           taskId: task.id,
-          timeout: this.taskTimeout
+          timeout: timeoutMs
         }, 'Worker timeout, terminating');
         
         worker.terminate();
         task.reject(new Error('Worker processing timed out'));
         this.errors++;
         cleanup();
-      }, this.taskTimeout);
+      }, timeoutMs);
       
       worker.on('message', (result) => {
         this.totalProcessed++;
@@ -253,7 +257,9 @@ class WorkerPool {
     for (const [workerId, stats] of this.workerStats.entries()) {
       const duration = now - stats.startTime;
       
-      if (duration > this.taskTimeout * 1.5) {
+      // Fix: Ensure we're comparing numbers
+      const timeoutCheck = this.taskTimeout * 1.5;
+      if (duration > timeoutCheck) {
         logger.warn({
           workerId,
           taskId: stats.taskId,
@@ -267,7 +273,9 @@ class WorkerPool {
     if (this.activeWorkers === 0 && this.queue.length === 0) {
       const idleTime = now - this.lastTaskTime;
       
-      if (idleTime > this.idleTimeout && this.workerStats.size > this.minWorkers) {
+      // Fix: Ensure we're comparing numbers
+      const idleTimeoutCheck = Math.max(60000, this.idleTimeout || 60000);
+      if (idleTime > idleTimeoutCheck && this.workerStats.size > this.minWorkers) {
         logger.debug({
           currentWorkers: this.workerStats.size,
           minWorkers: this.minWorkers,
