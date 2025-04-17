@@ -17,9 +17,9 @@ const config = require('../config');
 
 const logger = getLogger('app-ads-checker');
 
-// Initialize worker pool for app-ads.txt processing
+// Initialize worker pool for app-ads.txt processing - Fix worker file path to include ".worker"
 const appAdsWorkerPool = new WorkerPool(
-  path.join(__dirname, '../workers/app-ads-parser.js'),
+  path.join(__dirname, '../workers/app-ads-parser.worker.js'),
   {
     maxWorkers: config.workers.maxWorkers,
     minWorkers: 1
@@ -150,7 +150,15 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         searchResults = workerResult.searchResults;
       } catch (workerErr) {
         logger.error({ domain, error: workerErr.message }, 'Worker processing error');
-        throw workerErr;
+        
+        // Fallback to synchronous processing if worker fails
+        logger.debug({ domain }, 'Falling back to synchronous processing after worker error');
+        const lines = content.split(/\r\n|\n|\r/);
+        analyzed = analyzeAppAdsTxt(lines);
+        
+        if (normalizedSearchTerms?.length > 0) {
+          searchResults = processSearchTerms(lines, normalizedSearchTerms);
+        }
       }
     } else {
       // Process smaller files synchronously
