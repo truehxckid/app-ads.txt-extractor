@@ -1,0 +1,79 @@
+/**
+ * App-Ads.txt Extractor Server
+ * Entry point for the application
+ */
+
+'use strict';
+
+const app = require('./src/app');
+const config = require('./src/config');
+const { getLogger } = require('./src/utils/logger');
+const redis = require('./src/services/redis');
+const { shutdown: shutdownAppAdsChecker } = require('./src/core/app-ads-checker');
+
+const logger = getLogger('server');
+
+// Start the server
+const server = app.listen(config.server.port, config.server.host, () => {
+  logger.info({ 
+    port: config.server.port, 
+    host: config.server.host,
+    environment: config.server.env,
+    nodeVersion: process.version
+  }, 'Server started');
+});
+
+// Graceful shutdown
+function gracefulShutdown() {
+  logger.info('Received shutdown signal, closing server gracefully');
+  
+  server.close(() => {
+    logger.info('HTTP server closed');
+    
+    // Shutdown app-ads checker
+    shutdownAppAdsChecker();
+    
+    // Close Redis connection if available
+    if (redis.isConnected()) {
+      redis.quit().then(() => {
+        logger.info('Redis connection closed');
+        process.exit(0);
+      }).catch(err => {
+        logger.error({ error: err.message }, 'Error closing Redis connection');
+        process.exit(1);
+      });
+    } else {
+      process.exit(0);
+    }
+  });
+  
+  // Force shutdown after 10 seconds if server hasn't closed
+  setTimeout(() => {
+    logger.error('Server did not close in time, forcing shutdown');
+    process.exit(1);
+  }, 10000);
+}
+
+// Register signal handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  logger.error({ error: err.message, stack: err.stack }, 'Uncaught exception');
+  
+  // Exit process on uncaught exceptions for safety
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ 
+    reason: reason instanceof Error ? reason.message : reason,
+    stack: reason instanceof Error ? reason.stack : undefined
+  }, 'Unhandled promise rejection');
+});
+
+module.exports = server; // For testing
