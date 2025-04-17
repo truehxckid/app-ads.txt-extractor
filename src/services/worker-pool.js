@@ -35,9 +35,22 @@ class WorkerPool {
     this.filename = filename;
     this.maxWorkers = options.maxWorkers || config.workers.maxWorkers;
     this.minWorkers = options.minWorkers || config.workers.minWorkers;
-    // Fix timeout issue - ensure taskTimeout is always a valid number
-    this.taskTimeout = options.taskTimeout || config.workers.taskTimeout || 30000; // Default to 30 seconds
-    this.idleTimeout = options.idleTimeout || config.workers.idleTimeout || 60000; // Default to 1 minute
+    
+    // FIX: Ensure timeout values are properly initialized to valid numbers
+    const defaultTaskTimeout = 30000; // 30 seconds
+    const defaultIdleTimeout = 60000; // 60 seconds
+    
+    this.taskTimeout = typeof options.taskTimeout === 'number' && !isNaN(options.taskTimeout) 
+      ? options.taskTimeout 
+      : (typeof config.workers.taskTimeout === 'number' && !isNaN(config.workers.taskTimeout)
+         ? config.workers.taskTimeout 
+         : defaultTaskTimeout);
+         
+    this.idleTimeout = typeof options.idleTimeout === 'number' && !isNaN(options.idleTimeout)
+      ? options.idleTimeout
+      : (typeof config.workers.idleTimeout === 'number' && !isNaN(config.workers.idleTimeout)
+         ? config.workers.idleTimeout
+         : defaultIdleTimeout);
     
     this.workers = [];
     this.queue = [];
@@ -57,7 +70,8 @@ class WorkerPool {
       script: this.filename,
       minWorkers: this.minWorkers,
       maxWorkers: this.maxWorkers,
-      taskTimeout: this.taskTimeout // Log the timeout value for debugging
+      taskTimeout: this.taskTimeout, // Log the timeout value for debugging
+      idleTimeout: this.idleTimeout
     }, 'Worker pool initialized');
   }
   
@@ -153,8 +167,11 @@ class WorkerPool {
         setImmediate(() => this._processQueue());
       };
       
-      // Set timeout to prevent hanging workers - FIX: Ensure timeout value is valid
-      const timeoutMs = Math.max(1000, parseInt(this.taskTimeout, 10) || 30000);
+      // FIX: Ensure we have a valid timeout value
+      // If this.taskTimeout is not a valid number, use a safe default of 30 seconds
+      const timeoutMs = typeof this.taskTimeout === 'number' && !isNaN(this.taskTimeout) && this.taskTimeout > 0
+        ? this.taskTimeout
+        : 30000; // Safe default: 30 seconds
       
       timeoutId = setTimeout(() => {
         logger.warn({
@@ -257,14 +274,17 @@ class WorkerPool {
     for (const [workerId, stats] of this.workerStats.entries()) {
       const duration = now - stats.startTime;
       
-      // Fix: Ensure we're comparing numbers
-      const timeoutCheck = this.taskTimeout * 1.5;
+      // FIX: Ensure we have a valid timeout value for comparison
+      const timeoutCheck = typeof this.taskTimeout === 'number' && !isNaN(this.taskTimeout) && this.taskTimeout > 0
+        ? this.taskTimeout * 1.5
+        : 45000; // Safe default: 45 seconds
+        
       if (duration > timeoutCheck) {
         logger.warn({
           workerId,
           taskId: stats.taskId,
           duration: `${Math.round(duration / 1000)}s`,
-          timeout: `${Math.round(this.taskTimeout / 1000)}s`
+          timeout: `${Math.round(timeoutCheck / 1000)}s`
         }, 'Worker running longer than expected');
       }
     }
@@ -273,8 +293,11 @@ class WorkerPool {
     if (this.activeWorkers === 0 && this.queue.length === 0) {
       const idleTime = now - this.lastTaskTime;
       
-      // Fix: Ensure we're comparing numbers
-      const idleTimeoutCheck = Math.max(60000, this.idleTimeout || 60000);
+      // FIX: Ensure we have a valid idle timeout value for comparison
+      const idleTimeoutCheck = typeof this.idleTimeout === 'number' && !isNaN(this.idleTimeout) && this.idleTimeout > 0
+        ? this.idleTimeout
+        : 60000; // Safe default: 60 seconds
+        
       if (idleTime > idleTimeoutCheck && this.workerStats.size > this.minWorkers) {
         logger.debug({
           currentWorkers: this.workerStats.size,
