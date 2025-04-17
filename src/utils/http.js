@@ -8,7 +8,6 @@
 const http = require('http');
 const https = require('https');
 const axios = require('axios');
-const axiosRetry = require('axios-retry');
 const config = require('../config');
 const { getLogger } = require('./logger');
 
@@ -65,36 +64,67 @@ const axiosInstance = axios.create({
 });
 
 /**
- * Configure axios-retry
+ * Manual implementation of retry functionality to replace axios-retry
+ * @param {object} axiosInstance - Axios instance
+ * @param {object} config - Retry configuration
  */
-axiosRetry(axiosInstance, {
-  retries: config.http.retries,
-  retryDelay: (retryCount) => {
-    const delay = retryCount * config.http.retryDelay;
-    logger.debug({ retryCount, delay }, 'Retrying request');
-    return delay;
-  },
-  retryCondition: (error) => {
-    // Retry on network errors, 5xx responses, and some 4xx errors
-    const shouldRetry = 
-      axiosRetry.isNetworkOrIdempotentRequestError(error) || 
-      (error.response && (
-        (error.response.status >= 500 && error.response.status <= 599) ||
-        error.response.status === 429 ||
-        error.response.status === 408
-      ));
+function configureRetry(axiosInstance) {
+  // Create request interceptor to handle retries
+  axiosInstance.interceptors.response.use(undefined, async (error) => {
+    const { config } = error;
     
-    if (shouldRetry) {
-      logger.debug({
-        url: error.config?.url,
-        status: error.response?.status,
-        message: error.message
-      }, 'Retry condition met');
+    // Skip if request was already retried or no config
+    if (!config || config.__retryCount >= config.http.retries) {
+      return Promise.reject(error);
     }
     
-    return shouldRetry;
+    // Initialize retry count if not set
+    config.__retryCount = config.__retryCount || 0;
+    
+    // Check if error should be retried
+    const shouldRetry = isRetryableError(error);
+    
+    if (!shouldRetry) {
+      return Promise.reject(error);
+    }
+    
+    // Increment retry count
+    config.__retryCount += 1;
+    
+    // Calculate delay
+    const delay = config.__retryCount * config.http.retryDelay;
+    logger.debug({ retryCount: config.__retryCount, delay }, 'Retrying request');
+    
+    // Wait for delay
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Retry request
+    return axiosInstance(config);
+  });
+}
+
+/**
+ * Determine if error is retryable
+ * @param {Error} error - Axios error
+ * @returns {boolean} - Whether error is retryable
+ */
+function isRetryableError(error) {
+  // Network errors are retryable
+  if (!error.response) {
+    return true;
   }
-});
+  
+  // 5xx and some 4xx errors are retryable
+  const status = error.response.status;
+  return (
+    (status >= 500 && status <= 599) ||
+    status === 429 ||
+    status === 408
+  );
+}
+
+// Configure retry functionality
+configureRetry(axiosInstance);
 
 /**
  * Add response and error interceptors for logging
@@ -124,6 +154,11 @@ axiosInstance.interceptors.response.use(
  */
 axiosInstance.interceptors.request.use(
   (config) => {
+    // Add retry configuration to each request
+    config.http = config.http || {};
+    config.http.retries = config.http?.retries || config.http.retries;
+    config.http.retryDelay = config.http?.retryDelay || config.http.retryDelay;
+    
     if (config.headers && config.http?.userAgentRotation !== false) {
       config.headers['User-Agent'] = getRandomUserAgent();
     }
