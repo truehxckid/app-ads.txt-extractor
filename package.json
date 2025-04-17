@@ -4,7 +4,7 @@
   "description": "Extract developer domains from app bundle IDs across multiple app stores with enhanced app-ads.txt analysis",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node --trace-warnings server.js",
     "dev": "nodemon server.js",
     "lint": "eslint .",
     "test": "jest"
