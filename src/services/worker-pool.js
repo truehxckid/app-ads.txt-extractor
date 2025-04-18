@@ -1,6 +1,6 @@
 /**
  * Worker Pool service for App-Ads.txt Extractor with enhanced reliability
- * Manages worker threads for CPU-intensive tasks
+ * Manages worker threads for CPU-intensive tasks with memory optimizations
  */
 
 'use strict';
@@ -9,6 +9,7 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const config = require('../config');
 const { getLogger } = require('../utils/logger');
+const memoryManager = require('./memory-manager');
 
 const logger = getLogger('worker-pool');
 
@@ -23,7 +24,7 @@ const Priority = {
 };
 
 /**
- * Enhanced Worker Pool with task prioritization and health monitoring
+ * Enhanced Worker Pool with task prioritization, health monitoring, and memory management
  */
 class WorkerPool {
   /**
@@ -53,6 +54,13 @@ class WorkerPool {
          ? config.workers.idleTimeout
          : defaultIdleTimeout);
     
+    // Memory limits for worker threads 
+    this.memoryLimits = {
+      maxRssMb: options.maxRssMb || config.workers.maxRssMb || 512,
+      maxHeapMb: options.maxHeapMb || config.workers.maxHeapMb || 384,
+      warningThresholdPercent: options.warningThresholdPercent || 80
+    };
+      
     this.debugMode = options.debug || false;
     this.workers = new Map(); // Map of worker objects by ID
     this.queue = [];
@@ -62,12 +70,13 @@ class WorkerPool {
     this.errors = 0;
     this.lastTaskTime = 0;
     
-    // Add logging to debug timeout values
+    // Add logging to debug memory limits
     logger.info({
       taskTimeout: this.taskTimeout,
       idleTimeout: this.idleTimeout,
+      memoryLimits: this.memoryLimits,
       debugMode: this.debugMode
-    }, 'Worker pool timeouts initialized');
+    }, 'Worker pool initialized with memory limits');
     
     // Initialize minimum workers
     this._ensureMinimumWorkers();
@@ -80,7 +89,8 @@ class WorkerPool {
       minWorkers: this.minWorkers,
       maxWorkers: this.maxWorkers,
       taskTimeout: this.taskTimeout,
-      idleTimeout: this.idleTimeout
+      idleTimeout: this.idleTimeout,
+      memoryLimits: this.memoryLimits
     }, 'Worker pool initialized');
   }
   
@@ -119,11 +129,31 @@ class WorkerPool {
         dataSizeEstimate = workerData.content.length;
       }
       
+      // Estimate memory requirement for this task
+      const estimatedMemoryMb = memoryManager.estimateMemoryRequirement(
+        dataSizeEstimate, 
+        'string-processing'
+      );
+      
+      // Check if we have enough memory for this task
+      if (estimatedMemoryMb > this.memoryLimits.maxHeapMb * 0.9) {
+        logger.warn({
+          taskId: task.id,
+          dataSizeKB: Math.round(dataSizeEstimate / 1024),
+          estimatedMemoryMb,
+          maxHeapMb: this.memoryLimits.maxHeapMb
+        }, 'Task exceeds worker memory limits');
+        
+        reject(new Error('Task data size exceeds worker memory limits'));
+        return;
+      }
+      
       logger.debug({
         taskId: task.id,
         queueLength: this.queue.length,
         priority,
-        dataSizeKB: Math.round(dataSizeEstimate / 1024)
+        dataSizeKB: Math.round(dataSizeEstimate / 1024),
+        estimatedMemoryMb
       }, 'Task queued');
       
       // Insert into queue based on priority
@@ -173,12 +203,12 @@ class WorkerPool {
       // Prepare worker environment variables and resource limits
       const workerOptions = {
         workerData: task.workerData,
-        // ONLY available in newer versions of Node.js:
-        // resourceLimits: {
-        //   maxOldGenerationSizeMb: 512, // Memory limit
-        //   maxYoungGenerationSizeMb: 128,
-        //   codeRangeSizeMb: 64
-        // }
+        // Resource limits (Node.js v14+ feature)
+        resourceLimits: {
+          maxOldGenerationSizeMb: this.memoryLimits.maxHeapMb,
+          maxYoungGenerationSizeMb: Math.floor(this.memoryLimits.maxHeapMb * 0.25),
+          codeRangeSizeMb: Math.floor(this.memoryLimits.maxHeapMb * 0.1)
+        }
       };
       
       // Create a new worker thread
@@ -281,6 +311,37 @@ class WorkerPool {
           const stats = this.workerStats.get(workerId);
           if (stats) {
             stats.lastProgressTime = Date.now();
+            
+            // Check for memory warnings
+            if (result.memoryWarning) {
+              logger.warn({
+                workerId,
+                taskId: task.id,
+                memoryUsage: result.memoryUsage,
+                warningLevel: result.warningLevel,
+                memoryLimits: this.memoryLimits
+              }, 'Worker memory warning');
+              
+              // If critical memory level, terminate worker
+              if (result.warningLevel === 'critical') {
+                logger.error({
+                  workerId,
+                  taskId: task.id,
+                  memoryUsage: result.memoryUsage,
+                  memoryLimits: this.memoryLimits
+                }, 'Worker exceeded critical memory limit, terminating');
+                
+                try {
+                  worker.terminate();
+                } catch (termErr) {
+                  // Ignore termination errors
+                }
+                
+                task.reject(new Error('Worker exceeded memory limits'));
+                cleanup();
+                return;
+              }
+            }
           }
           
           // Save debug messages
@@ -429,100 +490,99 @@ class WorkerPool {
       });
       
       // Handle worker exit with improved reliability
-      // Handle worker exit with improved reliability
-worker.on('exit', (code) => {
-  // Clear timeout since worker has exited
-  if (timeoutId) {
-    clearTimeout(timeoutId);
-    timeoutId = null;
-  }
-  
-  // Check if the worker exited with a non-zero code
-  if (code !== 0) {
-    // Only count as error if we haven't already handled it and result wasn't already sent
-    const workerSuccessfullyCompleted = task.debug.some(d => 
-      d.message === 'Worker completed successfully' || 
-      d.message === 'Completed app-ads.txt analysis'
-    );
-    
-    // If worker completed its task successfully before exiting with error, don't count as error
-    if (!exitHandled && !workerSuccessfullyCompleted) {
-      this.errors++;
-      
-      // Get the most recent debug messages to include in the error
-      const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
-      
-      logger.error({
-        workerId,
-        taskId: task.id,
-        exitCode: code,
-        recentDebugMessages: recentDebug,
-        totalDebugCount: task.debug.length
-      }, 'Worker exited with non-zero code');
-      
-      // Only reject if not already handled
-      task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
-      cleanup(true);
-    } else if (workerSuccessfullyCompleted && !exitHandled) {
-      // Worker did complete successfully despite the exit code
-      logger.warn({
-        workerId,
-        taskId: task.id,
-        exitCode: code,
-        message: 'Worker exited with non-zero code but had completed its task successfully'
+      worker.on('exit', (code) => {
+        // Clear timeout since worker has exited
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        // Check if the worker exited with a non-zero code
+        if (code !== 0) {
+          // Only count as error if we haven't already handled it and result wasn't already sent
+          const workerSuccessfullyCompleted = task.debug.some(d => 
+            d.message === 'Worker completed successfully' || 
+            d.message === 'Completed app-ads.txt analysis'
+          );
+          
+          // If worker completed its task successfully before exiting with error, don't count as error
+          if (!exitHandled && !workerSuccessfullyCompleted) {
+            this.errors++;
+            
+            // Get the most recent debug messages to include in the error
+            const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
+            
+            logger.error({
+              workerId,
+              taskId: task.id,
+              exitCode: code,
+              recentDebugMessages: recentDebug,
+              totalDebugCount: task.debug.length
+            }, 'Worker exited with non-zero code');
+            
+            // Only reject if not already handled
+            task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
+            cleanup(true);
+          } else if (workerSuccessfullyCompleted && !exitHandled) {
+            // Worker did complete successfully despite the exit code
+            logger.warn({
+              workerId,
+              taskId: task.id,
+              exitCode: code,
+              message: 'Worker exited with non-zero code but had completed its task successfully'
+            });
+            
+            // Look for any final result in debug messages
+            const resultMsg = task.debug.find(d => !d.debug && d.success === true);
+            
+            if (resultMsg) {
+              // We have a successful result despite the exit code
+              task.resolve(resultMsg);
+            } else {
+              // Create minimal result based on debug logs
+              const result = {
+                success: true,
+                analyzed: { note: 'Reconstructed from logs after worker success' },
+                searchResults: null
+              };
+              task.resolve(result);
+            }
+            
+            cleanup(true);
+          }
+        } else {
+          // Normal exit case (success)
+          logger.debug({
+            workerId,
+            taskId: task.id,
+            exitCode: code
+          }, 'Worker exited normally');
+          
+          // If we haven't already handled this exit (via message), do it now
+          if (!exitHandled) {
+            // Assume this was a successful exit, but we missed the message
+            logger.debug({
+              workerId,
+              taskId: task.id,
+            }, 'Worker exited successfully before sending final result');
+            
+            // If we have logs indicating successful processing, create a minimal result
+            if (task.debug.some(d => d.message === 'Completed app-ads.txt analysis')) {
+              const result = {
+                success: true,
+                analyzed: { note: 'Reconstructed from logs after worker success' },
+                searchResults: null
+              };
+              task.resolve(result);
+            } else {
+              // Otherwise we can't be sure what happened
+              task.reject(new Error('Worker exited without sending complete results'));
+            }
+            
+            cleanup(true);
+          }
+        }
       });
-      
-      // Look for any final result in debug messages
-      const resultMsg = task.debug.find(d => !d.debug && d.success === true);
-      
-      if (resultMsg) {
-        // We have a successful result despite the exit code
-        task.resolve(resultMsg);
-      } else {
-        // Create minimal result based on debug logs
-        const result = {
-          success: true,
-          analyzed: { note: 'Reconstructed from logs after worker success' },
-          searchResults: null
-        };
-        task.resolve(result);
-      }
-      
-      cleanup(true);
-    }
-  } else {
-    // Normal exit case (success)
-    logger.debug({
-      workerId,
-      taskId: task.id,
-      exitCode: code
-    }, 'Worker exited normally');
-    
-    // If we haven't already handled this exit (via message), do it now
-    if (!exitHandled) {
-      // Assume this was a successful exit, but we missed the message
-      logger.debug({
-        workerId,
-        taskId: task.id,
-      }, 'Worker exited successfully before sending final result');
-      
-      // If we have logs indicating successful processing, create a minimal result
-      if (task.debug.some(d => d.message === 'Completed app-ads.txt analysis')) {
-        const result = {
-          success: true,
-          analyzed: { note: 'Reconstructed from logs after worker success' },
-          searchResults: null
-        };
-        task.resolve(result);
-      } else {
-        // Otherwise we can't be sure what happened
-        task.reject(new Error('Worker exited without sending complete results'));
-      }
-      
-      cleanup(true);
-    }
-  }
-});
     } catch (err) {
       this.activeWorkers--;
       this.errors++;
@@ -558,7 +618,7 @@ worker.on('exit', (code) => {
   }
   
   /**
-   * Monitor worker health
+   * Monitor worker health with enhanced memory monitoring
    * @private
    */
   _monitorWorkerHealth() {
@@ -581,7 +641,11 @@ worker.on('exit', (code) => {
         // Try to send a message to the worker to check if it's responsive
         try {
           if (stats.worker && typeof stats.worker.postMessage === 'function') {
-            stats.worker.postMessage({ type: 'health_check' });
+            // Request memory stats as part of health check
+            stats.worker.postMessage({ 
+              type: 'health_check',
+              requestMemoryStats: true 
+            });
           }
         } catch (err) {
           logger.debug({
@@ -606,19 +670,79 @@ worker.on('exit', (code) => {
       }
     }
     
-    // Log system memory stats periodically
+    // Enhanced system memory monitoring
     try {
       const memUsage = process.memoryUsage();
-      logger.debug({
-        rss: Math.round(memUsage.rss / (1024 * 1024)) + ' MB',
-        heapTotal: Math.round(memUsage.heapTotal / (1024 * 1024)) + ' MB',
-        heapUsed: Math.round(memUsage.heapUsed / (1024 * 1024)) + ' MB',
-        external: Math.round(memUsage.external / (1024 * 1024)) + ' MB',
-        activeWorkers: this.activeWorkers,
-        queueLength: this.queue.length
-      }, 'Worker pool memory usage');
+      const memoryCheck = {
+        rss: Math.round(memUsage.rss / (1024 * 1024)),
+        heapTotal: Math.round(memUsage.heapTotal / (1024 * 1024)),
+        heapUsed: Math.round(memUsage.heapUsed / (1024 * 1024)),
+        external: Math.round(memUsage.external / (1024 * 1024))
+      };
+      
+      // Log memory if it's approaching limits
+      const warningThreshold = this.memoryLimits.maxRssMb * (this.memoryLimits.warningThresholdPercent / 100);
+      
+      if (memoryCheck.rss > warningThreshold) {
+        logger.warn({
+          memoryUsage: memoryCheck,
+          memoryLimits: this.memoryLimits,
+          activeWorkers: this.activeWorkers,
+          queueLength: this.queue.length
+        }, 'Main process approaching memory limits');
+        
+        // If we're getting close to the limit, try to free up memory
+        if (memoryCheck.rss > this.memoryLimits.maxRssMb * 0.9) {
+          global.gc && global.gc(); // Trigger garbage collection if available
+          
+          // Reduce worker count if we're critically low on memory
+          if (this.activeWorkers > 1) {
+            logger.warn({
+              memoryUsage: memoryCheck,
+              activeWorkers: this.activeWorkers
+            }, 'Reducing worker count due to memory pressure');
+            
+            // Find the youngest worker to terminate
+            let youngestWorker = null;
+            let youngestTime = 0;
+            
+            for (const [workerId, stats] of this.workerStats.entries()) {
+              if (stats.startTime > youngestTime) {
+                youngestTime = stats.startTime;
+                youngestWorker = { id: workerId, worker: stats.worker };
+              }
+            }
+            
+            // Terminate the youngest worker
+            if (youngestWorker && youngestWorker.worker) {
+              try {
+                youngestWorker.worker.terminate();
+                logger.info({
+                  workerId: youngestWorker.id,
+                  reason: 'memory pressure'
+                }, 'Terminated worker to free memory');
+              } catch (err) {
+                logger.error({
+                  workerId: youngestWorker.id,
+                  error: err.message
+                }, 'Failed to terminate worker');
+              }
+            }
+          }
+        }
+      } else {
+        // Regular memory logging at debug level
+        logger.debug({
+          memoryUsage: memoryCheck,
+          activeWorkers: this.activeWorkers,
+          queueLength: this.queue.length
+        }, 'Worker pool memory usage');
+      }
     } catch (memErr) {
       // Ignore memory monitoring errors
+      logger.debug({
+        error: memErr.message
+      }, 'Error checking memory usage');
     }
   }
   
@@ -635,7 +759,8 @@ worker.on('exit', (code) => {
       maxWorkers: this.maxWorkers,
       minWorkers: this.minWorkers,
       taskTimeout: this.taskTimeout,
-      idleTimeout: this.idleTimeout
+      idleTimeout: this.idleTimeout,
+      memoryLimits: this.memoryLimits
     };
   }
   

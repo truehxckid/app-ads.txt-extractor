@@ -1,5 +1,5 @@
 /**
- * App-Ads.txt Parser Worker Thread with enhanced debugging and reliability
+ * App-Ads.txt Parser Worker Thread with enhanced debugging and memory management
  * Used for processing large app-ads.txt files in a separate thread
  */
 
@@ -9,6 +9,63 @@ const { parentPort, workerData, threadId } = require('worker_threads');
 
 // Flag to track if we've sent a final result
 let resultSent = false;
+
+// Memory thresholds for warnings (in MB)
+const MEMORY_THRESHOLDS = {
+  warning: 150,  // Warning level at 150 MB
+  high: 250,     // High warning at 250 MB
+  critical: 350  // Critical warning at 350 MB (near default 384 MB limit)
+};
+
+/**
+ * Monitor memory usage and send warnings if thresholds are exceeded
+ * @returns {object} Memory usage information
+ */
+function monitorMemory() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    
+    // Convert to MB for readability
+    const memoryUsageMB = {
+      rss: Math.round(memoryUsage.rss / (1024 * 1024)),
+      heapTotal: Math.round(memoryUsage.heapTotal / (1024 * 1024)),
+      heapUsed: Math.round(memoryUsage.heapUsed / (1024 * 1024)),
+      external: Math.round(memoryUsage.external / (1024 * 1024)),
+      arrayBuffers: memoryUsage.arrayBuffers ? Math.round(memoryUsage.arrayBuffers / (1024 * 1024)) : 0
+    };
+    
+    let warningLevel = null;
+    
+    // Determine warning level based on heap usage
+    if (memoryUsageMB.heapUsed >= MEMORY_THRESHOLDS.critical) {
+      warningLevel = 'critical';
+    } else if (memoryUsageMB.heapUsed >= MEMORY_THRESHOLDS.high) {
+      warningLevel = 'high';
+    } else if (memoryUsageMB.heapUsed >= MEMORY_THRESHOLDS.warning) {
+      warningLevel = 'warning';
+    }
+    
+    // Send warning to parent if thresholds exceeded
+    if (warningLevel) {
+      safeSendToParent({
+        memoryWarning: true,
+        warningLevel,
+        memoryUsage: memoryUsageMB,
+        timestamp: Date.now()
+      });
+      
+      // If critical, try to free up memory
+      if (warningLevel === 'critical') {
+        global.gc && global.gc();
+      }
+    }
+    
+    return memoryUsageMB;
+  } catch (err) {
+    // If memory monitoring fails, just return null
+    return null;
+  }
+}
 
 // Send initial startup message
 try {
@@ -27,11 +84,14 @@ try {
 // Set up message handler for parent communication
 parentPort.on('message', (message) => {
   if (message && message.type === 'health_check') {
+    const memoryUsage = monitorMemory();
+    
     safeSendToParent({
       debug: true,
       message: 'Health check response',
       threadId,
       timestamp: Date.now(),
+      memoryUsage,
       success: true
     });
   }
@@ -50,51 +110,6 @@ parentPort.on('message', (message) => {
     // Exit cleanly when requested to terminate
     setTimeout(() => process.exit(0), 100);
   }
-});
-
-// Setup basic process-wide exception handlers
-process.on('uncaughtException', (err) => {
-  try {
-    safeSendToParent({
-      error: `Uncaught exception in worker: ${err.message}`,
-      errorDetails: {
-        type: 'uncaughtException',
-        error: err.message,
-        stack: err.stack,
-        memoryUsage: process.memoryUsage()
-      },
-      success: false
-    });
-  } catch (postError) {
-    console.error('Critical worker error (failed to report):', err);
-  }
-  
-  // Allow some time for the message to be sent before exiting
-  setTimeout(() => {
-    process.exit(1);
-  }, 200);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  try {
-    safeSendToParent({
-      error: `Unhandled promise rejection in worker: ${reason instanceof Error ? reason.message : String(reason)}`,
-      errorDetails: {
-        type: 'unhandledRejection',
-        error: reason instanceof Error ? reason.message : String(reason),
-        stack: reason instanceof Error ? reason.stack : 'No stack trace available',
-        memoryUsage: process.memoryUsage()
-      },
-      success: false
-    });
-  } catch (postError) {
-    console.error('Critical worker error (unhandled rejection, failed to report):', reason);
-  }
-  
-  // Allow some time for the message to be sent before exiting
-  setTimeout(() => {
-    process.exit(1);
-  }, 200);
 });
 
 /**
@@ -118,17 +133,17 @@ function safeSendToParent(message) {
 }
 
 /**
- * Process search terms against lines of content
+ * Process search terms against lines of content in memory-efficient chunks
  * @param {string[]} lines - Lines of content
  * @param {string[]} searchTerms - Search terms
  * @returns {object} - Search results
  */
-function processSearchTerms(lines, searchTerms) {
+function processSearchTermsInChunks(lines, searchTerms) {
   try {
     // Initial debug message
     safeSendToParent({
       debug: true,
-      message: 'Starting search term processing',
+      message: 'Starting chunked search term processing',
       lineCount: lines.length,
       searchTermCount: searchTerms ? searchTerms.length : 0,
       timestamp: Date.now(),
@@ -158,26 +173,37 @@ function processSearchTerms(lines, searchTerms) {
       return searchResults; // Return empty results for no search terms
     }
     
-    // Process in smaller batches to allow for progress reporting
-    const BATCH_SIZE = 5000;
-    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    // Process in smaller chunks with better memory management
+    const CHUNK_SIZE = 2000; // Reduced from 5000 to 2000
+    const totalChunks = Math.ceil(lines.length / CHUNK_SIZE);
     
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      // Report progress for large files
-      if (lines.length > 10000 && batchIndex % 5 === 0) {
+    // Precompile case-insensitive regex patterns for better performance
+    const searchRegexes = validSearchTerms.map(term => 
+      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\// Exit cleanly when requested to terminate
+    setTimeout(() => process.exit(0), 100);
+  }
+});'), 'i')
+    );
+    
+    for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
+      // Report progress and memory usage for large files
+      if (lines.length > 10000 && (batchIndex % 5 === 0 || batchIndex === totalChunks - 1)) {
+        const memoryUsage = monitorMemory();
+        
         safeSendToParent({
           debug: true,
-          progress: `Processing search terms: ${Math.min(((batchIndex + 1) / totalBatches) * 100, 100).toFixed(1)}%`,
+          progress: `Processing search terms: ${Math.min(((batchIndex + 1) / totalChunks) * 100, 100).toFixed(1)}%`,
           batch: batchIndex + 1,
           totalBatches,
           matchesFound: searchResults.matchingLines.length,
+          memoryUsage,
           timestamp: Date.now(),
           success: true
         });
       }
       
-      const batchStart = batchIndex * BATCH_SIZE;
-      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
+      const batchStart = batchIndex * CHUNK_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * CHUNK_SIZE, lines.length);
       
       // Process each line in the batch
       for (let i = batchStart; i < batchEnd; i++) {
@@ -190,16 +216,11 @@ function processSearchTerms(lines, searchTerms) {
         const lineNumber = i + 1;
         let anyMatch = false;
         
-        // Check each search term
+        // Check each search term using regex for better performance
         for (let termIndex = 0; termIndex < validSearchTerms.length; termIndex++) {
-          const term = validSearchTerms[termIndex];
-          
-          // Skip invalid terms
-          if (!term || typeof term !== 'string') continue;
-          
           try {
-            // Try case-insensitive match
-            if (lineContent.toLowerCase().includes(term.toLowerCase())) {
+            // Use precompiled regex for faster matching
+            if (searchRegexes[termIndex].test(lineContent)) {
               // Add to term-specific results
               if (searchResults.termResults[termIndex]) {
                 searchResults.termResults[termIndex].matchingLines.push({
@@ -218,7 +239,7 @@ function processSearchTerms(lines, searchTerms) {
               lineError: {
                 lineIndex: i,
                 line: lineContent ? lineContent.substring(0, 100) : 'invalid line',
-                term,
+                term: validSearchTerms[termIndex],
                 termIndex,
                 error: err.message
               },
@@ -235,19 +256,34 @@ function processSearchTerms(lines, searchTerms) {
           });
         }
       }
+      
+      // Force garbage collection after every 5 batches if available
+      if (global.gc && batchIndex % 5 === 4) {
+        global.gc();
+      }
     }
     
-    // Report completion
+    // Report completion with memory usage
+    const finalMemory = monitorMemory();
     safeSendToParent({
       debug: true,
       message: 'Completed search term processing',
       matchesFound: searchResults.matchingLines.length,
+      memoryUsage: finalMemory,
       timestamp: Date.now(),
       success: true
     });
     
+    // Dynamically adjust max matches based on memory usage
+    // This helps prevent memory issues with very large result sets
+    let MAX_MATCHES = 1000;
+    if (finalMemory && finalMemory.heapUsed > MEMORY_THRESHOLDS.high) {
+      MAX_MATCHES = 500; // Reduce maximum matches when memory is high
+    } else if (finalMemory && finalMemory.heapUsed < MEMORY_THRESHOLDS.warning) {
+      MAX_MATCHES = 2000; // Allow more matches when memory is available
+    }
+    
     // Prevent excessive memory usage for large results
-    const MAX_MATCHES = 1000;
     if (searchResults.matchingLines.length > MAX_MATCHES) {
       searchResults.matchingLinesFull = false;
       searchResults.totalMatchingLines = searchResults.matchingLines.length;
@@ -277,7 +313,7 @@ function processSearchTerms(lines, searchTerms) {
     safeSendToParent({
       error: `Search term processing error: ${err.message}`,
       errorDetails: {
-        function: 'processSearchTerms',
+        function: 'processSearchTermsInChunks',
         error: err.message,
         stack: err.stack
       },
@@ -290,16 +326,17 @@ function processSearchTerms(lines, searchTerms) {
 }
 
 /**
- * Analyze app-ads.txt content
- * @param {string[]} lines - Lines of content
+ * Analyze app-ads.txt content in chunks to reduce memory usage
+ * @param {string[]} lines - Lines of content to process
+ * @param {object} options - Processing options
  * @returns {object} - Analysis results
  */
-function analyzeAppAdsTxt(lines) {
+function analyzeAppAdsTxtInChunks(lines, options = {}) {
   try {
     // Initial debug message
     safeSendToParent({
       debug: true,
-      message: 'Starting app-ads.txt analysis',
+      message: 'Starting chunked app-ads.txt analysis',
       lineCount: lines.length,
       timestamp: Date.now(),
       success: true
@@ -315,6 +352,7 @@ function analyzeAppAdsTxt(lines) {
     let emptyLineCount = 0;
     let invalidLineCount = 0;
     
+    // Use Set for memory-efficient unique domain tracking
     const publishers = new Set();
     const relationships = {
       direct: 0,
@@ -322,26 +360,30 @@ function analyzeAppAdsTxt(lines) {
       other: 0
     };
     
-    // Process in smaller batches to allow for progress reporting
-    const BATCH_SIZE = 5000;
-    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    // Process in smaller chunks with memory monitoring
+    const CHUNK_SIZE = 2000; // Reduced from 5000 to 2000 for better memory management
+    const totalChunks = Math.ceil(lines.length / CHUNK_SIZE);
     
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
       // Report progress for large files
-      if (lines.length > 10000 && batchIndex % 5 === 0) {
+      if (lines.length > 5000 && (batchIndex % 5 === 0 || batchIndex === totalChunks - 1)) {
+        // Monitor memory with each progress update
+        const memoryUsage = monitorMemory();
+        
         safeSendToParent({
           debug: true,
-          progress: `Analyzing app-ads.txt: ${Math.min(((batchIndex + 1) / totalBatches) * 100, 100).toFixed(1)}%`,
+          progress: `Analyzing app-ads.txt: ${Math.min(((batchIndex + 1) / totalChunks) * 100, 100).toFixed(1)}%`,
           batch: batchIndex + 1,
-          totalBatches,
+          totalBatches: totalChunks,
           validLinesFound: validLineCount,
+          memoryUsage,
           timestamp: Date.now(),
           success: true
         });
       }
       
-      const batchStart = batchIndex * BATCH_SIZE;
-      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
+      const batchStart = batchIndex * CHUNK_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * CHUNK_SIZE, lines.length);
       
       // Process each line in the batch
       for (let i = batchStart; i < batchEnd; i++) {
@@ -416,14 +458,23 @@ function analyzeAppAdsTxt(lines) {
           }
         }
       }
+      
+      // Force garbage collection after each chunk if available
+      // This helps keep memory usage stable during long analyses
+      if (global.gc && batchIndex % 5 === 4) {
+        global.gc();
+      }
     }
     
-    // Report completion
+    // Report completion with final memory usage
+    const finalMemory = monitorMemory();
+    
     safeSendToParent({
       debug: true,
       message: 'Completed app-ads.txt analysis',
       validLines: validLineCount,
       uniquePublishers: publishers.size,
+      memoryUsage: finalMemory,
       timestamp: Date.now(),
       success: true
     });
@@ -442,7 +493,7 @@ function analyzeAppAdsTxt(lines) {
     safeSendToParent({
       error: `App-ads.txt analysis error: ${err.message}`,
       errorDetails: {
-        function: 'analyzeAppAdsTxt',
+        function: 'analyzeAppAdsTxtInChunks',
         error: err.message,
         stack: err.stack
       },
@@ -455,7 +506,7 @@ function analyzeAppAdsTxt(lines) {
 }
 
 /**
- * Worker thread main function
+ * Worker thread main function with streaming processing
  */
 function processAppAdsContent() {
   const startTime = Date.now();
@@ -485,26 +536,77 @@ function processAppAdsContent() {
       throw new Error('Invalid or missing content in worker data');
     }
     
-    // Log memory usage before processing
-    const initialMemory = process.memoryUsage();
+    // Log initial memory usage 
+    const initialMemory = monitorMemory();
     safeSendToParent({
       debug: true,
       message: 'Initial memory usage',
-      memoryUsage: {
-        rss: `${Math.round(initialMemory.rss / (1024 * 1024))}MB`,
-        heapTotal: `${Math.round(initialMemory.heapTotal / (1024 * 1024))}MB`,
-        heapUsed: `${Math.round(initialMemory.heapUsed / (1024 * 1024))}MB`,
-        external: `${Math.round(initialMemory.external / (1024 * 1024))}MB`
-      },
+      memoryUsage: initialMemory,
       contentLength: content.length,
       timestamp: Date.now(),
       success: true
     });
     
-    // Split content into lines
+    // Split content into lines using a more memory-efficient approach
+    // for very large files
     let lines;
     try {
-      lines = content.split(/\r\n|\n|\r/);
+      // Stream-like approach for very large files
+      if (content.length > 5000000) { // 5MB threshold
+        safeSendToParent({
+          debug: true,
+          message: 'Using stream-like approach for large file',
+          contentLength: content.length,
+          timestamp: Date.now(),
+          success: true
+        });
+        
+        // Process in chunks to avoid large array allocation
+        const chunkSize = 1000000; // 1MB chunks
+        const estimatedLines = content.length / 100; // Rough estimate of line count
+        lines = new Array(Math.ceil(estimatedLines));
+        
+        let lineCount = 0;
+        let lastIndex = 0;
+        let chunk, chunkIndex, newlineIndex;
+        
+        // Process file in chunks
+        for (let i = 0; i < content.length; i += chunkSize) {
+          chunk = content.substring(i, Math.min(i + chunkSize, content.length));
+          chunkIndex = 0;
+          
+          // Find all newlines in this chunk
+          while ((newlineIndex = chunk.indexOf('\n', chunkIndex)) !== -1) {
+            // Get the full line (which might start in the previous chunk)
+            const line = (i === 0 || lastIndex === 0) 
+              ? chunk.substring(lastIndex, newlineIndex) 
+              : content.substring(lastIndex, i + newlineIndex);
+            
+            lines[lineCount++] = line;
+            chunkIndex = newlineIndex + 1;
+            lastIndex = i + chunkIndex;
+          }
+          
+          // If this is the last chunk, add the final line
+          if (i + chunkSize >= content.length && lastIndex < content.length) {
+            lines[lineCount++] = content.substring(lastIndex);
+          }
+          
+          // Check memory usage after each chunk
+          if (i > 0 && i % (chunkSize * 5) === 0) {
+            monitorMemory();
+            global.gc && global.gc();
+          }
+        }
+        
+        // Trim array to actual line count
+        if (lineCount < lines.length) {
+          lines.length = lineCount;
+        }
+      } else {
+        // Standard approach for smaller files
+        lines = content.split(/\r\n|\n|\r/);
+      }
       
       safeSendToParent({
         debug: true,
@@ -518,29 +620,24 @@ function processAppAdsContent() {
     }
     
     // Log memory usage after splitting
-    const afterSplitMemory = process.memoryUsage();
+    const afterSplitMemory = monitorMemory();
     safeSendToParent({
       debug: true,
       message: 'Memory usage after splitting',
-      memoryUsage: {
-        rss: `${Math.round(afterSplitMemory.rss / (1024 * 1024))}MB`,
-        heapTotal: `${Math.round(afterSplitMemory.heapTotal / (1024 * 1024))}MB`,
-        heapUsed: `${Math.round(afterSplitMemory.heapUsed / (1024 * 1024))}MB`,
-        external: `${Math.round(afterSplitMemory.external / (1024 * 1024))}MB`
-      },
+      memoryUsage: afterSplitMemory,
       timestamp: Date.now(),
       success: true
     });
     
-    // Analyze the content - with careful error handling
+    // Analyze the content using the new chunked processing
     let analyzed;
     try {
-      analyzed = analyzeAppAdsTxt(lines);
+      analyzed = analyzeAppAdsTxtInChunks(lines);
     } catch (analyzeErr) {
       safeSendToParent({
         error: `Failed to analyze content: ${analyzeErr.message}`,
         errorDetails: {
-          function: 'analyzeAppAdsTxt',
+          function: 'analyzeAppAdsTxtInChunks',
           error: analyzeErr.message,
           stack: analyzeErr.stack
         },
@@ -561,30 +658,25 @@ function processAppAdsContent() {
     }
     
     // Log memory usage after analysis
-    const afterAnalysisMemory = process.memoryUsage();
+    const afterAnalysisMemory = monitorMemory();
     safeSendToParent({
       debug: true,
       message: 'Memory usage after analysis',
-      memoryUsage: {
-        rss: `${Math.round(afterAnalysisMemory.rss / (1024 * 1024))}MB`,
-        heapTotal: `${Math.round(afterAnalysisMemory.heapTotal / (1024 * 1024))}MB`,
-        heapUsed: `${Math.round(afterAnalysisMemory.heapUsed / (1024 * 1024))}MB`,
-        external: `${Math.round(afterAnalysisMemory.external / (1024 * 1024))}MB`
-      },
+      memoryUsage: afterAnalysisMemory,
       timestamp: Date.now(),
       success: true
     });
     
-    // Process search terms if provided - with careful error handling
+    // Process search terms if provided - with chunked processing
     let searchResults = null;
     if (searchTerms && Array.isArray(searchTerms) && searchTerms.length > 0) {
       try {
-        searchResults = processSearchTerms(lines, searchTerms);
+        searchResults = processSearchTermsInChunks(lines, searchTerms);
       } catch (searchErr) {
         safeSendToParent({
           error: `Failed to process search terms: ${searchErr.message}`,
           errorDetails: {
-            function: 'processSearchTerms',
+            function: 'processSearchTermsInChunks',
             error: searchErr.message,
             stack: searchErr.stack
           },
@@ -602,16 +694,18 @@ function processAppAdsContent() {
       }
     }
     
-    // Clear lines array to free memory
+    // Clear lines array to free memory before sending results
     lines = null;
+    global.gc && global.gc();
     
     // Final memory usage
-    const finalMemory = process.memoryUsage();
+    const finalMemory = monitorMemory();
     const memStats = {
-      rss: Math.round(finalMemory.rss / (1024 * 1024)),
-      heapTotal: Math.round(finalMemory.heapTotal / (1024 * 1024)),
-      heapUsed: Math.round(finalMemory.heapUsed / (1024 * 1024)),
-      external: Math.round(finalMemory.external / (1024 * 1024))
+      rss: Math.round(finalMemory.rss),
+      heapTotal: Math.round(finalMemory.heapTotal),
+      heapUsed: Math.round(finalMemory.heapUsed),
+      external: Math.round(finalMemory.external),
+      arrayBuffers: finalMemory.arrayBuffers
     };
     
     // Create the final result object
@@ -619,7 +713,7 @@ function processAppAdsContent() {
       analyzed,
       searchResults,
       contentLength: content.length,
-      lineCount: content.split(/\r\n|\n|\r/).length, // Calculate again instead of using lines array
+      lineCount: analyzed.totalLines,
       stats: {
         memoryUsageAnalysis: finalMemory,
         memoryUsageFormatted: memStats
@@ -638,9 +732,7 @@ function processAppAdsContent() {
         success: true
       });
       
-      // **** IMPORTANT: DON'T EXPLICITLY CALL PROCESS.EXIT ****
       // Let Node.js naturally exit the worker when all tasks are done
-      // This prevents unexpected exit codes
     } else {
       throw new Error('Failed to send final result to parent');
     }

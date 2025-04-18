@@ -1,6 +1,7 @@
 /**
  * App-Ads.txt Checker for App-Ads.txt Extractor
  * Handles all functionality related to fetching and analyzing app-ads.txt files
+ * Optimized for memory efficiency with streaming support
  */
 
 'use strict';
@@ -14,6 +15,8 @@ const { validateSearchTerms, isValidDomain } = require('../utils/validation');
 const { keys, getTtl } = require('../config/cache');
 const { getLogger } = require('../utils/logger');
 const config = require('../config');
+const axios = require('axios');
+const memoryManager = require('../services/memory-manager');
 
 const logger = getLogger('app-ads-checker');
 
@@ -25,12 +28,16 @@ const appAdsWorkerPool = new WorkerPool(
     minWorkers: 1,
     // Explicitly set timeouts to ensure they're valid numbers
     taskTimeout: 60000, // 60 seconds for processing large files
-    idleTimeout: 120000 // 2 minutes
+    idleTimeout: 120000, // 2 minutes
+    // Set memory limits from config
+    maxRssMb: config.workers.maxRssMb,
+    maxHeapMb: config.workers.maxHeapMb
   }
 );
 
 /**
  * Check for app-ads.txt file on a domain and analyze its content
+ * Using streaming processing for large files to reduce memory usage
  * @param {string} domain - Domain to check
  * @param {string|string[]|null} searchTerms - Search terms to look for in the file
  * @returns {Promise<object>} - Results of the check
@@ -67,10 +74,11 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     let content = null;
     let usedProtocol = null;
     let fetchErrors = [];
+    let stream = null;
     
     // Try fetching with different protocols
     for (const protocol of protocols) {
-      if (content) break;
+      if (content || stream) break;
       
       try {
         // Apply rate limiting to avoid overloading servers
@@ -89,10 +97,52 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
           }
         };
         
+        // Check content size first with HEAD request
+        try {
+          const headResponse = await axios.head(url, {
+            timeout: 5000,
+            validateStatus: status => status === 200
+          });
+          
+          const contentLength = parseInt(headResponse.headers['content-length'], 10);
+          
+          // If file is very large, use streaming approach
+          if (!isNaN(contentLength) && contentLength > config.workers.streamThresholdBytes) {
+            logger.debug({ 
+              domain, 
+              contentLength: `${Math.round(contentLength / 1024 / 1024)}MB` 
+            }, 'Using streaming for large app-ads.txt file');
+            
+            // Set fileSize for logging
+            fileSize = contentLength;
+            
+            // Get the file as a stream
+            const response = await axios.get(url, {
+              ...fetchOpts,
+              responseType: 'stream'
+            });
+            
+            stream = response.data;
+            usedProtocol = protocol;
+            
+            // Report success to rate limiter
+            rateLimiter.reportSuccess('app-ads-txt');
+            break;
+          }
+        } catch (headErr) {
+          // If HEAD request fails, just proceed with normal GET request
+          logger.debug({ 
+            domain, 
+            error: headErr.message 
+          }, 'HEAD request failed, falling back to GET');
+        }
+        
+        // Standard approach for smaller files
         content = await fetchText(url, fetchOpts);
         
         if (content) {
           usedProtocol = protocol;
+          fileSize = content.length;
           // Report success to rate limiter
           rateLimiter.reportSuccess('app-ads-txt');
           break;
@@ -117,7 +167,7 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     }
     
     // If app-ads.txt doesn't exist, cache the negative result
-    if (!content) {
+    if (!content && !stream) {
       const result = { 
         exists: false,
         fetchErrors: fetchErrors.length > 0 ? fetchErrors : undefined
@@ -128,75 +178,148 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
       return result;
     }
     
-    fileSize = content.length;
-    
-    // Determine the best processing method based on content size
-    const isLargeFile = content.length > 100000; // 100 KB threshold
-    processingMethod = isLargeFile ? 'worker' : 'sync';
+    // Determine the best processing method based on content type
+    const isStreamMode = !!stream;
+    processingMethod = isStreamMode ? 'stream' : (fileSize > 100000 ? 'worker' : 'sync');
     
     logger.debug({
       domain,
       fileSize,
-      processingMethod
+      processingMethod,
+      isStreamMode
     }, 'Processing app-ads.txt');
     
     let analyzed, searchResults;
     
-    if (isLargeFile) {
-      // Use worker thread for large files
+    if (isStreamMode) {
+      // Process the stream
       try {
         logger.debug({ 
           domain, 
-          contentSize: content.length,
+          fileSize: fileSize ? `${Math.round(fileSize / 1024)}KB` : 'unknown',
           searchTermsCount: normalizedSearchTerms?.length || 0
-        }, 'Using worker thread for large file');
+        }, 'Processing stream');
         
-        const workerResult = await appAdsWorkerPool.runTask(
-          { content, searchTerms: normalizedSearchTerms },
-          Priority.NORMAL
-        );
+        // Parse the stream in chunks to minimize memory usage
+        const result = await processStreamedContent(stream, normalizedSearchTerms);
         
-        if (!workerResult || !workerResult.success) {
-          throw new Error(`Worker thread error: ${workerResult?.error || 'Unknown error'}`);
-        }
+        // Set content to a truncated version for caching
+        content = result.content;
+        analyzed = result.analyzed;
+        searchResults = result.searchResults;
         
-        analyzed = workerResult.analyzed;
-        searchResults = workerResult.searchResults;
-        
-        // Log worker performance stats
-        if (workerResult.stats) {
-          logger.debug({
-            domain,
-            processingTime: workerResult.processingTime,
-            memoryUsage: workerResult.stats.memoryUsageAnalysis ? 
-              `${Math.round(workerResult.stats.memoryUsageAnalysis.heapUsed / (1024 * 1024))}MB` : 'unknown'
-          }, 'Worker performance stats');
-        }
-      } catch (workerErr) {
+        logger.debug({
+          domain,
+          analyzedLines: analyzed?.totalLines || 0,
+          validLines: analyzed?.validLines || 0,
+          processingTime: Date.now() - startTime
+        }, 'Completed stream processing');
+      } catch (streamErr) {
         logger.error({ 
           domain, 
-          error: workerErr.message,
-          stack: workerErr.stack
-        }, 'Worker processing error');
+          error: streamErr.message,
+          stack: streamErr.stack
+        }, 'Stream processing error');
         
-        // Fallback to synchronous processing if worker fails
-        logger.debug({ domain }, 'Falling back to synchronous processing after worker error');
-        
+        // Fall back to normal processing if possible
+        if (content) {
+          logger.debug({ domain }, 'Falling back to normal processing after stream error');
+          processingMethod = fileSize > 100000 ? 'worker' : 'sync';
+        } else {
+          throw streamErr; // Re-throw if we can't fall back
+        }
+      }
+    }
+    
+    // If we weren't using streaming or it failed and we have content
+    if (!isStreamMode || (processingMethod !== 'stream' && content)) {
+      if (processingMethod === 'worker') {
+        // Use worker thread for large files
+        try {
+          logger.debug({ 
+            domain, 
+            contentSize: content.length,
+            searchTermsCount: normalizedSearchTerms?.length || 0
+          }, 'Using worker thread for large file');
+          
+          const workerResult = await appAdsWorkerPool.runTask(
+            { content, searchTerms: normalizedSearchTerms },
+            Priority.NORMAL
+          );
+          
+          if (!workerResult || !workerResult.success) {
+            throw new Error(`Worker thread error: ${workerResult?.error || 'Unknown error'}`);
+          }
+          
+          analyzed = workerResult.analyzed;
+          searchResults = workerResult.searchResults;
+          
+          // Log worker performance stats
+          if (workerResult.stats) {
+            logger.debug({
+              domain,
+              processingTime: workerResult.processingTime,
+              memoryUsage: workerResult.stats.memoryUsageAnalysis ? 
+                `${Math.round(workerResult.stats.memoryUsageAnalysis.heapUsed / (1024 * 1024))}MB` : 'unknown'
+            }, 'Worker performance stats');
+          }
+        } catch (workerErr) {
+          logger.error({ 
+            domain, 
+            error: workerErr.message,
+            stack: workerErr.stack
+          }, 'Worker processing error');
+          
+          // Fallback to synchronous processing if worker fails
+          logger.debug({ domain }, 'Falling back to synchronous processing after worker error');
+          
+          try {
+            const lines = content.split(/\r\n|\n|\r/);
+            analyzed = analyzeAppAdsTxt(lines);
+            
+            if (normalizedSearchTerms?.length > 0) {
+              searchResults = processSearchTerms(lines, normalizedSearchTerms);
+            }
+          } catch (fallbackErr) {
+            logger.error({
+              domain,
+              error: fallbackErr.message,
+              stack: fallbackErr.stack
+            }, 'Fallback processing error');
+            
+            // Return minimal analysis if even fallback fails
+            analyzed = {
+              totalLines: content.split(/\r\n|\n|\r/).length,
+              validLines: 0,
+              commentLines: 0,
+              emptyLines: 0,
+              invalidLines: 0,
+              uniquePublishers: 0,
+              relationships: { direct: 0, reseller: 0, other: 0 },
+              error: 'Analysis error'
+            };
+          }
+        }
+      } else if (processingMethod === 'sync') {
+        // Process smaller files synchronously
         try {
           const lines = content.split(/\r\n|\n|\r/);
+          
+          // Analyze the file content
           analyzed = analyzeAppAdsTxt(lines);
           
+          // Process search terms if provided
           if (normalizedSearchTerms?.length > 0) {
             searchResults = processSearchTerms(lines, normalizedSearchTerms);
           }
-        } catch (fallbackErr) {
+        } catch (syncErr) {
           logger.error({
             domain,
-            error: fallbackErr.message,
-            stack: fallbackErr.stack
-          }, 'Fallback processing error');
+            error: syncErr.message,
+            stack: syncErr.stack
+          }, 'Synchronous processing error');
           
-          // Return minimal analysis if even fallback fails
+          // Return minimal analysis if processing fails
           analyzed = {
             totalLines: content.split(/\r\n|\n|\r/).length,
             validLines: 0,
@@ -209,49 +332,19 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
           };
         }
       }
-    } else {
-      // Process smaller files synchronously
-      try {
-        const lines = content.split(/\r\n|\n|\r/);
-        
-        // Analyze the file content
-        analyzed = analyzeAppAdsTxt(lines);
-        
-        // Process search terms if provided
-        if (normalizedSearchTerms?.length > 0) {
-          searchResults = processSearchTerms(lines, normalizedSearchTerms);
-        }
-      } catch (syncErr) {
-        logger.error({
-          domain,
-          error: syncErr.message,
-          stack: syncErr.stack
-        }, 'Synchronous processing error');
-        
-        // Return minimal analysis if processing fails
-        analyzed = {
-          totalLines: content.split(/\r\n|\n|\r/).length,
-          validLines: 0,
-          commentLines: 0,
-          emptyLines: 0,
-          invalidLines: 0,
-          uniquePublishers: 0,
-          relationships: { direct: 0, reseller: 0, other: 0 },
-          error: 'Analysis error'
-        };
-      }
     }
     
     // Trim content if it's too large for caching
-    const trimmedContent = content.length > 500000 
-      ? content.substring(0, 500000) + '\n... (truncated, file too large)' 
-      : content;
+    const contentSizeLimit = 500000; // 500KB limit for caching
+    const trimmedContent = content && content.length > contentSizeLimit
+      ? content.substring(0, contentSizeLimit) + '\n... (truncated, file too large)' 
+      : (content || '(Streamed content, not stored in full)');
     
     const result = {
       exists: true,
       url: `${usedProtocol}://${domain}/app-ads.txt`,
       content: trimmedContent,
-      contentLength: content.length,
+      contentLength: fileSize || (content ? content.length : 0),
       analyzed,
       searchResults,
       processingMethod,
@@ -296,6 +389,218 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
 }
 
 /**
+ * Process content from a stream in a memory-efficient way
+ * @param {Stream} stream - The readable stream
+ * @param {string[]} searchTerms - Search terms (optional)
+ * @returns {Promise<object>} - Processing results
+ */
+async function processStreamedContent(stream, searchTerms = null) {
+  return new Promise((resolve, reject) => {
+    // Initialize analysis counters
+    let validLineCount = 0;
+    let commentLineCount = 0;
+    let emptyLineCount = 0;
+    let invalidLineCount = 0;
+    let totalLineCount = 0;
+    
+    // Store for publishers and other stats
+    const publishers = new Set();
+    const relationships = {
+      direct: 0,
+      reseller: 0,
+      other: 0
+    };
+    
+    // Search results tracking
+    let searchMatchingLines = [];
+    let searchTermResults = [];
+    
+    // Initialize search term tracking if needed
+    if (searchTerms && searchTerms.length > 0) {
+      searchTermResults = searchTerms.map(term => ({
+        term,
+        matchingLines: [],
+        count: 0
+      }));
+    }
+    
+    // Store a sample of the content for reference
+    let contentSample = '';
+    const MAX_SAMPLE_SIZE = 100000; // 100KB sample
+    
+    // Create line parsing function
+    const processLine = (line) => {
+      totalLineCount++;
+      
+      // Add to content sample if it's not too big yet
+      if (contentSample.length < MAX_SAMPLE_SIZE) {
+        contentSample += line + '\n';
+      }
+      
+      try {
+        // Skip empty lines
+        if (!line.trim()) {
+          emptyLineCount++;
+          return;
+        }
+        
+        // Handle comments
+        const commentIndex = line.indexOf('#');
+        if (commentIndex === 0) {
+          commentLineCount++;
+          return;
+        }
+        
+        const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
+        if (!cleanLine) {
+          emptyLineCount++;
+          return;
+        }
+        
+        // Parse fields
+        const fields = cleanLine.split(',').map(f => f.trim());
+        
+        if (fields.length >= 3) {
+          validLineCount++;
+          
+          // Extract publisher (safely)
+          try {
+            const domain = fields[0].toLowerCase();
+            publishers.add(domain);
+            
+            // Extract relationship
+            const relationship = fields[2].toLowerCase();
+            if (relationship === 'direct') {
+              relationships.direct++;
+            } else if (relationship === 'reseller') {
+              relationships.reseller++;
+            } else {
+              relationships.other++;
+            }
+          } catch (fieldErr) {
+            // Don't let field processing errors stop the whole analysis
+            invalidLineCount++;
+          }
+        } else {
+          invalidLineCount++;
+        }
+        
+        // Process search terms if provided
+        if (searchTerms && searchTerms.length > 0) {
+          let anyMatch = false;
+          
+          // Check each search term
+          searchTerms.forEach((term, termIndex) => {
+            try {
+              if (cleanLine.toLowerCase().includes(term.toLowerCase())) {
+                // Add to term-specific results (limit to 500 matches per term)
+                if (searchTermResults[termIndex].matchingLines.length < 500) {
+                  searchTermResults[termIndex].matchingLines.push({
+                    lineNumber: totalLineCount,
+                    content: cleanLine,
+                    termIndex
+                  });
+                }
+                searchTermResults[termIndex].count++;
+                anyMatch = true;
+              }
+            } catch (err) {
+              // Ignore search errors and continue
+            }
+          });
+          
+          // If any term matched, add to overall results
+          if (anyMatch && searchMatchingLines.length < 1000) {
+            searchMatchingLines.push({
+              lineNumber: totalLineCount,
+              content: cleanLine
+            });
+          }
+        }
+      } catch (lineErr) {
+        // Ignore line processing errors
+        invalidLineCount++;
+      }
+    };
+    
+    // Set up line reader
+    let buffer = '';
+    let bytesRead = 0;
+    
+    // Handle stream data chunks
+    stream.on('data', (chunk) => {
+      try {
+        bytesRead += chunk.length;
+        
+        // Convert Buffer to string and add to buffer
+        const data = chunk.toString('utf8');
+        buffer += data;
+        
+        // Process complete lines
+        let lineEndIndex = buffer.indexOf('\n');
+        while (lineEndIndex !== -1) {
+          const line = buffer.substring(0, lineEndIndex);
+          processLine(line);
+          
+          // Move buffer forward
+          buffer = buffer.substring(lineEndIndex + 1);
+          lineEndIndex = buffer.indexOf('\n');
+        }
+      } catch (chunkErr) {
+        // Log error but continue processing
+        logger.error({ error: chunkErr.message }, 'Error processing stream chunk');
+      }
+    });
+    
+    // Handle end of stream
+    stream.on('end', () => {
+      try {
+        // Process any remaining data in the buffer
+        if (buffer.length > 0) {
+          processLine(buffer);
+        }
+        
+        // Create analysis result
+        const analyzed = {
+          totalLines: totalLineCount,
+          validLines: validLineCount,
+          commentLines: commentLineCount,
+          emptyLines: emptyLineCount,
+          invalidLines: invalidLineCount,
+          uniquePublishers: publishers.size,
+          relationships
+        };
+        
+        // Create search results if needed
+        let searchResults = null;
+        if (searchTerms && searchTerms.length > 0) {
+          searchResults = {
+            terms: searchTerms,
+            termResults: searchTermResults,
+            matchingLines: searchMatchingLines,
+            count: searchMatchingLines.length
+          };
+        }
+        
+        // Resolve with results
+        resolve({
+          content: contentSample,
+          analyzed,
+          searchResults
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
+    
+    // Handle stream errors
+    stream.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
  * Process search terms against lines of content
  * @param {string[]} lines - Lines of content
  * @param {string[]} searchTerms - Search terms
@@ -314,45 +619,65 @@ function processSearchTerms(lines, searchTerms) {
       count: 0
     };
     
-    // Process each line
-    lines.forEach((line, lineIndex) => {
-      const lineContent = line.trim();
-      if (!lineContent) return;
+    // Pre-compile regexes for performance
+    const searchRegexes = searchTerms.map(term => 
+      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    );
+    
+    // Process in batches to reduce memory pressure
+    const BATCH_SIZE = 2000;
+    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
       
-      const lineNumber = lineIndex + 1;
-      let anyMatch = false;
-      
-      // Check each search term
-      searchTerms.forEach((term, termIndex) => {
-        try {
-          if (lineContent.toLowerCase().includes(term.toLowerCase())) {
-            searchResults.termResults[termIndex].matchingLines.push({
-              lineNumber,
-              content: lineContent,
-              termIndex
-            });
-            anyMatch = true;
+      // Process each line in the batch
+      for (let i = batchStart; i < batchEnd; i++) {
+        // Process each line
+        const lineContent = lines[i]?.trim();
+        if (!lineContent) continue;
+        
+        const lineNumber = i + 1;
+        let anyMatch = false;
+        
+        // Check each search term
+        searchTerms.forEach((term, termIndex) => {
+          try {
+            if (searchRegexes[termIndex].test(lineContent)) {
+              // Add to term-specific results
+              if (searchResults.termResults[termIndex]) {
+                searchResults.termResults[termIndex].matchingLines.push({
+                  lineNumber,
+                  content: lineContent,
+                  termIndex
+                });
+                searchResults.termResults[termIndex].count++;
+              }
+              anyMatch = true;
+            }
+          } catch (err) {
+            // Report error but continue processing
+            logger.error({ 
+              term, 
+              lineIndex: i, 
+              error: err.message
+            }, 'Error matching search term');
           }
-        } catch (err) {
-          logger.error({ 
-            term, 
-            lineIndex, 
-            error: err.message
-          }, 'Error matching search term');
-        }
-      });
-      
-      // If any term matched, add to overall results
-      if (anyMatch) {
-        searchResults.matchingLines.push({
-          lineNumber,
-          content: lineContent
         });
+        
+        // If any term matched, add to overall results
+        if (anyMatch) {
+          searchResults.matchingLines.push({
+            lineNumber,
+            content: lineContent
+          });
+        }
       }
-    });
+    }
     
     // Limit matching lines for very large results
-    const MAX_MATCHING_LINES = 5000;
+    const MAX_MATCHING_LINES = 1000;
     if (searchResults.matchingLines.length > MAX_MATCHING_LINES) {
       searchResults.matchingLines = searchResults.matchingLines.slice(0, MAX_MATCHING_LINES);
       searchResults.truncated = true;
@@ -369,10 +694,6 @@ function processSearchTerms(lines, searchTerms) {
     }
     
     // Update counts
-    searchResults.termResults.forEach(result => {
-      result.count = result.originalCount || result.matchingLines.length;
-    });
-    
     searchResults.count = searchResults.originalCount || searchResults.matchingLines.length;
     
     return searchResults;
@@ -402,11 +723,14 @@ function processSearchTerms(lines, searchTerms) {
  */
 function analyzeAppAdsTxt(lines) {
   try {
+    // Use memory-efficient processing in batches
+    const BATCH_SIZE = 2000;
     let validLineCount = 0;
     let commentLineCount = 0;
     let emptyLineCount = 0;
     let invalidLineCount = 0;
     
+    // Use Set for memory efficiency
     const publishers = new Set();
     const relationships = {
       direct: 0,
@@ -417,70 +741,80 @@ function analyzeAppAdsTxt(lines) {
     // Track errors during processing
     const processingErrors = [];
     
-    lines.forEach((line, index) => {
-      try {
-        // Skip empty lines
-        if (!line.trim()) {
-          emptyLineCount++;
-          return;
-        }
+    // Process in batches
+    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
+      
+      for (let i = batchStart; i < batchEnd; i++) {
+        const line = lines[i];
         
-        // Handle comments
-        const commentIndex = line.indexOf('#');
-        if (commentIndex === 0) {
-          commentLineCount++;
-          return;
-        }
-        
-        const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
-        if (!cleanLine) {
-          emptyLineCount++;
-          return;
-        }
-        
-        // Parse fields
-        const fields = cleanLine.split(',').map(f => f.trim());
-        
-        if (fields.length >= 3) {
-          validLineCount++;
-          
-          // Extract publisher
-          const domain = fields[0].toLowerCase();
-          publishers.add(domain);
-          
-          // Extract relationship
-          const relationship = fields[2].toLowerCase();
-          if (relationship === 'direct') {
-            relationships.direct++;
-          } else if (relationship === 'reseller') {
-            relationships.reseller++;
-          } else {
-            relationships.other++;
+        try {
+          // Skip empty lines
+          if (!line || typeof line !== 'string' || !line.trim()) {
+            emptyLineCount++;
+            continue;
           }
-        } else {
+          
+          // Handle comments
+          const commentIndex = line.indexOf('#');
+          if (commentIndex === 0) {
+            commentLineCount++;
+            continue;
+          }
+          
+          const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
+          if (!cleanLine) {
+            emptyLineCount++;
+            continue;
+          }
+          
+          // Parse fields
+          const fields = cleanLine.split(',').map(f => f.trim());
+          
+          if (fields.length >= 3) {
+            validLineCount++;
+            
+            // Extract publisher
+            const domain = fields[0].toLowerCase();
+            publishers.add(domain);
+            
+            // Extract relationship
+            const relationship = fields[2].toLowerCase();
+            if (relationship === 'direct') {
+              relationships.direct++;
+            } else if (relationship === 'reseller') {
+              relationships.reseller++;
+            } else {
+              relationships.other++;
+            }
+          } else {
+            invalidLineCount++;
+            
+            // Only track first few errors to avoid excessive logging
+            if (processingErrors.length < 5) {
+              processingErrors.push({
+                line: i + 1,
+                content: line.length > 100 ? line.substring(0, 100) + '...' : line,
+                error: 'Invalid line format (requires at least 3 comma-separated fields)'
+              });
+            }
+          }
+        } catch (lineErr) {
           invalidLineCount++;
           
-          // Only track first few errors to avoid excessive logging
+          // Only track first few errors
           if (processingErrors.length < 5) {
             processingErrors.push({
-              line: index + 1,
-              content: line.length > 100 ? line.substring(0, 100) + '...' : line,
-              error: 'Invalid line format (requires at least 3 comma-separated fields)'
+              line: i + 1,
+              error: lineErr.message
             });
           }
         }
-      } catch (lineErr) {
-        invalidLineCount++;
-        
-        // Only track first few errors
-        if (processingErrors.length < 5) {
-          processingErrors.push({
-            line: index + 1,
-            error: lineErr.message
-          });
-        }
       }
-    });
+    }
     
     // Log any processing errors
     if (processingErrors.length > 0) {
@@ -529,5 +863,6 @@ module.exports = {
   checkAppAdsTxt,
   processSearchTerms,
   analyzeAppAdsTxt,
+  processStreamedContent,
   shutdown
 };
