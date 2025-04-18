@@ -17,12 +17,15 @@ const config = require('../config');
 
 const logger = getLogger('app-ads-checker');
 
-// Initialize worker pool for app-ads.txt processing - Fix worker file path to include ".worker"
+// Initialize worker pool for app-ads.txt processing
 const appAdsWorkerPool = new WorkerPool(
   path.join(__dirname, '../workers/app-ads-parser.worker.js'),
   {
     maxWorkers: config.workers.maxWorkers,
-    minWorkers: 1
+    minWorkers: 1,
+    // Explicitly set timeouts to ensure they're valid numbers
+    taskTimeout: 60000, // 60 seconds for processing large files
+    idleTimeout: 120000 // 2 minutes
   }
 );
 
@@ -78,7 +81,12 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
         
         const fetchOpts = {
           timeout: 15000,
-          validateStatus: status => status === 200
+          validateStatus: status => status === 200,
+          // Ensure HTTP config is properly initialized
+          http: {
+            retries: 2,
+            retryDelay: 1000
+          }
         };
         
         content = await fetchText(url, fetchOpts);
@@ -137,39 +145,100 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     if (isLargeFile) {
       // Use worker thread for large files
       try {
+        logger.debug({ 
+          domain, 
+          contentSize: content.length,
+          searchTermsCount: normalizedSearchTerms?.length || 0
+        }, 'Using worker thread for large file');
+        
         const workerResult = await appAdsWorkerPool.runTask(
           { content, searchTerms: normalizedSearchTerms },
           Priority.NORMAL
         );
         
-        if (!workerResult.success) {
-          throw new Error(`Worker thread error: ${workerResult.error}`);
+        if (!workerResult || !workerResult.success) {
+          throw new Error(`Worker thread error: ${workerResult?.error || 'Unknown error'}`);
         }
         
         analyzed = workerResult.analyzed;
         searchResults = workerResult.searchResults;
+        
+        // Log worker performance stats
+        if (workerResult.stats) {
+          logger.debug({
+            domain,
+            processingTime: workerResult.processingTime,
+            memoryUsage: workerResult.stats.memoryUsageAnalysis ? 
+              `${Math.round(workerResult.stats.memoryUsageAnalysis.heapUsed / (1024 * 1024))}MB` : 'unknown'
+          }, 'Worker performance stats');
+        }
       } catch (workerErr) {
-        logger.error({ domain, error: workerErr.message }, 'Worker processing error');
+        logger.error({ 
+          domain, 
+          error: workerErr.message,
+          stack: workerErr.stack
+        }, 'Worker processing error');
         
         // Fallback to synchronous processing if worker fails
         logger.debug({ domain }, 'Falling back to synchronous processing after worker error');
-        const lines = content.split(/\r\n|\n|\r/);
-        analyzed = analyzeAppAdsTxt(lines);
         
-        if (normalizedSearchTerms?.length > 0) {
-          searchResults = processSearchTerms(lines, normalizedSearchTerms);
+        try {
+          const lines = content.split(/\r\n|\n|\r/);
+          analyzed = analyzeAppAdsTxt(lines);
+          
+          if (normalizedSearchTerms?.length > 0) {
+            searchResults = processSearchTerms(lines, normalizedSearchTerms);
+          }
+        } catch (fallbackErr) {
+          logger.error({
+            domain,
+            error: fallbackErr.message,
+            stack: fallbackErr.stack
+          }, 'Fallback processing error');
+          
+          // Return minimal analysis if even fallback fails
+          analyzed = {
+            totalLines: content.split(/\r\n|\n|\r/).length,
+            validLines: 0,
+            commentLines: 0,
+            emptyLines: 0,
+            invalidLines: 0,
+            uniquePublishers: 0,
+            relationships: { direct: 0, reseller: 0, other: 0 },
+            error: 'Analysis error'
+          };
         }
       }
     } else {
       // Process smaller files synchronously
-      const lines = content.split(/\r\n|\n|\r/);
-      
-      // Analyze the file content
-      analyzed = analyzeAppAdsTxt(lines);
-      
-      // Process search terms if provided
-      if (normalizedSearchTerms?.length > 0) {
-        searchResults = processSearchTerms(lines, normalizedSearchTerms);
+      try {
+        const lines = content.split(/\r\n|\n|\r/);
+        
+        // Analyze the file content
+        analyzed = analyzeAppAdsTxt(lines);
+        
+        // Process search terms if provided
+        if (normalizedSearchTerms?.length > 0) {
+          searchResults = processSearchTerms(lines, normalizedSearchTerms);
+        }
+      } catch (syncErr) {
+        logger.error({
+          domain,
+          error: syncErr.message,
+          stack: syncErr.stack
+        }, 'Synchronous processing error');
+        
+        // Return minimal analysis if processing fails
+        analyzed = {
+          totalLines: content.split(/\r\n|\n|\r/).length,
+          validLines: 0,
+          commentLines: 0,
+          emptyLines: 0,
+          invalidLines: 0,
+          uniquePublishers: 0,
+          relationships: { direct: 0, reseller: 0, other: 0 },
+          error: 'Analysis error'
+        };
       }
     }
     
@@ -184,9 +253,12 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
       content: trimmedContent,
       contentLength: content.length,
       analyzed,
-      searchResults
+      searchResults,
+      processingMethod,
+      processingTime: Date.now() - startTime
     };
     
+    // Log performance metrics
     const processingTime = Date.now() - startTime;
     logger.debug({
       domain,
@@ -200,11 +272,22 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     await cache.set(cacheKey, result, 'appAdsTxtFound');
     return result;
   } catch (err) {
-    logger.error({ domain, error: err.message }, 'Error checking app-ads.txt');
+    const processingTime = Date.now() - startTime;
+    
+    logger.error({ 
+      domain, 
+      error: err.message,
+      stack: err.stack,
+      fileSize,
+      processingMethod,
+      processingTime: `${processingTime}ms`
+    }, 'Error checking app-ads.txt');
     
     const result = { 
       exists: false, 
-      error: 'Internal error processing app-ads.txt'
+      error: 'Internal error processing app-ads.txt',
+      errorDetails: err.message,
+      processingTime
     };
     
     await cache.set(keys.appAdsTxt(domain, searchTerms), result, 'appAdsTxtError');
@@ -219,57 +302,97 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
  * @returns {object} - Search results
  */
 function processSearchTerms(lines, searchTerms) {
-  const searchResults = {
-    terms: searchTerms,
-    termResults: searchTerms.map(term => ({
-      term,
+  try {
+    const searchResults = {
+      terms: searchTerms,
+      termResults: searchTerms.map(term => ({
+        term,
+        matchingLines: [],
+        count: 0
+      })),
       matchingLines: [],
       count: 0
-    })),
-    matchingLines: [],
-    count: 0
-  };
-  
-  // Process each line
-  lines.forEach((line, lineIndex) => {
-    const lineContent = line.trim();
-    if (!lineContent) return;
+    };
     
-    const lineNumber = lineIndex + 1;
-    let anyMatch = false;
-    
-    // Check each search term
-    searchTerms.forEach((term, termIndex) => {
-      try {
-        if (lineContent.toLowerCase().includes(term.toLowerCase())) {
-          searchResults.termResults[termIndex].matchingLines.push({
-            lineNumber,
-            content: lineContent,
-            termIndex
-          });
-          anyMatch = true;
+    // Process each line
+    lines.forEach((line, lineIndex) => {
+      const lineContent = line.trim();
+      if (!lineContent) return;
+      
+      const lineNumber = lineIndex + 1;
+      let anyMatch = false;
+      
+      // Check each search term
+      searchTerms.forEach((term, termIndex) => {
+        try {
+          if (lineContent.toLowerCase().includes(term.toLowerCase())) {
+            searchResults.termResults[termIndex].matchingLines.push({
+              lineNumber,
+              content: lineContent,
+              termIndex
+            });
+            anyMatch = true;
+          }
+        } catch (err) {
+          logger.error({ 
+            term, 
+            lineIndex, 
+            error: err.message
+          }, 'Error matching search term');
         }
-      } catch (err) {
-        logger.error({ term, lineIndex, error: err.message }, 'Error matching search term');
+      });
+      
+      // If any term matched, add to overall results
+      if (anyMatch) {
+        searchResults.matchingLines.push({
+          lineNumber,
+          content: lineContent
+        });
       }
     });
     
-    // If any term matched, add to overall results
-    if (anyMatch) {
-      searchResults.matchingLines.push({
-        lineNumber,
-        content: lineContent
+    // Limit matching lines for very large results
+    const MAX_MATCHING_LINES = 5000;
+    if (searchResults.matchingLines.length > MAX_MATCHING_LINES) {
+      searchResults.matchingLines = searchResults.matchingLines.slice(0, MAX_MATCHING_LINES);
+      searchResults.truncated = true;
+      searchResults.originalCount = searchResults.matchingLines.length;
+      
+      // Also truncate per-term results
+      searchResults.termResults.forEach(result => {
+        if (result.matchingLines.length > MAX_MATCHING_LINES) {
+          result.originalCount = result.matchingLines.length;
+          result.matchingLines = result.matchingLines.slice(0, MAX_MATCHING_LINES);
+          result.truncated = true;
+        }
       });
     }
-  });
-  
-  // Update counts
-  searchResults.termResults.forEach(result => {
-    result.count = result.matchingLines.length;
-  });
-  searchResults.count = searchResults.matchingLines.length;
-  
-  return searchResults;
+    
+    // Update counts
+    searchResults.termResults.forEach(result => {
+      result.count = result.originalCount || result.matchingLines.length;
+    });
+    
+    searchResults.count = searchResults.originalCount || searchResults.matchingLines.length;
+    
+    return searchResults;
+  } catch (err) {
+    logger.error({ 
+      error: err.message,
+      stack: err.stack,
+      searchTerms,
+      lineCount: lines?.length
+    }, 'Error processing search terms');
+    
+    // Return empty results on error
+    return {
+      terms: searchTerms,
+      termResults: searchTerms.map(term => ({ term, matchingLines: [], count: 0 })),
+      matchingLines: [],
+      count: 0,
+      error: 'Error processing search terms'
+    };
+  }
 }
 
 /**
@@ -278,71 +401,121 @@ function processSearchTerms(lines, searchTerms) {
  * @returns {object} - Analysis results
  */
 function analyzeAppAdsTxt(lines) {
-  let validLineCount = 0;
-  let commentLineCount = 0;
-  let emptyLineCount = 0;
-  let invalidLineCount = 0;
-  
-  const publishers = new Set();
-  const relationships = {
-    direct: 0,
-    reseller: 0,
-    other: 0
-  };
-  
-  lines.forEach(line => {
-    // Skip empty lines
-    if (!line.trim()) {
-      emptyLineCount++;
-      return;
-    }
+  try {
+    let validLineCount = 0;
+    let commentLineCount = 0;
+    let emptyLineCount = 0;
+    let invalidLineCount = 0;
     
-    // Handle comments
-    const commentIndex = line.indexOf('#');
-    if (commentIndex === 0) {
-      commentLineCount++;
-      return;
-    }
+    const publishers = new Set();
+    const relationships = {
+      direct: 0,
+      reseller: 0,
+      other: 0
+    };
     
-    const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
-    if (!cleanLine) {
-      emptyLineCount++;
-      return;
-    }
+    // Track errors during processing
+    const processingErrors = [];
     
-    // Parse fields
-    const fields = cleanLine.split(',').map(f => f.trim());
-    
-    if (fields.length >= 3) {
-      validLineCount++;
-      
-      // Extract publisher
-      const domain = fields[0].toLowerCase();
-      publishers.add(domain);
-      
-      // Extract relationship
-      const relationship = fields[2].toLowerCase();
-      if (relationship === 'direct') {
-        relationships.direct++;
-      } else if (relationship === 'reseller') {
-        relationships.reseller++;
-      } else {
-        relationships.other++;
+    lines.forEach((line, index) => {
+      try {
+        // Skip empty lines
+        if (!line.trim()) {
+          emptyLineCount++;
+          return;
+        }
+        
+        // Handle comments
+        const commentIndex = line.indexOf('#');
+        if (commentIndex === 0) {
+          commentLineCount++;
+          return;
+        }
+        
+        const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
+        if (!cleanLine) {
+          emptyLineCount++;
+          return;
+        }
+        
+        // Parse fields
+        const fields = cleanLine.split(',').map(f => f.trim());
+        
+        if (fields.length >= 3) {
+          validLineCount++;
+          
+          // Extract publisher
+          const domain = fields[0].toLowerCase();
+          publishers.add(domain);
+          
+          // Extract relationship
+          const relationship = fields[2].toLowerCase();
+          if (relationship === 'direct') {
+            relationships.direct++;
+          } else if (relationship === 'reseller') {
+            relationships.reseller++;
+          } else {
+            relationships.other++;
+          }
+        } else {
+          invalidLineCount++;
+          
+          // Only track first few errors to avoid excessive logging
+          if (processingErrors.length < 5) {
+            processingErrors.push({
+              line: index + 1,
+              content: line.length > 100 ? line.substring(0, 100) + '...' : line,
+              error: 'Invalid line format (requires at least 3 comma-separated fields)'
+            });
+          }
+        }
+      } catch (lineErr) {
+        invalidLineCount++;
+        
+        // Only track first few errors
+        if (processingErrors.length < 5) {
+          processingErrors.push({
+            line: index + 1,
+            error: lineErr.message
+          });
+        }
       }
-    } else {
-      invalidLineCount++;
+    });
+    
+    // Log any processing errors
+    if (processingErrors.length > 0) {
+      logger.debug({ processingErrors }, 'Errors during app-ads.txt analysis');
     }
-  });
-  
-  return {
-    totalLines: lines.length,
-    validLines: validLineCount,
-    commentLines: commentLineCount,
-    emptyLines: emptyLineCount,
-    invalidLines: invalidLineCount,
-    uniquePublishers: publishers.size,
-    relationships
-  };
+    
+    return {
+      totalLines: lines.length,
+      validLines: validLineCount,
+      commentLines: commentLineCount,
+      emptyLines: emptyLineCount,
+      invalidLines: invalidLineCount,
+      uniquePublishers: publishers.size,
+      relationships,
+      processingErrors: processingErrors.length > 0 ? processingErrors : undefined
+    };
+  } catch (err) {
+    logger.error({ 
+      error: err.message,
+      stack: err.stack,
+      lineCount: lines?.length
+    }, 'Error analyzing app-ads.txt');
+    
+    // Return minimal analysis on error
+    return {
+      totalLines: lines?.length || 0,
+      validLines: 0,
+      commentLines: 0,
+      emptyLines: 0,
+      invalidLines: 0,
+      uniquePublishers: 0,
+      relationships: { direct: 0, reseller: 0, other: 0 },
+      error: 'Analysis error: ' + err.message
+    };
+  }
 }
 
 /**
