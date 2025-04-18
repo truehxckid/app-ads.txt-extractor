@@ -35,12 +35,27 @@ parentPort.on('message', (message) => {
       success: true
     });
   }
+  
+  if (message && message.type === 'terminate') {
+    // Gracefully handle termination request
+    safeSendToParent({
+      debug: true,
+      message: 'Termination requested',
+      reason: message.reason || 'unknown',
+      threadId,
+      timestamp: Date.now(),
+      success: true
+    });
+    
+    // Exit cleanly when requested to terminate
+    setTimeout(() => process.exit(0), 100);
+  }
 });
 
 // Setup basic process-wide exception handlers
 process.on('uncaughtException', (err) => {
   try {
-    parentPort.postMessage({
+    safeSendToParent({
       error: `Uncaught exception in worker: ${err.message}`,
       errorDetails: {
         type: 'uncaughtException',
@@ -50,7 +65,6 @@ process.on('uncaughtException', (err) => {
       },
       success: false
     });
-    console.error('Worker uncaught exception:', err);
   } catch (postError) {
     console.error('Critical worker error (failed to report):', err);
   }
@@ -63,7 +77,7 @@ process.on('uncaughtException', (err) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   try {
-    parentPort.postMessage({
+    safeSendToParent({
       error: `Unhandled promise rejection in worker: ${reason instanceof Error ? reason.message : String(reason)}`,
       errorDetails: {
         type: 'unhandledRejection',
@@ -73,7 +87,6 @@ process.on('unhandledRejection', (reason, promise) => {
       },
       success: false
     });
-    console.error('Worker unhandled rejection:', reason);
   } catch (postError) {
     console.error('Critical worker error (unhandled rejection, failed to report):', reason);
   }
@@ -117,29 +130,31 @@ function processSearchTerms(lines, searchTerms) {
       debug: true,
       message: 'Starting search term processing',
       lineCount: lines.length,
-      searchTermCount: searchTerms.length,
+      searchTermCount: searchTerms ? searchTerms.length : 0,
       timestamp: Date.now(),
       success: true
     });
-    
-    // Initialize results object with safer defaults
-    const searchResults = {
-      terms: searchTerms || [],
-      termResults: Array.isArray(searchTerms) ? searchTerms.map(term => ({
-        term,
-        matchingLines: [],
-        count: 0
-      })) : [],
-      matchingLines: [],
-      count: 0
-    };
     
     // Validate inputs more carefully
     if (!Array.isArray(lines)) {
       throw new Error('Lines must be an array');
     }
     
-    if (!Array.isArray(searchTerms) || searchTerms.length === 0) {
+    const validSearchTerms = Array.isArray(searchTerms) ? searchTerms : [];
+    
+    // Initialize results object with safer defaults
+    const searchResults = {
+      terms: validSearchTerms,
+      termResults: validSearchTerms.map(term => ({
+        term,
+        matchingLines: [],
+        count: 0
+      })),
+      matchingLines: [],
+      count: 0
+    };
+    
+    if (validSearchTerms.length === 0) {
       return searchResults; // Return empty results for no search terms
     }
     
@@ -176,8 +191,8 @@ function processSearchTerms(lines, searchTerms) {
         let anyMatch = false;
         
         // Check each search term
-        for (let termIndex = 0; termIndex < searchTerms.length; termIndex++) {
-          const term = searchTerms[termIndex];
+        for (let termIndex = 0; termIndex < validSearchTerms.length; termIndex++) {
+          const term = validSearchTerms[termIndex];
           
           // Skip invalid terms
           if (!term || typeof term !== 'string') continue;
@@ -254,7 +269,7 @@ function processSearchTerms(lines, searchTerms) {
     });
     
     // Set total match count
-    searchResults.count = searchResults.matchingLines.length;
+    searchResults.count = searchResults.totalMatchingLines || searchResults.matchingLines.length;
     
     return searchResults;
   } catch (err) {
@@ -443,6 +458,8 @@ function analyzeAppAdsTxt(lines) {
  * Worker thread main function
  */
 function processAppAdsContent() {
+  const startTime = Date.now();
+  
   try {
     // Check if workerData exists and has the required properties
     if (!workerData) {
@@ -605,21 +622,30 @@ function processAppAdsContent() {
         memoryUsageFormatted: memStats
       },
       success: true,
-      processingTime: Date.now() - (workerData.startTime || Date.now())
+      processingTime: Date.now() - startTime
     };
     
-    // Send final result - with tracking to ensure it's sent
-    resultSent = safeSendToParent(finalResult);
-    
-    // Wait a bit before exiting to ensure message is sent
-    // This is a key fix to ensure message delivery before exit
-    setTimeout(() => {
-      process.exit(0); // Exit with success code
-    }, 300);
+    // Send final result
+    if (safeSendToParent(finalResult)) {
+      resultSent = true;
+      safeSendToParent({
+        debug: true,
+        message: 'Worker completed successfully',
+        timestamp: Date.now(),
+        success: true
+      });
+      
+      // Clean exit after a brief delay to ensure messages are sent
+      setTimeout(() => {
+        process.exit(0);
+      }, 300);
+    } else {
+      throw new Error('Failed to send final result to parent');
+    }
     
   } catch (error) {
     // Send error to parent thread
-    resultSent = safeSendToParent({
+    safeSendToParent({
       error: `Worker error: ${error.message}`,
       errorDetails: {
         error: error.message,
@@ -629,7 +655,7 @@ function processAppAdsContent() {
       success: false
     });
     
-    // Use setTimeout to ensure the message is sent before exiting
+    // Exit with error
     setTimeout(() => {
       process.exit(1);
     }, 300);
@@ -637,30 +663,7 @@ function processAppAdsContent() {
 }
 
 // Start processing when the worker is created
-try {
-  // Add a startTime for performance tracking
-  if (workerData) {
-    workerData.startTime = Date.now();
-  }
-  
-  // Run the main worker function
-  processAppAdsContent();
-} catch (startupError) {
-  // Try to report the error
-  safeSendToParent({
-    error: `Fatal worker startup error: ${startupError.message}`,
-    errorDetails: {
-      error: startupError.message,
-      stack: startupError.stack
-    },
-    success: false
-  });
-  
-  // Use setTimeout to ensure the message is sent before exiting
-  setTimeout(() => {
-    process.exit(1);
-  }, 300);
-}
+processAppAdsContent();
 
 // Add a safety timeout to ensure worker doesn't run forever
 const MAX_EXECUTION_TIME = 5 * 60 * 1000; // 5 minutes
@@ -671,6 +674,7 @@ setTimeout(() => {
       success: false
     });
     
+    // Exit with error
     setTimeout(() => {
       process.exit(1);
     }, 300);
