@@ -1,11 +1,14 @@
 /**
- * App-Ads.txt Parser Worker Thread with enhanced debugging
+ * App-Ads.txt Parser Worker Thread with enhanced debugging and reliability
  * Used for processing large app-ads.txt files in a separate thread
  */
 
 'use strict';
 
 const { parentPort, workerData, threadId } = require('worker_threads');
+
+// Flag to track if we've sent a final result
+let resultSent = false;
 
 // Send initial startup message
 try {
@@ -20,6 +23,19 @@ try {
   // Can't do anything if we can't communicate with the parent
   process.exit(2);
 }
+
+// Set up message handler for parent communication
+parentPort.on('message', (message) => {
+  if (message && message.type === 'health_check') {
+    safeSendToParent({
+      debug: true,
+      message: 'Health check response',
+      threadId,
+      timestamp: Date.now(),
+      success: true
+    });
+  }
+});
 
 // Setup basic process-wide exception handlers
 process.on('uncaughtException', (err) => {
@@ -39,7 +55,10 @@ process.on('uncaughtException', (err) => {
     console.error('Critical worker error (failed to report):', err);
   }
   
-  process.exit(1);
+  // Allow some time for the message to be sent before exiting
+  setTimeout(() => {
+    process.exit(1);
+  }, 200);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
@@ -59,15 +78,24 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Critical worker error (unhandled rejection, failed to report):', reason);
   }
   
-  process.exit(1);
+  // Allow some time for the message to be sent before exiting
+  setTimeout(() => {
+    process.exit(1);
+  }, 200);
 });
 
 /**
  * Safely send message to parent
  * @param {object} message - Message to send
+ * @returns {boolean} - Whether the message was sent successfully
  */
 function safeSendToParent(message) {
   try {
+    if (!parentPort) {
+      console.error('No parent port available to send message');
+      return false;
+    }
+    
     parentPort.postMessage(message);
     return true;
   } catch (err) {
@@ -138,6 +166,9 @@ function processSearchTerms(lines, searchTerms) {
       
       // Process each line in the batch
       for (let i = batchStart; i < batchEnd; i++) {
+        // Safeguard against invalid lines
+        if (!lines[i] || typeof lines[i] !== 'string') continue;
+        
         const lineContent = lines[i].trim();
         if (!lineContent) continue;
         
@@ -171,7 +202,7 @@ function processSearchTerms(lines, searchTerms) {
               warning: `Error matching search term: ${err.message}`,
               lineError: {
                 lineIndex: i,
-                line: lineContent,
+                line: lineContent ? lineContent.substring(0, 100) : 'invalid line',
                 term,
                 termIndex,
                 error: err.message
@@ -563,19 +594,32 @@ function processAppAdsContent() {
       external: Math.round(finalMemory.external / (1024 * 1024))
     };
     
-    // Send success result with all data
-    safeSendToParent({
+    // Create the final result object
+    const finalResult = {
       analyzed,
       searchResults,
       contentLength: content.length,
       lineCount: lines.length,
-      memoryUsage: memStats,
+      stats: {
+        memoryUsageAnalysis: finalMemory,
+        memoryUsageFormatted: memStats
+      },
       success: true,
       processingTime: Date.now() - (workerData.startTime || Date.now())
-    });
+    };
+    
+    // Send final result - with tracking to ensure it's sent
+    resultSent = safeSendToParent(finalResult);
+    
+    // Wait a bit before exiting to ensure message is sent
+    // This is a key fix to ensure message delivery before exit
+    setTimeout(() => {
+      process.exit(0); // Exit with success code
+    }, 300);
+    
   } catch (error) {
     // Send error to parent thread
-    safeSendToParent({
+    resultSent = safeSendToParent({
       error: `Worker error: ${error.message}`,
       errorDetails: {
         error: error.message,
@@ -588,7 +632,7 @@ function processAppAdsContent() {
     // Use setTimeout to ensure the message is sent before exiting
     setTimeout(() => {
       process.exit(1);
-    }, 100);
+    }, 300);
   }
 }
 
@@ -615,5 +659,20 @@ try {
   // Use setTimeout to ensure the message is sent before exiting
   setTimeout(() => {
     process.exit(1);
-  }, 100);
+  }, 300);
 }
+
+// Add a safety timeout to ensure worker doesn't run forever
+const MAX_EXECUTION_TIME = 5 * 60 * 1000; // 5 minutes
+setTimeout(() => {
+  if (!resultSent) {
+    safeSendToParent({
+      error: 'Worker timeout: maximum execution time exceeded',
+      success: false
+    });
+    
+    setTimeout(() => {
+      process.exit(1);
+    }, 300);
+  }
+}, MAX_EXECUTION_TIME);

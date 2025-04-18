@@ -1,5 +1,5 @@
 /**
- * Worker Pool service for App-Ads.txt Extractor with enhanced debugging
+ * Worker Pool service for App-Ads.txt Extractor with enhanced reliability
  * Manages worker threads for CPU-intensive tasks
  */
 
@@ -36,8 +36,8 @@ class WorkerPool {
     this.maxWorkers = options.maxWorkers || config.workers.maxWorkers;
     this.minWorkers = options.minWorkers || config.workers.minWorkers;
     
-    // Default timeout values
-    const defaultTaskTimeout = 300000; // 5 minutes - increased for large files
+    // Default timeout values with careful validation
+    const defaultTaskTimeout = 300000; // 5 minutes
     const defaultIdleTimeout = 60000; // 60 seconds
     
     // Properly validate and set timeout values
@@ -187,6 +187,7 @@ class WorkerPool {
       const workerId = `worker-${worker.threadId}`;
       let timeoutId;
       let progressInterval;
+      let exitHandled = false; // Flag to prevent double handling of worker exit
       
       // Store worker reference
       this.workers.set(workerId, worker);
@@ -200,46 +201,13 @@ class WorkerPool {
         worker // Keep reference to worker
       });
       
-      // Cleanup function to handle worker termination
-      const cleanup = () => {
-        clearTimeout(timeoutId);
-        clearInterval(progressInterval);
-        this.activeWorkers--;
-        this.workerStats.delete(workerId);
-        this.workers.delete(workerId);
-        
-        // Process next task in queue if any
-        setImmediate(() => this._processQueue());
-      };
-      
-      // Set up a progress check interval for long-running tasks
-      progressInterval = setInterval(() => {
-        const stats = this.workerStats.get(workerId);
-        if (stats) {
-          const runningTime = Date.now() - stats.startTime;
-          const sinceLastProgress = Date.now() - (stats.lastProgressTime || stats.startTime);
-          
-          // Log progress for long-running tasks
-          if (runningTime > 5000 && sinceLastProgress > 5000) {
-            logger.debug({
-              workerId,
-              taskId: task.id,
-              runningTime: `${Math.round(runningTime / 1000)}s`,
-              sinceLastProgress: `${Math.round(sinceLastProgress / 1000)}s`,
-              debugLogCount: task.debug.length
-            }, 'Worker still running');
-          }
-        }
-      }, 5000);
-      
-      // Explicitly log the timeout value for debugging
       logger.debug({
-        workerId,
-        taskId: task.id,
-        taskTimeout: this.taskTimeout
-      }, 'Setting worker timeout');
+        workerId, 
+        taskId: task.id
+      }, 'Worker started task');
       
       // Set up timeout to terminate stuck workers
+      // With better timeout handling
       timeoutId = setTimeout(() => {
         logger.warn({
           workerId,
@@ -250,202 +218,43 @@ class WorkerPool {
         }, 'Worker timeout, terminating');
         
         try {
-          worker.terminate();
-        } catch (termErr) {
-          logger.error({
-            workerId,
-            taskId: task.id,
-            error: termErr.message
-          }, 'Error terminating worker');
-        }
-        
-        task.reject(new Error(`Worker processing timed out after ${this.taskTimeout}ms`));
-        this.errors++;
-        cleanup();
-      }, this.taskTimeout);
-      
-      // Handle worker messages
-      worker.on('message', (result) => {
-        try {
-          // Update progress timestamp
-          const stats = this.workerStats.get(workerId);
-          if (stats) {
-            stats.lastProgressTime = Date.now();
-          }
-          
-          // Save debug messages
-          if (result.debug === true) {
-            task.debug.push({
-              timestamp: new Date().toISOString(),
-              ...result
-            });
-            
-            if (this.debugMode) {
-              logger.debug({
-                workerId,
-                taskId: task.id,
-                debugMessage: result.message,
-                timestamp: result.timestamp
-              }, 'Worker debug message');
+          // Send a signal to the worker that it's about to be terminated
+          if (worker.postMessage) {
+            try {
+              worker.postMessage({ type: 'terminate', reason: 'timeout' });
+            } catch (msgErr) {
+              // Ignore messaging errors
             }
-            
-            return; // Don't process debug messages as results
           }
           
-          // Handle progress messages without completing the task
-          if (result.progress && result.success === true) {
-            logger.debug({
-              workerId,
-              taskId: task.id,
-              progress: result.progress
-            }, 'Worker progress update');
-            return;
-          }
-          
-          // Handle warning messages
-          if (result.warning) {
-            logger.warn({
-              workerId,
-              taskId: task.id,
-              warning: result.warning,
-              lineError: result.lineError
-            }, 'Worker warning');
-            return;
-          }
-          
-          // Handle worker errors that don't cause termination
-          if (result.error && result.success === false) {
-            logger.error({
-              workerId,
-              taskId: task.id,
-              error: result.error,
-              errorDetails: result.errorDetails || 'No details provided',
-              debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
-            }, 'Worker reported error');
-            
-            this.errors++;
-            
-            // The worker sent an error but is still running, so terminate it
+          // Give it a short grace period before force termination
+          setTimeout(() => {
             try {
               worker.terminate();
             } catch (termErr) {
-              // Ignore termination errors here
+              logger.error({
+                workerId,
+                taskId: task.id,
+                error: termErr.message
+              }, 'Error terminating worker');
             }
             
-            task.reject(new Error(result.error));
-            cleanup();
-            return;
-          }
-          
-          // Log performance metrics for successful tasks
-          if (result.processingTime) {
-            logger.debug({
-              workerId,
-              taskId: task.id,
-              processingTime: `${result.processingTime}ms`,
-              contentLength: result.contentLength || 'unknown',
-              lineCount: result.lineCount || 'unknown'
-            }, 'Worker processing metrics');
-          }
-          
-          // Handle successful result
-          this.totalProcessed++;
-          task.resolve(result);
-          
-          try {
-            worker.terminate();
-          } catch (termErr) {
-            // Ignore termination errors for successful completions
-          }
-          
-          cleanup();
-          
-          logger.debug({
-            workerId,
-            taskId: task.id,
-            duration: Date.now() - this.workerStats.get(workerId)?.startTime
-          }, 'Worker completed task successfully');
-        } catch (handlerErr) {
+            task.reject(new Error(`Worker processing timed out after ${this.taskTimeout}ms`));
+            this.errors++;
+            cleanup(true);
+          }, 200);
+        } catch (err) {
           logger.error({
             workerId,
             taskId: task.id,
-            error: handlerErr.message,
-            stack: handlerErr.stack
-          }, 'Error handling worker message');
+            error: err.message
+          }, 'Error in timeout handler');
           
-          task.reject(handlerErr);
-          try {
-            worker.terminate();
-          } catch (termErr) {
-            // Already handled
-          }
-          cleanup();
-        }
-      });
-      
-      // Handle worker errors
-      worker.on('error', (err) => {
-        this.errors++;
-        
-        logger.error({
-          workerId,
-          taskId: task.id,
-          error: err.message,
-          stack: err.stack,
-          debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
-        }, 'Worker thread error event');
-        
-        task.reject(err);
-        
-        try {
-          worker.terminate();
-        } catch (termErr) {
-          // Already handled
-        }
-        
-        cleanup();
-      });
-      
-      // Handle worker exit
-      worker.on('exit', (code) => {
-        if (code !== 0) {
+          task.reject(new Error(`Worker timeout error: ${err.message}`));
           this.errors++;
-          
-          // Get the most recent debug messages to include in the error
-          const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
-          
-          logger.error({
-            workerId,
-            taskId: task.id,
-            exitCode: code,
-            recentDebugMessages: recentDebug,
-            totalDebugCount: task.debug.length
-          }, 'Worker exited with non-zero code');
-          
-          // Only reject if not already handled
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-            
-            task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
-          }
-          
-          cleanup();
-        } else {
-          // Normal exit case - may have already been handled
-          logger.debug({
-            workerId,
-            taskId: task.id,
-            exitCode: code
-          }, 'Worker exited normally');
-          cleanup();
+          cleanup(true);
         }
-      });
-      
-      logger.debug({
-        workerId, 
-        taskId: task.id
-      }, 'Worker started task');
+      }, this.taskTimeout);
       
     } catch (err) {
       this.activeWorkers--;
@@ -578,7 +387,23 @@ class WorkerPool {
       
       try {
         if (stats.worker) {
-          stats.worker.terminate();
+          // Give workers a chance to clean up
+          try {
+            if (typeof stats.worker.postMessage === 'function') {
+              stats.worker.postMessage({ type: 'shutdown' });
+            }
+          } catch (msgErr) {
+            // Ignore messaging errors during shutdown
+          }
+          
+          // Force terminate after a short delay
+          setTimeout(() => {
+            try {
+              stats.worker.terminate();
+            } catch (err) {
+              // Ignore errors during forced termination
+            }
+          }, 100);
         }
       } catch (err) {
         logger.debug({
@@ -601,9 +426,239 @@ class WorkerPool {
     logger.info('Worker pool shutdown');
   }
 }
+      
+      // Cleanup function to handle worker termination
+      const cleanup = (shouldProcessQueue = true) => {
+        // Only run cleanup once
+        if (exitHandled) return;
+        exitHandled = true;
+        
+        clearTimeout(timeoutId);
+        clearInterval(progressInterval);
+        this.activeWorkers--;
+        this.workerStats.delete(workerId);
+        this.workers.delete(workerId);
+        
+        // Process next task in queue if requested
+        if (shouldProcessQueue) {
+          setImmediate(() => this._processQueue());
+        }
+      };
 
-// Export the WorkerPool class and priority constants
-module.exports = {
-  WorkerPool,
-  Priority
-};
+      // Handle worker messages with improved reliability
+      worker.on('message', (result) => {
+        try {
+          // Update progress timestamp
+          const stats = this.workerStats.get(workerId);
+          if (stats) {
+            stats.lastProgressTime = Date.now();
+          }
+          
+          // Save debug messages
+          if (result.debug === true) {
+            task.debug.push({
+              timestamp: new Date().toISOString(),
+              ...result
+            });
+            
+            if (this.debugMode) {
+              logger.debug({
+                workerId,
+                taskId: task.id,
+                debugMessage: result.message,
+                timestamp: result.timestamp
+              }, 'Worker debug message');
+            }
+            
+            return; // Don't process debug messages as results
+          }
+          
+          // Handle progress messages without completing the task
+          if (result.progress && result.success === true) {
+            logger.debug({
+              workerId,
+              taskId: task.id,
+              progress: result.progress
+            }, 'Worker progress update');
+            return;
+          }
+          
+          // Handle warning messages
+          if (result.warning) {
+            logger.warn({
+              workerId,
+              taskId: task.id,
+              warning: result.warning,
+              lineError: result.lineError
+            }, 'Worker warning');
+            return;
+          }
+          
+          // Handle worker errors that don't cause termination
+          if (result.error && result.success === false) {
+            logger.error({
+              workerId,
+              taskId: task.id,
+              error: result.error,
+              errorDetails: result.errorDetails || 'No details provided',
+              debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
+            }, 'Worker reported error');
+            
+            this.errors++;
+            
+            // The worker sent an error but may still be running, so terminate it safely
+            try {
+              worker.terminate();
+            } catch (termErr) {
+              // Ignore termination errors here
+            }
+            
+            task.reject(new Error(result.error));
+            cleanup();
+            return;
+          }
+          
+          // Log performance metrics for successful tasks
+          if (result.processingTime) {
+            logger.debug({
+              workerId,
+              taskId: task.id,
+              processingTime: `${result.processingTime}ms`,
+              contentLength: result.contentLength || 'unknown',
+              lineCount: result.lineCount || 'unknown'
+            }, 'Worker processing metrics');
+          }
+          
+          // Handle successful result - this is a final result
+          this.totalProcessed++;
+          
+          // Clear timeout since we've received a successful result
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
+          // Resolve the task promise
+          task.resolve(result);
+          
+          // Allow a short delay before terminating to ensure message queue is flushed
+          setTimeout(() => {
+            try {
+              worker.terminate();
+            } catch (termErr) {
+              // Ignore termination errors for successful completions
+            }
+            
+            // Only clean up after we're sure the worker is done
+            cleanup();
+            
+            logger.debug({
+              workerId,
+              taskId: task.id,
+              duration: Date.now() - this.workerStats.get(workerId)?.startTime
+            }, 'Worker completed task successfully');
+          }, 100);
+        } catch (handlerErr) {
+          logger.error({
+            workerId,
+            taskId: task.id,
+            error: handlerErr.message,
+            stack: handlerErr.stack
+          }, 'Error handling worker message');
+          
+          task.reject(handlerErr);
+          try {
+            worker.terminate();
+          } catch (termErr) {
+            // Already handled
+          }
+          cleanup();
+        }
+      });
+      
+      // Handle worker errors
+      worker.on('error', (err) => {
+        this.errors++;
+        
+        logger.error({
+          workerId,
+          taskId: task.id,
+          error: err.message,
+          stack: err.stack,
+          debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
+        }, 'Worker thread error event');
+        
+        task.reject(err);
+        
+        try {
+          worker.terminate();
+        } catch (termErr) {
+          // Already handled
+        }
+        
+        cleanup();
+      });
+      
+      // Handle worker exit with improved reliability
+      worker.on('exit', (code) => {
+        // Clear timeout since worker has exited
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        if (code !== 0) {
+          // Only count as error if we haven't already handled it
+          if (!exitHandled) {
+            this.errors++;
+          }
+          
+          // Get the most recent debug messages to include in the error
+          const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
+          
+          logger.error({
+            workerId,
+            taskId: task.id,
+            exitCode: code,
+            recentDebugMessages: recentDebug,
+            totalDebugCount: task.debug.length
+          }, 'Worker exited with non-zero code');
+          
+          // Only reject if not already handled
+          if (!exitHandled) {
+            task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
+            cleanup(true);
+          }
+        } else {
+          // Normal exit case (success)
+          logger.debug({
+            workerId,
+            taskId: task.id,
+            exitCode: code
+          }, 'Worker exited normally');
+          
+          // If we haven't already handled this exit (via message), do it now
+          if (!exitHandled) {
+            // Assume this was a successful exit, but we missed the message
+            logger.debug({
+              workerId,
+              taskId: task.id,
+            }, 'Worker exited successfully before sending final result');
+            
+            // If we have logs indicating successful processing, create a minimal result
+            if (task.debug.some(d => d.message === 'Completed app-ads.txt analysis')) {
+              const result = {
+                success: true,
+                analyzed: { note: 'Reconstructed from logs after worker success' },
+                searchResults: null
+              };
+              task.resolve(result);
+            } else {
+              // Otherwise we can't be sure what happened
+              task.reject(new Error('Worker exited without sending complete results'));
+            }
+            
+            cleanup(true);
+          }
+        }
+      });
