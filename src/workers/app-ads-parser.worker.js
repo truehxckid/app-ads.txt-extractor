@@ -179,10 +179,7 @@ function processSearchTermsInChunks(lines, searchTerms) {
     
     // Precompile case-insensitive regex patterns for better performance
     const searchRegexes = validSearchTerms.map(term => 
-      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\// Exit cleanly when requested to terminate
-    setTimeout(() => process.exit(0), 100);
-  }
-});'), 'i')
+      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
     );
     
     for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
@@ -228,6 +225,7 @@ function processSearchTermsInChunks(lines, searchTerms) {
                   content: lineContent,
                   termIndex
                 });
+                searchResults.termResults[termIndex].count++;
               }
               
               anyMatch = true;
