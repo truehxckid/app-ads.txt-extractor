@@ -429,68 +429,100 @@ class WorkerPool {
       });
       
       // Handle worker exit with improved reliability
-      worker.on('exit', (code) => {
-        // Clear timeout since worker has exited
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        if (code !== 0) {
-          // Only count as error if we haven't already handled it
-          if (!exitHandled) {
-            this.errors++;
-          }
-          
-          // Get the most recent debug messages to include in the error
-          const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
-          
-          logger.error({
-            workerId,
-            taskId: task.id,
-            exitCode: code,
-            recentDebugMessages: recentDebug,
-            totalDebugCount: task.debug.length
-          }, 'Worker exited with non-zero code');
-          
-          // Only reject if not already handled
-          if (!exitHandled) {
-            task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
-            cleanup(true);
-          }
-        } else {
-          // Normal exit case (success)
-          logger.debug({
-            workerId,
-            taskId: task.id,
-            exitCode: code
-          }, 'Worker exited normally');
-          
-          // If we haven't already handled this exit (via message), do it now
-          if (!exitHandled) {
-            // Assume this was a successful exit, but we missed the message
-            logger.debug({
-              workerId,
-              taskId: task.id,
-            }, 'Worker exited successfully before sending final result');
-            
-            // If we have logs indicating successful processing, create a minimal result
-            if (task.debug.some(d => d.message === 'Completed app-ads.txt analysis')) {
-              const result = {
-                success: true,
-                analyzed: { note: 'Reconstructed from logs after worker success' },
-                searchResults: null
-              };
-              task.resolve(result);
-            } else {
-              // Otherwise we can't be sure what happened
-              task.reject(new Error('Worker exited without sending complete results'));
-            }
-            
-            cleanup(true);
-          }
-        }
+      // Handle worker exit with improved reliability
+worker.on('exit', (code) => {
+  // Clear timeout since worker has exited
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    timeoutId = null;
+  }
+  
+  // Check if the worker exited with a non-zero code
+  if (code !== 0) {
+    // Only count as error if we haven't already handled it and result wasn't already sent
+    const workerSuccessfullyCompleted = task.debug.some(d => 
+      d.message === 'Worker completed successfully' || 
+      d.message === 'Completed app-ads.txt analysis'
+    );
+    
+    // If worker completed its task successfully before exiting with error, don't count as error
+    if (!exitHandled && !workerSuccessfullyCompleted) {
+      this.errors++;
+      
+      // Get the most recent debug messages to include in the error
+      const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
+      
+      logger.error({
+        workerId,
+        taskId: task.id,
+        exitCode: code,
+        recentDebugMessages: recentDebug,
+        totalDebugCount: task.debug.length
+      }, 'Worker exited with non-zero code');
+      
+      // Only reject if not already handled
+      task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
+      cleanup(true);
+    } else if (workerSuccessfullyCompleted && !exitHandled) {
+      // Worker did complete successfully despite the exit code
+      logger.warn({
+        workerId,
+        taskId: task.id,
+        exitCode: code,
+        message: 'Worker exited with non-zero code but had completed its task successfully'
       });
+      
+      // Look for any final result in debug messages
+      const resultMsg = task.debug.find(d => !d.debug && d.success === true);
+      
+      if (resultMsg) {
+        // We have a successful result despite the exit code
+        task.resolve(resultMsg);
+      } else {
+        // Create minimal result based on debug logs
+        const result = {
+          success: true,
+          analyzed: { note: 'Reconstructed from logs after worker success' },
+          searchResults: null
+        };
+        task.resolve(result);
+      }
+      
+      cleanup(true);
+    }
+  } else {
+    // Normal exit case (success)
+    logger.debug({
+      workerId,
+      taskId: task.id,
+      exitCode: code
+    }, 'Worker exited normally');
+    
+    // If we haven't already handled this exit (via message), do it now
+    if (!exitHandled) {
+      // Assume this was a successful exit, but we missed the message
+      logger.debug({
+        workerId,
+        taskId: task.id,
+      }, 'Worker exited successfully before sending final result');
+      
+      // If we have logs indicating successful processing, create a minimal result
+      if (task.debug.some(d => d.message === 'Completed app-ads.txt analysis')) {
+        const result = {
+          success: true,
+          analyzed: { note: 'Reconstructed from logs after worker success' },
+          searchResults: null
+        };
+        task.resolve(result);
+      } else {
+        // Otherwise we can't be sure what happened
+        task.reject(new Error('Worker exited without sending complete results'));
+      }
+      
+      cleanup(true);
+    }
+  }
+});
     } catch (err) {
       this.activeWorkers--;
       this.errors++;

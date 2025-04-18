@@ -602,6 +602,9 @@ function processAppAdsContent() {
       }
     }
     
+    // Clear lines array to free memory
+    lines = null;
+    
     // Final memory usage
     const finalMemory = process.memoryUsage();
     const memStats = {
@@ -616,7 +619,7 @@ function processAppAdsContent() {
       analyzed,
       searchResults,
       contentLength: content.length,
-      lineCount: lines.length,
+      lineCount: content.split(/\r\n|\n|\r/).length, // Calculate again instead of using lines array
       stats: {
         memoryUsageAnalysis: finalMemory,
         memoryUsageFormatted: memStats
@@ -625,7 +628,7 @@ function processAppAdsContent() {
       processingTime: Date.now() - startTime
     };
     
-    // Send final result
+    // Send final result without explicitly calling process.exit after
     if (safeSendToParent(finalResult)) {
       resultSent = true;
       safeSendToParent({
@@ -635,10 +638,9 @@ function processAppAdsContent() {
         success: true
       });
       
-      // Clean exit after a brief delay to ensure messages are sent
-      setTimeout(() => {
-        process.exit(0);
-      }, 300);
+      // **** IMPORTANT: DON'T EXPLICITLY CALL PROCESS.EXIT ****
+      // Let Node.js naturally exit the worker when all tasks are done
+      // This prevents unexpected exit codes
     } else {
       throw new Error('Failed to send final result to parent');
     }
@@ -655,10 +657,10 @@ function processAppAdsContent() {
       success: false
     });
     
-    // Exit with error
+    // Exit with error, but with a delay to ensure message is sent
     setTimeout(() => {
       process.exit(1);
-    }, 300);
+    }, 500);
   }
 }
 
@@ -680,3 +682,54 @@ setTimeout(() => {
     }, 300);
   }
 }, MAX_EXECUTION_TIME);
+
+// Improved exit handler to catch issues with process.exit
+const originalExit = process.exit;
+process.exit = function(code) {
+  try {
+    if (code !== 0) {
+      // Capture stack trace to see where the non-zero exit is happening
+      const stack = new Error().stack;
+      
+      safeSendToParent({
+        debug: true,
+        message: 'Process exit called with non-zero code',
+        exitCode: code,
+        exitStack: stack,
+        memoryUsage: process.memoryUsage(),
+        timestamp: Date.now()
+      });
+      
+      // Give time for the message to be sent
+      setTimeout(() => originalExit(code), 300);
+    } else {
+      originalExit(code);
+    }
+  } catch (err) {
+    // If we can't even send the message, just exit
+    originalExit(code);
+  }
+};
+
+// Add memory monitoring to help detect memory leaks or issues
+let memoryMonitorInterval = setInterval(() => {
+  const memory = process.memoryUsage();
+  
+  // Only report if memory usage is concerning
+  if (memory.heapUsed > 100 * 1024 * 1024) { // Over 100MB
+    safeSendToParent({
+      debug: true,
+      message: 'High memory usage detected',
+      memoryUsage: {
+        rss: `${Math.round(memory.rss / (1024 * 1024))}MB`,
+        heapTotal: `${Math.round(memory.heapTotal / (1024 * 1024))}MB`,
+        heapUsed: `${Math.round(memory.heapUsed / (1024 * 1024))}MB`,
+        external: `${Math.round(memory.external / (1024 * 1024))}MB`
+      },
+      timestamp: Date.now()
+    });
+  }
+}, 5000);
+
+// Ensure the memory monitoring doesn't keep the process alive
+memoryMonitorInterval.unref();
