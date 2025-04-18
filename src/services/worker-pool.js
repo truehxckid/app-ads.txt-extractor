@@ -206,6 +206,24 @@ class WorkerPool {
         taskId: task.id
       }, 'Worker started task');
       
+      // Cleanup function to handle worker termination
+      const cleanup = (shouldProcessQueue = true) => {
+        // Only run cleanup once
+        if (exitHandled) return;
+        exitHandled = true;
+        
+        clearTimeout(timeoutId);
+        clearInterval(progressInterval);
+        this.activeWorkers--;
+        this.workerStats.delete(workerId);
+        this.workers.delete(workerId);
+        
+        // Process next task in queue if requested
+        if (shouldProcessQueue) {
+          setImmediate(() => this._processQueue());
+        }
+      };
+
       // Set up timeout to terminate stuck workers
       // With better timeout handling
       timeoutId = setTimeout(() => {
@@ -256,195 +274,6 @@ class WorkerPool {
         }
       }, this.taskTimeout);
       
-    } catch (err) {
-      this.activeWorkers--;
-      this.errors++;
-      
-      logger.error({
-        error: err.message,
-        stack: err.stack,
-        taskId: task.id
-      }, 'Failed to start worker');
-      
-      task.reject(err);
-      
-      // Try next task
-      setImmediate(() => this._processQueue());
-    }
-  }
-  
-  /**
-   * Ensure minimum number of idle workers
-   * @private
-   */
-  _ensureMinimumWorkers() {
-    const currentWorkers = this.workerStats.size;
-    const neededWorkers = Math.max(0, this.minWorkers - currentWorkers);
-    
-    if (neededWorkers > 0) {
-      logger.debug({
-        currentWorkers,
-        minWorkers: this.minWorkers,
-        creating: neededWorkers
-      }, 'Creating idle workers');
-    }
-  }
-  
-  /**
-   * Monitor worker health
-   * @private
-   */
-  _monitorWorkerHealth() {
-    const now = Date.now();
-    
-    // Check for long-running workers
-    for (const [workerId, stats] of this.workerStats.entries()) {
-      const duration = now - stats.startTime;
-      
-      // Using taskTimeout directly since we've already validated it
-      if (duration > this.taskTimeout * 0.8) {
-        logger.warn({
-          workerId,
-          taskId: stats.taskId,
-          duration: `${Math.round(duration / 1000)}s`,
-          timeout: `${Math.round(this.taskTimeout / 1000)}s`,
-          percentComplete: Math.round((duration / this.taskTimeout) * 100) + '%'
-        }, 'Worker approaching timeout limit');
-        
-        // Try to send a message to the worker to check if it's responsive
-        try {
-          if (stats.worker && typeof stats.worker.postMessage === 'function') {
-            stats.worker.postMessage({ type: 'health_check' });
-          }
-        } catch (err) {
-          logger.debug({
-            workerId,
-            error: err.message
-          }, 'Failed to send health check to worker');
-        }
-      }
-    }
-    
-    // Auto-scale down if idle for too long
-    if (this.activeWorkers === 0 && this.queue.length === 0) {
-      const idleTime = now - this.lastTaskTime;
-      
-      // Using idleTimeout directly since we've already validated it
-      if (idleTime > this.idleTimeout && this.workerStats.size > this.minWorkers) {
-        logger.debug({
-          currentWorkers: this.workerStats.size,
-          minWorkers: this.minWorkers,
-          idleTime: `${Math.round(idleTime / 1000)}s`
-        }, 'Scaling down idle workers');
-      }
-    }
-    
-    // Log system memory stats periodically
-    try {
-      const memUsage = process.memoryUsage();
-      logger.debug({
-        rss: Math.round(memUsage.rss / (1024 * 1024)) + ' MB',
-        heapTotal: Math.round(memUsage.heapTotal / (1024 * 1024)) + ' MB',
-        heapUsed: Math.round(memUsage.heapUsed / (1024 * 1024)) + ' MB',
-        external: Math.round(memUsage.external / (1024 * 1024)) + ' MB',
-        activeWorkers: this.activeWorkers,
-        queueLength: this.queue.length
-      }, 'Worker pool memory usage');
-    } catch (memErr) {
-      // Ignore memory monitoring errors
-    }
-  }
-  
-  /**
-   * Get statistics about the worker pool
-   * @returns {object} - Statistics object
-   */
-  getStats() {
-    return {
-      activeWorkers: this.activeWorkers,
-      queueLength: this.queue.length,
-      totalProcessed: this.totalProcessed,
-      errors: this.errors,
-      maxWorkers: this.maxWorkers,
-      minWorkers: this.minWorkers,
-      taskTimeout: this.taskTimeout,
-      idleTimeout: this.idleTimeout
-    };
-  }
-  
-  /**
-   * Shutdown the worker pool
-   */
-  shutdown() {
-    clearInterval(this.monitorInterval);
-    
-    // Terminate any existing workers
-    for (const [workerId, stats] of this.workerStats.entries()) {
-      logger.debug({
-        workerId,
-        taskId: stats.taskId
-      }, 'Terminating worker on shutdown');
-      
-      try {
-        if (stats.worker) {
-          // Give workers a chance to clean up
-          try {
-            if (typeof stats.worker.postMessage === 'function') {
-              stats.worker.postMessage({ type: 'shutdown' });
-            }
-          } catch (msgErr) {
-            // Ignore messaging errors during shutdown
-          }
-          
-          // Force terminate after a short delay
-          setTimeout(() => {
-            try {
-              stats.worker.terminate();
-            } catch (err) {
-              // Ignore errors during forced termination
-            }
-          }, 100);
-        }
-      } catch (err) {
-        logger.debug({
-          workerId,
-          error: err.message
-        }, 'Error terminating worker during shutdown');
-      }
-    }
-    
-    // Clean up worker maps
-    this.workerStats.clear();
-    this.workers.clear();
-    
-    // Reject all queued tasks
-    this.queue.forEach(task => {
-      task.reject(new Error('Worker pool shutdown'));
-    });
-    this.queue = [];
-    
-    logger.info('Worker pool shutdown');
-  }
-}
-      
-      // Cleanup function to handle worker termination
-      const cleanup = (shouldProcessQueue = true) => {
-        // Only run cleanup once
-        if (exitHandled) return;
-        exitHandled = true;
-        
-        clearTimeout(timeoutId);
-        clearInterval(progressInterval);
-        this.activeWorkers--;
-        this.workerStats.delete(workerId);
-        this.workers.delete(workerId);
-        
-        // Process next task in queue if requested
-        if (shouldProcessQueue) {
-          setImmediate(() => this._processQueue());
-        }
-      };
-
       // Handle worker messages with improved reliability
       worker.on('message', (result) => {
         try {
@@ -662,3 +491,178 @@ class WorkerPool {
           }
         }
       });
+    } catch (err) {
+      this.activeWorkers--;
+      this.errors++;
+      
+      logger.error({
+        error: err.message,
+        stack: err.stack,
+        taskId: task.id
+      }, 'Failed to start worker');
+      
+      task.reject(err);
+      
+      // Try next task
+      setImmediate(() => this._processQueue());
+    }
+  }
+  
+  /**
+   * Ensure minimum number of idle workers
+   * @private
+   */
+  _ensureMinimumWorkers() {
+    const currentWorkers = this.workerStats.size;
+    const neededWorkers = Math.max(0, this.minWorkers - currentWorkers);
+    
+    if (neededWorkers > 0) {
+      logger.debug({
+        currentWorkers,
+        minWorkers: this.minWorkers,
+        creating: neededWorkers
+      }, 'Creating idle workers');
+    }
+  }
+  
+  /**
+   * Monitor worker health
+   * @private
+   */
+  _monitorWorkerHealth() {
+    const now = Date.now();
+    
+    // Check for long-running workers
+    for (const [workerId, stats] of this.workerStats.entries()) {
+      const duration = now - stats.startTime;
+      
+      // Using taskTimeout directly since we've already validated it
+      if (duration > this.taskTimeout * 0.8) {
+        logger.warn({
+          workerId,
+          taskId: stats.taskId,
+          duration: `${Math.round(duration / 1000)}s`,
+          timeout: `${Math.round(this.taskTimeout / 1000)}s`,
+          percentComplete: Math.round((duration / this.taskTimeout) * 100) + '%'
+        }, 'Worker approaching timeout limit');
+        
+        // Try to send a message to the worker to check if it's responsive
+        try {
+          if (stats.worker && typeof stats.worker.postMessage === 'function') {
+            stats.worker.postMessage({ type: 'health_check' });
+          }
+        } catch (err) {
+          logger.debug({
+            workerId,
+            error: err.message
+          }, 'Failed to send health check to worker');
+        }
+      }
+    }
+    
+    // Auto-scale down if idle for too long
+    if (this.activeWorkers === 0 && this.queue.length === 0) {
+      const idleTime = now - this.lastTaskTime;
+      
+      // Using idleTimeout directly since we've already validated it
+      if (idleTime > this.idleTimeout && this.workerStats.size > this.minWorkers) {
+        logger.debug({
+          currentWorkers: this.workerStats.size,
+          minWorkers: this.minWorkers,
+          idleTime: `${Math.round(idleTime / 1000)}s`
+        }, 'Scaling down idle workers');
+      }
+    }
+    
+    // Log system memory stats periodically
+    try {
+      const memUsage = process.memoryUsage();
+      logger.debug({
+        rss: Math.round(memUsage.rss / (1024 * 1024)) + ' MB',
+        heapTotal: Math.round(memUsage.heapTotal / (1024 * 1024)) + ' MB',
+        heapUsed: Math.round(memUsage.heapUsed / (1024 * 1024)) + ' MB',
+        external: Math.round(memUsage.external / (1024 * 1024)) + ' MB',
+        activeWorkers: this.activeWorkers,
+        queueLength: this.queue.length
+      }, 'Worker pool memory usage');
+    } catch (memErr) {
+      // Ignore memory monitoring errors
+    }
+  }
+  
+  /**
+   * Get statistics about the worker pool
+   * @returns {object} - Statistics object
+   */
+  getStats() {
+    return {
+      activeWorkers: this.activeWorkers,
+      queueLength: this.queue.length,
+      totalProcessed: this.totalProcessed,
+      errors: this.errors,
+      maxWorkers: this.maxWorkers,
+      minWorkers: this.minWorkers,
+      taskTimeout: this.taskTimeout,
+      idleTimeout: this.idleTimeout
+    };
+  }
+  
+  /**
+   * Shutdown the worker pool
+   */
+  shutdown() {
+    clearInterval(this.monitorInterval);
+    
+    // Terminate any existing workers
+    for (const [workerId, stats] of this.workerStats.entries()) {
+      logger.debug({
+        workerId,
+        taskId: stats.taskId
+      }, 'Terminating worker on shutdown');
+      
+      try {
+        if (stats.worker) {
+          // Give workers a chance to clean up
+          try {
+            if (typeof stats.worker.postMessage === 'function') {
+              stats.worker.postMessage({ type: 'shutdown' });
+            }
+          } catch (msgErr) {
+            // Ignore messaging errors during shutdown
+          }
+          
+          // Force terminate after a short delay
+          setTimeout(() => {
+            try {
+              stats.worker.terminate();
+            } catch (err) {
+              // Ignore errors during forced termination
+            }
+          }, 100);
+        }
+      } catch (err) {
+        logger.debug({
+          workerId,
+          error: err.message
+        }, 'Error terminating worker during shutdown');
+      }
+    }
+    
+    // Clean up worker maps
+    this.workerStats.clear();
+    this.workers.clear();
+    
+    // Reject all queued tasks
+    this.queue.forEach(task => {
+      task.reject(new Error('Worker pool shutdown'));
+    });
+    this.queue = [];
+    
+    logger.info('Worker pool shutdown');
+  }
+}
+
+module.exports = {
+  WorkerPool,
+  Priority
+};
