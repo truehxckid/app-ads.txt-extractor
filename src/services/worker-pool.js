@@ -1,5 +1,5 @@
 /**
- * Worker Pool service for App-Ads.txt Extractor
+ * Worker Pool service for App-Ads.txt Extractor with enhanced debugging
  * Manages worker threads for CPU-intensive tasks
  */
 
@@ -37,7 +37,7 @@ class WorkerPool {
     this.minWorkers = options.minWorkers || config.workers.minWorkers;
     
     // Default timeout values
-    const defaultTaskTimeout = 30000; // 30 seconds
+    const defaultTaskTimeout = 300000; // 5 minutes - increased for large files
     const defaultIdleTimeout = 60000; // 60 seconds
     
     // Properly validate and set timeout values
@@ -53,7 +53,8 @@ class WorkerPool {
          ? config.workers.idleTimeout
          : defaultIdleTimeout);
     
-    this.workers = [];
+    this.debugMode = options.debug || false;
+    this.workers = new Map(); // Map of worker objects by ID
     this.queue = [];
     this.activeWorkers = 0;
     this.workerStats = new Map();
@@ -64,7 +65,8 @@ class WorkerPool {
     // Add logging to debug timeout values
     logger.info({
       taskTimeout: this.taskTimeout,
-      idleTimeout: this.idleTimeout
+      idleTimeout: this.idleTimeout,
+      debugMode: this.debugMode
     }, 'Worker pool timeouts initialized');
     
     // Initialize minimum workers
@@ -107,7 +109,8 @@ class WorkerPool {
         resolve,
         reject,
         priority,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        debug: [] // Store debug messages from worker
       };
       
       // Log data size to help troubleshoot memory issues
@@ -167,8 +170,15 @@ class WorkerPool {
     this.activeWorkers++;
     
     try {
+      // Prepare worker environment variables and resource limits
       const workerOptions = {
-        workerData: task.workerData
+        workerData: task.workerData,
+        // ONLY available in newer versions of Node.js:
+        // resourceLimits: {
+        //   maxOldGenerationSizeMb: 512, // Memory limit
+        //   maxYoungGenerationSizeMb: 128,
+        //   codeRangeSizeMb: 64
+        // }
       };
       
       // Create a new worker thread
@@ -178,12 +188,16 @@ class WorkerPool {
       let timeoutId;
       let progressInterval;
       
+      // Store worker reference
+      this.workers.set(workerId, worker);
+      
       // Track worker stats
       this.workerStats.set(workerId, {
         threadId: worker.threadId,
         startTime: Date.now(),
         taskId: task.id,
-        lastProgressTime: Date.now()
+        lastProgressTime: Date.now(),
+        worker // Keep reference to worker
       });
       
       // Cleanup function to handle worker termination
@@ -192,6 +206,7 @@ class WorkerPool {
         clearInterval(progressInterval);
         this.activeWorkers--;
         this.workerStats.delete(workerId);
+        this.workers.delete(workerId);
         
         // Process next task in queue if any
         setImmediate(() => this._processQueue());
@@ -210,7 +225,8 @@ class WorkerPool {
               workerId,
               taskId: task.id,
               runningTime: `${Math.round(runningTime / 1000)}s`,
-              sinceLastProgress: `${Math.round(sinceLastProgress / 1000)}s`
+              sinceLastProgress: `${Math.round(sinceLastProgress / 1000)}s`,
+              debugLogCount: task.debug.length
             }, 'Worker still running');
           }
         }
@@ -229,6 +245,7 @@ class WorkerPool {
           workerId,
           taskId: task.id,
           timeout: this.taskTimeout,
+          debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs',
           memoryUsage: process.memoryUsage()
         }, 'Worker timeout, terminating');
         
@@ -254,6 +271,25 @@ class WorkerPool {
           const stats = this.workerStats.get(workerId);
           if (stats) {
             stats.lastProgressTime = Date.now();
+          }
+          
+          // Save debug messages
+          if (result.debug === true) {
+            task.debug.push({
+              timestamp: new Date().toISOString(),
+              ...result
+            });
+            
+            if (this.debugMode) {
+              logger.debug({
+                workerId,
+                taskId: task.id,
+                debugMessage: result.message,
+                timestamp: result.timestamp
+              }, 'Worker debug message');
+            }
+            
+            return; // Don't process debug messages as results
           }
           
           // Handle progress messages without completing the task
@@ -283,12 +319,20 @@ class WorkerPool {
               workerId,
               taskId: task.id,
               error: result.error,
-              errorDetails: result.errorDetails || 'No details provided'
+              errorDetails: result.errorDetails || 'No details provided',
+              debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
             }, 'Worker reported error');
             
             this.errors++;
+            
+            // The worker sent an error but is still running, so terminate it
+            try {
+              worker.terminate();
+            } catch (termErr) {
+              // Ignore termination errors here
+            }
+            
             task.reject(new Error(result.error));
-            worker.terminate();
             cleanup();
             return;
           }
@@ -299,14 +343,21 @@ class WorkerPool {
               workerId,
               taskId: task.id,
               processingTime: `${result.processingTime}ms`,
-              contentLength: result.contentLength || 'unknown'
+              contentLength: result.contentLength || 'unknown',
+              lineCount: result.lineCount || 'unknown'
             }, 'Worker processing metrics');
           }
           
           // Handle successful result
           this.totalProcessed++;
           task.resolve(result);
-          worker.terminate();
+          
+          try {
+            worker.terminate();
+          } catch (termErr) {
+            // Ignore termination errors for successful completions
+          }
+          
           cleanup();
           
           logger.debug({
@@ -318,7 +369,8 @@ class WorkerPool {
           logger.error({
             workerId,
             taskId: task.id,
-            error: handlerErr.message
+            error: handlerErr.message,
+            stack: handlerErr.stack
           }, 'Error handling worker message');
           
           task.reject(handlerErr);
@@ -339,7 +391,8 @@ class WorkerPool {
           workerId,
           taskId: task.id,
           error: err.message,
-          stack: err.stack
+          stack: err.stack,
+          debugLogs: task.debug.length > 0 ? task.debug.slice(-5) : 'No debug logs'
         }, 'Worker thread error event');
         
         task.reject(err);
@@ -358,20 +411,33 @@ class WorkerPool {
         if (code !== 0) {
           this.errors++;
           
+          // Get the most recent debug messages to include in the error
+          const recentDebug = task.debug.length > 0 ? task.debug.slice(-10) : [];
+          
+          logger.error({
+            workerId,
+            taskId: task.id,
+            exitCode: code,
+            recentDebugMessages: recentDebug,
+            totalDebugCount: task.debug.length
+          }, 'Worker exited with non-zero code');
+          
           // Only reject if not already handled
           if (timeoutId) {
-            logger.error({
-              workerId,
-              taskId: task.id,
-              exitCode: code
-            }, 'Worker exited with non-zero code');
+            clearTimeout(timeoutId);
+            timeoutId = null;
             
-            task.reject(new Error(`Worker stopped with exit code ${code}`));
+            task.reject(new Error(`Worker stopped with exit code ${code}. Check logs for details.`));
           }
           
           cleanup();
         } else {
           // Normal exit case - may have already been handled
+          logger.debug({
+            workerId,
+            taskId: task.id,
+            exitCode: code
+          }, 'Worker exited normally');
           cleanup();
         }
       });
@@ -435,6 +501,18 @@ class WorkerPool {
           timeout: `${Math.round(this.taskTimeout / 1000)}s`,
           percentComplete: Math.round((duration / this.taskTimeout) * 100) + '%'
         }, 'Worker approaching timeout limit');
+        
+        // Try to send a message to the worker to check if it's responsive
+        try {
+          if (stats.worker && typeof stats.worker.postMessage === 'function') {
+            stats.worker.postMessage({ type: 'health_check' });
+          }
+        } catch (err) {
+          logger.debug({
+            workerId,
+            error: err.message
+          }, 'Failed to send health check to worker');
+        }
       }
     }
     
@@ -498,8 +576,21 @@ class WorkerPool {
         taskId: stats.taskId
       }, 'Terminating worker on shutdown');
       
-      // We would terminate the worker here if we had a reference to it
+      try {
+        if (stats.worker) {
+          stats.worker.terminate();
+        }
+      } catch (err) {
+        logger.debug({
+          workerId,
+          error: err.message
+        }, 'Error terminating worker during shutdown');
+      }
     }
+    
+    // Clean up worker maps
+    this.workerStats.clear();
+    this.workers.clear();
     
     // Reject all queued tasks
     this.queue.forEach(task => {

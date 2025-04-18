@@ -1,11 +1,80 @@
 /**
- * App-Ads.txt Parser Worker Thread
+ * App-Ads.txt Parser Worker Thread with enhanced debugging
  * Used for processing large app-ads.txt files in a separate thread
  */
 
 'use strict';
 
-const { parentPort, workerData } = require('worker_threads');
+const { parentPort, workerData, threadId } = require('worker_threads');
+
+// Send initial startup message
+try {
+  parentPort.postMessage({
+    debug: true,
+    message: 'Worker starting',
+    threadId,
+    timestamp: Date.now(),
+    success: true
+  });
+} catch (err) {
+  // Can't do anything if we can't communicate with the parent
+  process.exit(2);
+}
+
+// Setup basic process-wide exception handlers
+process.on('uncaughtException', (err) => {
+  try {
+    parentPort.postMessage({
+      error: `Uncaught exception in worker: ${err.message}`,
+      errorDetails: {
+        type: 'uncaughtException',
+        error: err.message,
+        stack: err.stack,
+        memoryUsage: process.memoryUsage()
+      },
+      success: false
+    });
+    console.error('Worker uncaught exception:', err);
+  } catch (postError) {
+    console.error('Critical worker error (failed to report):', err);
+  }
+  
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  try {
+    parentPort.postMessage({
+      error: `Unhandled promise rejection in worker: ${reason instanceof Error ? reason.message : String(reason)}`,
+      errorDetails: {
+        type: 'unhandledRejection',
+        error: reason instanceof Error ? reason.message : String(reason),
+        stack: reason instanceof Error ? reason.stack : 'No stack trace available',
+        memoryUsage: process.memoryUsage()
+      },
+      success: false
+    });
+    console.error('Worker unhandled rejection:', reason);
+  } catch (postError) {
+    console.error('Critical worker error (unhandled rejection, failed to report):', reason);
+  }
+  
+  process.exit(1);
+});
+
+/**
+ * Safely send message to parent
+ * @param {object} message - Message to send
+ */
+function safeSendToParent(message) {
+  try {
+    parentPort.postMessage(message);
+    return true;
+  } catch (err) {
+    console.error('Failed to send message to parent:', err);
+    return false;
+  }
+}
 
 /**
  * Process search terms against lines of content
@@ -15,87 +84,161 @@ const { parentPort, workerData } = require('worker_threads');
  */
 function processSearchTerms(lines, searchTerms) {
   try {
+    // Initial debug message
+    safeSendToParent({
+      debug: true,
+      message: 'Starting search term processing',
+      lineCount: lines.length,
+      searchTermCount: searchTerms.length,
+      timestamp: Date.now(),
+      success: true
+    });
+    
+    // Initialize results object with safer defaults
     const searchResults = {
-      terms: searchTerms,
-      termResults: searchTerms.map(term => ({
+      terms: searchTerms || [],
+      termResults: Array.isArray(searchTerms) ? searchTerms.map(term => ({
         term,
         matchingLines: [],
         count: 0
-      })),
+      })) : [],
       matchingLines: [],
       count: 0
     };
     
-    // Process each line
-    lines.forEach((lineContent, lineIndex) => {
-      if (!lineContent.trim()) return;
+    // Validate inputs more carefully
+    if (!Array.isArray(lines)) {
+      throw new Error('Lines must be an array');
+    }
+    
+    if (!Array.isArray(searchTerms) || searchTerms.length === 0) {
+      return searchResults; // Return empty results for no search terms
+    }
+    
+    // Process in smaller batches to allow for progress reporting
+    const BATCH_SIZE = 5000;
+    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      // Report progress for large files
+      if (lines.length > 10000 && batchIndex % 5 === 0) {
+        safeSendToParent({
+          debug: true,
+          progress: `Processing search terms: ${Math.min(((batchIndex + 1) / totalBatches) * 100, 100).toFixed(1)}%`,
+          batch: batchIndex + 1,
+          totalBatches,
+          matchesFound: searchResults.matchingLines.length,
+          timestamp: Date.now(),
+          success: true
+        });
+      }
       
-      const lineNumber = lineIndex + 1;
-      let anyMatch = false;
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
       
-      // Check each search term
-      searchTerms.forEach((term, termIndex) => {
-        try {
-          if (lineContent.toLowerCase().includes(term.toLowerCase())) {
-            searchResults.termResults[termIndex].matchingLines.push({
-              lineNumber,
-              content: lineContent,
-              termIndex
-            });
-            anyMatch = true;
-          }
-        } catch (err) {
-          // Improved error handling with context
-          const errorDetails = {
-            location: 'processSearchTerms:term-matching',
-            error: err.message,
-            stack: err.stack,
-            term: term, 
-            lineIndex: lineIndex,
-            lineContent: lineContent.length > 100 ? lineContent.substring(0, 100) + '...' : lineContent
-          };
+      // Process each line in the batch
+      for (let i = batchStart; i < batchEnd; i++) {
+        const lineContent = lines[i].trim();
+        if (!lineContent) continue;
+        
+        const lineNumber = i + 1;
+        let anyMatch = false;
+        
+        // Check each search term
+        for (let termIndex = 0; termIndex < searchTerms.length; termIndex++) {
+          const term = searchTerms[termIndex];
           
-          parentPort.postMessage({
-            error: `Error matching search term: ${err.message}`,
-            errorDetails,
-            success: false
+          // Skip invalid terms
+          if (!term || typeof term !== 'string') continue;
+          
+          try {
+            // Try case-insensitive match
+            if (lineContent.toLowerCase().includes(term.toLowerCase())) {
+              // Add to term-specific results
+              if (searchResults.termResults[termIndex]) {
+                searchResults.termResults[termIndex].matchingLines.push({
+                  lineNumber,
+                  content: lineContent,
+                  termIndex
+                });
+              }
+              
+              anyMatch = true;
+            }
+          } catch (err) {
+            // Report error but continue processing
+            safeSendToParent({
+              warning: `Error matching search term: ${err.message}`,
+              lineError: {
+                lineIndex: i,
+                line: lineContent,
+                term,
+                termIndex,
+                error: err.message
+              },
+              success: true
+            });
+          }
+        }
+        
+        // If any term matched, add to overall results
+        if (anyMatch) {
+          searchResults.matchingLines.push({
+            lineNumber,
+            content: lineContent
           });
         }
-      });
-      
-      // If any term matched, add to overall results
-      if (anyMatch) {
-        searchResults.matchingLines.push({
-          lineNumber,
-          content: lineContent
-        });
+      }
+    }
+    
+    // Report completion
+    safeSendToParent({
+      debug: true,
+      message: 'Completed search term processing',
+      matchesFound: searchResults.matchingLines.length,
+      timestamp: Date.now(),
+      success: true
+    });
+    
+    // Prevent excessive memory usage for large results
+    const MAX_MATCHES = 1000;
+    if (searchResults.matchingLines.length > MAX_MATCHES) {
+      searchResults.matchingLinesFull = false;
+      searchResults.totalMatchingLines = searchResults.matchingLines.length;
+      searchResults.matchingLines = searchResults.matchingLines.slice(0, MAX_MATCHES);
+    }
+    
+    // Update counts for each term
+    searchResults.termResults.forEach(result => {
+      if (result && Array.isArray(result.matchingLines)) {
+        result.count = result.matchingLines.length;
+        
+        // Truncate excessive matches per term
+        if (result.matchingLines.length > MAX_MATCHES) {
+          result.matchingLinesFull = false;
+          result.totalMatchingLines = result.matchingLines.length;
+          result.matchingLines = result.matchingLines.slice(0, MAX_MATCHES);
+        }
       }
     });
     
-    // Update counts
-    searchResults.termResults.forEach(result => {
-      result.count = result.matchingLines.length;
-    });
+    // Set total match count
     searchResults.count = searchResults.matchingLines.length;
     
     return searchResults;
   } catch (err) {
-    // Enhanced error reporting for the overall function
-    const errorDetails = {
-      location: 'processSearchTerms',
-      error: err.message,
-      stack: err.stack,
-      searchTermsCount: searchTerms.length,
-      linesCount: lines.length
-    };
-    
-    parentPort.postMessage({
-      error: `Error processing search terms: ${err.message}`,
-      errorDetails,
+    // Report error to parent
+    safeSendToParent({
+      error: `Search term processing error: ${err.message}`,
+      errorDetails: {
+        function: 'processSearchTerms',
+        error: err.message,
+        stack: err.stack
+      },
       success: false
     });
     
-    // Re-throw for caller
+    // Re-throw to caller for proper handling
     throw err;
   }
 }
@@ -107,6 +250,20 @@ function processSearchTerms(lines, searchTerms) {
  */
 function analyzeAppAdsTxt(lines) {
   try {
+    // Initial debug message
+    safeSendToParent({
+      debug: true,
+      message: 'Starting app-ads.txt analysis',
+      lineCount: lines.length,
+      timestamp: Date.now(),
+      success: true
+    });
+    
+    // Validate input
+    if (!Array.isArray(lines)) {
+      throw new Error('Lines must be an array');
+    }
+    
     let validLineCount = 0;
     let commentLineCount = 0;
     let emptyLineCount = 0;
@@ -119,66 +276,110 @@ function analyzeAppAdsTxt(lines) {
       other: 0
     };
     
-    lines.forEach((line, index) => {
-      try {
-        // Skip empty lines
-        if (!line.trim()) {
-          emptyLineCount++;
-          return;
-        }
+    // Process in smaller batches to allow for progress reporting
+    const BATCH_SIZE = 5000;
+    const totalBatches = Math.ceil(lines.length / BATCH_SIZE);
+    
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      // Report progress for large files
+      if (lines.length > 10000 && batchIndex % 5 === 0) {
+        safeSendToParent({
+          debug: true,
+          progress: `Analyzing app-ads.txt: ${Math.min(((batchIndex + 1) / totalBatches) * 100, 100).toFixed(1)}%`,
+          batch: batchIndex + 1,
+          totalBatches,
+          validLinesFound: validLineCount,
+          timestamp: Date.now(),
+          success: true
+        });
+      }
+      
+      const batchStart = batchIndex * BATCH_SIZE;
+      const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, lines.length);
+      
+      // Process each line in the batch
+      for (let i = batchStart; i < batchEnd; i++) {
+        const line = lines[i];
         
-        // Handle comments
-        const commentIndex = line.indexOf('#');
-        if (commentIndex === 0) {
-          commentLineCount++;
-          return;
-        }
-        
-        const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
-        if (!cleanLine) {
-          emptyLineCount++;
-          return;
-        }
-        
-        // Parse fields
-        const fields = cleanLine.split(',').map(f => f.trim());
-        
-        if (fields.length >= 3) {
-          validLineCount++;
-          
-          // Extract publisher
-          const domain = fields[0].toLowerCase();
-          publishers.add(domain);
-          
-          // Extract relationship
-          const relationship = fields[2].toLowerCase();
-          if (relationship === 'direct') {
-            relationships.direct++;
-          } else if (relationship === 'reseller') {
-            relationships.reseller++;
-          } else {
-            relationships.other++;
+        try {
+          // Skip invalid lines
+          if (!line || typeof line !== 'string') {
+            invalidLineCount++;
+            continue;
           }
-        } else {
+          
+          // Skip empty lines
+          if (!line.trim()) {
+            emptyLineCount++;
+            continue;
+          }
+          
+          // Handle comments
+          const commentIndex = line.indexOf('#');
+          if (commentIndex === 0) {
+            commentLineCount++;
+            continue;
+          }
+          
+          const cleanLine = commentIndex >= 0 ? line.substring(0, commentIndex).trim() : line.trim();
+          if (!cleanLine) {
+            emptyLineCount++;
+            continue;
+          }
+          
+          // Parse fields
+          const fields = cleanLine.split(',').map(f => f.trim());
+          
+          if (fields.length >= 3) {
+            validLineCount++;
+            
+            // Extract publisher (safely)
+            try {
+              const domain = fields[0].toLowerCase();
+              publishers.add(domain);
+              
+              // Extract relationship
+              const relationship = fields[2].toLowerCase();
+              if (relationship === 'direct') {
+                relationships.direct++;
+              } else if (relationship === 'reseller') {
+                relationships.reseller++;
+              } else {
+                relationships.other++;
+              }
+            } catch (fieldErr) {
+              // Don't let field processing errors stop the whole analysis
+              invalidLineCount++;
+            }
+          } else {
+            invalidLineCount++;
+          }
+        } catch (lineErr) {
+          // Report line processing error but continue
           invalidLineCount++;
-        }
-      } catch (lineErr) {
-        // Error handling for individual line processing
-        invalidLineCount++;
-        
-        // Only log severe errors to avoid flooding
-        if (index % 100 === 0 || index < 10) {
-          parentPort.postMessage({
-            warning: `Error processing line ${index + 1}: ${lineErr.message}`,
-            lineError: {
-              lineIndex: index,
-              lineContent: line.length > 100 ? line.substring(0, 100) + '...' : line,
-              error: lineErr.message
-            },
-            success: true // Don't fail the entire job for single line errors
-          });
+          
+          if (i % 1000 === 0) { // Limit reporting to avoid flooding
+            safeSendToParent({
+              warning: `Error processing line ${i + 1}: ${lineErr.message}`,
+              lineError: {
+                lineIndex: i,
+                error: lineErr.message
+              },
+              success: true
+            });
+          }
         }
       }
+    }
+    
+    // Report completion
+    safeSendToParent({
+      debug: true,
+      message: 'Completed app-ads.txt analysis',
+      validLines: validLineCount,
+      uniquePublishers: publishers.size,
+      timestamp: Date.now(),
+      success: true
     });
     
     return {
@@ -191,22 +392,18 @@ function analyzeAppAdsTxt(lines) {
       relationships
     };
   } catch (err) {
-    // Enhanced error reporting
-    const errorDetails = {
-      location: 'analyzeAppAdsTxt',
-      error: err.message,
-      stack: err.stack,
-      linesCount: lines.length,
-      firstFewLines: lines.slice(0, 3).map(line => line.length > 100 ? line.substring(0, 100) + '...' : line)
-    };
-    
-    parentPort.postMessage({
-      error: `Error analyzing app-ads.txt: ${err.message}`,
-      errorDetails,
+    // Report error to parent
+    safeSendToParent({
+      error: `App-ads.txt analysis error: ${err.message}`,
+      errorDetails: {
+        function: 'analyzeAppAdsTxt',
+        error: err.message,
+        stack: err.stack
+      },
       success: false
     });
     
-    // Re-throw for caller
+    // Re-throw to caller for proper handling
     throw err;
   }
 }
@@ -215,158 +412,208 @@ function analyzeAppAdsTxt(lines) {
  * Worker thread main function
  */
 function processAppAdsContent() {
-  // Add timeout tracking to detect potential hangs
-  const startTime = Date.now();
-  const intervalId = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    if (elapsed > 10000) { // 10 seconds
-      parentPort.postMessage({
-        progress: `Processing in progress - ${Math.round(elapsed / 1000)}s elapsed`,
-        success: true
-      });
-    }
-  }, 10000);
-  
-  // Track stats to help diagnose memory issues
-  const stats = {
-    contentLength: 0,
-    lineCount: 0,
-    memoryUsage: process.memoryUsage()
-  };
-  
   try {
+    // Check if workerData exists and has the required properties
     if (!workerData) {
       throw new Error('No worker data provided');
     }
     
+    // Log worker data properties for debugging
+    safeSendToParent({
+      debug: true,
+      message: 'Worker data received',
+      hasContent: !!workerData.content,
+      contentLength: workerData.content ? workerData.content.length : 0,
+      hasSearchTerms: !!workerData.searchTerms,
+      searchTermCount: workerData.searchTerms ? workerData.searchTerms.length : 0,
+      threadId,
+      timestamp: Date.now(),
+      success: true
+    });
+    
     const { content, searchTerms } = workerData;
     
-    if (!content) {
-      throw new Error('No content provided in worker data');
+    if (!content || typeof content !== 'string') {
+      throw new Error('Invalid or missing content in worker data');
     }
     
-    stats.contentLength = content.length;
+    // Log memory usage before processing
+    const initialMemory = process.memoryUsage();
+    safeSendToParent({
+      debug: true,
+      message: 'Initial memory usage',
+      memoryUsage: {
+        rss: `${Math.round(initialMemory.rss / (1024 * 1024))}MB`,
+        heapTotal: `${Math.round(initialMemory.heapTotal / (1024 * 1024))}MB`,
+        heapUsed: `${Math.round(initialMemory.heapUsed / (1024 * 1024))}MB`,
+        external: `${Math.round(initialMemory.external / (1024 * 1024))}MB`
+      },
+      contentLength: content.length,
+      timestamp: Date.now(),
+      success: true
+    });
     
     // Split content into lines
-    const lines = content.split(/\r\n|\n|\r/);
-    stats.lineCount = lines.length;
-    
-    // Update memory stats after splitting
-    stats.memoryUsageSplit = process.memoryUsage();
-    
-    // Log progress for large files
-    if (lines.length > 10000) {
-      parentPort.postMessage({
-        progress: `Processing ${lines.length} lines`,
+    let lines;
+    try {
+      lines = content.split(/\r\n|\n|\r/);
+      
+      safeSendToParent({
+        debug: true,
+        message: 'Content split into lines',
+        lineCount: lines.length,
+        timestamp: Date.now(),
         success: true
       });
+    } catch (splitErr) {
+      throw new Error(`Failed to split content into lines: ${splitErr.message}`);
     }
     
-    // Analyze the content
-    const analyzed = analyzeAppAdsTxt(lines);
+    // Log memory usage after splitting
+    const afterSplitMemory = process.memoryUsage();
+    safeSendToParent({
+      debug: true,
+      message: 'Memory usage after splitting',
+      memoryUsage: {
+        rss: `${Math.round(afterSplitMemory.rss / (1024 * 1024))}MB`,
+        heapTotal: `${Math.round(afterSplitMemory.heapTotal / (1024 * 1024))}MB`,
+        heapUsed: `${Math.round(afterSplitMemory.heapUsed / (1024 * 1024))}MB`,
+        external: `${Math.round(afterSplitMemory.external / (1024 * 1024))}MB`
+      },
+      timestamp: Date.now(),
+      success: true
+    });
     
-    // Update memory stats after analysis
-    stats.memoryUsageAnalysis = process.memoryUsage();
+    // Analyze the content - with careful error handling
+    let analyzed;
+    try {
+      analyzed = analyzeAppAdsTxt(lines);
+    } catch (analyzeErr) {
+      safeSendToParent({
+        error: `Failed to analyze content: ${analyzeErr.message}`,
+        errorDetails: {
+          function: 'analyzeAppAdsTxt',
+          error: analyzeErr.message,
+          stack: analyzeErr.stack
+        },
+        success: false
+      });
+      
+      // Provide a minimal analysis result to allow the process to continue
+      analyzed = {
+        totalLines: lines.length,
+        validLines: 0,
+        commentLines: 0,
+        emptyLines: 0,
+        invalidLines: lines.length,
+        uniquePublishers: 0,
+        relationships: { direct: 0, reseller: 0, other: 0 },
+        error: 'Analysis error'
+      };
+    }
     
-    // Process search terms if provided
+    // Log memory usage after analysis
+    const afterAnalysisMemory = process.memoryUsage();
+    safeSendToParent({
+      debug: true,
+      message: 'Memory usage after analysis',
+      memoryUsage: {
+        rss: `${Math.round(afterAnalysisMemory.rss / (1024 * 1024))}MB`,
+        heapTotal: `${Math.round(afterAnalysisMemory.heapTotal / (1024 * 1024))}MB`,
+        heapUsed: `${Math.round(afterAnalysisMemory.heapUsed / (1024 * 1024))}MB`,
+        external: `${Math.round(afterAnalysisMemory.external / (1024 * 1024))}MB`
+      },
+      timestamp: Date.now(),
+      success: true
+    });
+    
+    // Process search terms if provided - with careful error handling
     let searchResults = null;
-    if (searchTerms && searchTerms.length > 0) {
-      if (lines.length > 10000) {
-        parentPort.postMessage({
-          progress: `Processing search terms across ${lines.length} lines`,
-          success: true
+    if (searchTerms && Array.isArray(searchTerms) && searchTerms.length > 0) {
+      try {
+        searchResults = processSearchTerms(lines, searchTerms);
+      } catch (searchErr) {
+        safeSendToParent({
+          error: `Failed to process search terms: ${searchErr.message}`,
+          errorDetails: {
+            function: 'processSearchTerms',
+            error: searchErr.message,
+            stack: searchErr.stack
+          },
+          success: false
         });
+        
+        // Provide empty search results to allow the process to continue
+        searchResults = {
+          terms: searchTerms,
+          termResults: searchTerms.map(term => ({ term, matchingLines: [], count: 0 })),
+          matchingLines: [],
+          count: 0,
+          error: 'Search processing error'
+        };
       }
-      
-      searchResults = processSearchTerms(lines, searchTerms);
-      
-      // Update memory stats after search
-      stats.memoryUsageSearch = process.memoryUsage();
     }
     
-    // Clean up the interval
-    clearInterval(intervalId);
+    // Final memory usage
+    const finalMemory = process.memoryUsage();
+    const memStats = {
+      rss: Math.round(finalMemory.rss / (1024 * 1024)),
+      heapTotal: Math.round(finalMemory.heapTotal / (1024 * 1024)),
+      heapUsed: Math.round(finalMemory.heapUsed / (1024 * 1024)),
+      external: Math.round(finalMemory.external / (1024 * 1024))
+    };
     
-    // Send the results back to the main thread
-    parentPort.postMessage({
+    // Send success result with all data
+    safeSendToParent({
       analyzed,
       searchResults,
       contentLength: content.length,
-      stats,
+      lineCount: lines.length,
+      memoryUsage: memStats,
       success: true,
-      processingTime: Date.now() - startTime
+      processingTime: Date.now() - (workerData.startTime || Date.now())
     });
   } catch (error) {
-    // Clean up the interval
-    clearInterval(intervalId);
-    
-    // Enhanced error reporting
-    const errorDetails = {
-      error: error.message,
-      stack: error.stack,
-      stats,
-      workerData: {
-        hasContent: !!workerData?.content,
-        contentLength: workerData?.content?.length,
-        hasSearchTerms: !!workerData?.searchTerms,
-        searchTermsCount: workerData?.searchTerms?.length
-      },
-      memoryUsage: process.memoryUsage()
-    };
-    
-    parentPort.postMessage({
+    // Send error to parent thread
+    safeSendToParent({
       error: `Worker error: ${error.message}`,
-      errorDetails,
-      success: false,
-      processingTime: Date.now() - startTime
+      errorDetails: {
+        error: error.message,
+        stack: error.stack,
+        memoryUsage: process.memoryUsage()
+      },
+      success: false
     });
     
-    // The process will exit with non-zero code to indicate an error
-    process.exit(1);
+    // Use setTimeout to ensure the message is sent before exiting
+    setTimeout(() => {
+      process.exit(1);
+    }, 100);
   }
 }
 
-// Register uncaught exception handler
-process.on('uncaughtException', (err) => {
-  try {
-    parentPort.postMessage({
-      error: `Uncaught exception in worker: ${err.message}`,
-      errorDetails: {
-        error: err.message,
-        stack: err.stack,
-        memoryUsage: process.memoryUsage()
-      },
-      success: false
-    });
-  } catch (postError) {
-    // Last resort if even reporting fails
-    console.error('Critical worker error:', err);
-  }
-  
-  // Exit with error
-  process.exit(1);
-});
-
-// Register unhandled rejection handler
-process.on('unhandledRejection', (reason, promise) => {
-  try {
-    parentPort.postMessage({
-      error: `Unhandled promise rejection in worker: ${reason instanceof Error ? reason.message : String(reason)}`,
-      errorDetails: {
-        error: reason instanceof Error ? reason.message : String(reason),
-        stack: reason instanceof Error ? reason.stack : 'No stack trace available',
-        memoryUsage: process.memoryUsage()
-      },
-      success: false
-    });
-  } catch (postError) {
-    // Last resort if even reporting fails
-    console.error('Critical worker error (unhandled rejection):', reason);
-  }
-  
-  // Exit with error
-  process.exit(1);
-});
-
 // Start processing when the worker is created
-processAppAdsContent();
+try {
+  // Add a startTime for performance tracking
+  if (workerData) {
+    workerData.startTime = Date.now();
+  }
+  
+  // Run the main worker function
+  processAppAdsContent();
+} catch (startupError) {
+  // Try to report the error
+  safeSendToParent({
+    error: `Fatal worker startup error: ${startupError.message}`,
+    errorDetails: {
+      error: startupError.message,
+      stack: startupError.stack
+    },
+    success: false
+  });
+  
+  // Use setTimeout to ensure the message is sent before exiting
+  setTimeout(() => {
+    process.exit(1);
+  }, 100);
+}
