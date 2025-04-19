@@ -176,7 +176,7 @@ router.post('/extract-multiple', extractionLimiter, async (req, res, next) => {
     }
     
     // Limit concurrency to avoid overloading
-    const MAX_CONCURRENT = Math.min(5, validation.validIds.length);
+    const MAX_CONCURRENT = Math.min(4, validation.validIds.length);
     const results = [];
     const errors = [];
     let completed = 0;

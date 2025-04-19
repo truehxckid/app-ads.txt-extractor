@@ -37,7 +37,7 @@ const config = {
     rateLimitWindow: 15 * 60 * 1000, // 15 minutes in ms
     rateLimitMax: 100, // Maximum requests per IP in window
     bodyLimit: '1mb',
-    maxBundleIds: 100, // Maximum number of bundle IDs per request
+    maxBundleIds: 200, // Maximum number of bundle IDs per request
     // New pagination defaults
     defaultPageSize: 20,
     maxPageSize: 100
@@ -50,8 +50,8 @@ const config = {
     taskTimeout: 30000, // 30 seconds
     idleTimeout: 60000, // 1 minute
     // New memory limits
-    maxRssMb: parseInt(process.env.WORKER_MAX_RSS_MB, 10) || 512, // 512MB RSS limit
-    maxHeapMb: parseInt(process.env.WORKER_MAX_HEAP_MB, 10) || 384, // 384MB heap limit
+    maxRssMb: parseInt(process.env.WORKER_MAX_RSS_MB, 10) || 768, // 512MB RSS limit
+    maxHeapMb: parseInt(process.env.WORKER_MAX_HEAP_MB, 10) || 512, // 384MB heap limit
     warningThresholdPercent: 80, // Warn at 80% of limit
     // Stream processing settings
     streamThresholdBytes: 5000000, // 5MB file size threshold for streaming
