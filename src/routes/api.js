@@ -280,46 +280,144 @@ router.post('/extract-multiple', extractionLimiter, async (req, res, next) => {
 });
 
 /**
- * Paginate the results data
- * @param {Object} data - Complete response data
- * @param {Number} page - Page number
- * @param {Number} pageSize - Page size
- * @returns {Object} - Paginated data
+ * @api {post} /api/export-csv Export results to CSV without pagination
+ * @apiName ExportCsv
+ * @apiGroup Extraction
+ * 
+ * @apiParam {String[]} bundleIds Array of app bundle IDs
+ * @apiParam {String|String[]} [searchTerms] Optional search terms for app-ads.txt
+ * 
+ * @apiSuccess {Boolean} success Success status
+ * @apiSuccess {Object[]} results Full extraction results
  */
-function paginateResults(data, page, pageSize) {
-  // Calculate pagination values
-  const totalItems = data.results.length;
-  const totalPages = Math.ceil(totalItems / pageSize);
-  const currentPage = Math.max(1, Math.min(page, totalPages || 1));
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, totalItems);
+router.post('/export-csv', extractionLimiter, async (req, res, next) => {
+  const startTime = Date.now();
   
-  // Extract the items for the current page
-  const paginatedResults = data.results.slice(startIndex, endIndex);
-  
-  // Create pagination metadata
-  const pagination = {
-    currentPage,
-    pageSize,
-    totalPages,
-    totalItems,
-    hasNextPage: currentPage < totalPages,
-    hasPrevPage: currentPage > 1
-  };
-  
-  // Return paginated response
-  return {
-    results: paginatedResults,
-    pagination,
-    errorCount: data.errorCount,
-    successCount: data.successCount,
-    skippedCount: data.skippedCount,
-    totalProcessed: data.totalProcessed,
-    appsWithAppAdsTxt: data.appsWithAppAdsTxt,
-    searchStats: data.searchStats,
-    domainAnalysis: data.domainAnalysis,
-  };
-}
+  try {
+    const { bundleIds, searchTerms } = req.body;
+    
+    if (!bundleIds || !Array.isArray(bundleIds) || bundleIds.length === 0) {
+      throw new BadRequestError('Missing or invalid bundle IDs. Please provide an array of bundle IDs.');
+    }
+    
+    // Validate and filter bundle IDs - with higher limit for exports
+    const csvExportLimit = config.api.maxBundleIds * 2; // Double the normal limit for CSV exports
+    const validation = validateBundleIds(bundleIds, csvExportLimit);
+    
+    if (validation.valid === 0) {
+      throw new ValidationError('No valid bundle IDs provided after filtering.', {
+        totalProvided: validation.total,
+        invalidCount: validation.invalid,
+        validCount: validation.valid
+      });
+    }
+    
+    // Validate search terms
+    const validatedTerms = validateSearchTerms(searchTerms);
+    
+    logger.info({
+      bundleIdsCount: validation.validIds.length,
+      searchTermsCount: validatedTerms?.length || 0,
+      clientIp: req.ip,
+      endpoint: 'export-csv'
+    }, 'CSV export request');
+    
+    // Check if we have enough memory for this operation
+    const estimatedMemoryMb = memoryManager.estimateMemoryRequirement(
+      validation.validIds.length * 10000, // Rough size estimate
+      'json-parsing'
+    );
+    
+    if (!memoryManager.hasEnoughMemory(estimatedMemoryMb)) {
+      logger.warn({
+        bundleIdsCount: validation.validIds.length,
+        estimatedMemoryMb
+      }, 'Potentially insufficient memory for export operation');
+      
+      // Force garbage collection to free memory
+      memoryManager.forceGarbageCollection();
+    }
+    
+    // Process in larger batches for export - with higher concurrency
+    const MAX_CONCURRENT = Math.min(6, validation.validIds.length);
+    const results = [];
+    const errors = [];
+    let completed = 0;
+    
+    // Process in batches with progress tracking
+    for (let i = 0; i < validation.validIds.length; i += MAX_CONCURRENT) {
+      const batch = validation.validIds.slice(i, Math.min(i + MAX_CONCURRENT, validation.validIds.length));
+      
+      const batchPromises = batch.map(bundleId => (async () => {
+        try {
+          const result = await getDeveloperInfo(bundleId, validatedTerms);
+          completed++;
+          return result;
+        } catch (err) {
+          completed++;
+          errors.push({ bundleId, error: err.message });
+          return { 
+            bundleId, 
+            success: false, 
+            error: err.message,
+            timestamp: Date.now()
+          };
+        }
+      })());
+      
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+      
+      // Log progress for large exports
+      if (validation.validIds.length > 20 && (i + MAX_CONCURRENT) % 20 === 0) {
+        logger.info({
+          progress: `${Math.min((i + MAX_CONCURRENT), validation.validIds.length)}/${validation.validIds.length}`,
+          timeElapsed: `${Math.round((Date.now() - startTime) / 1000)}s`,
+          endpoint: 'export-csv'
+        }, 'CSV export batch processing progress');
+      }
+      
+      // Check memory usage between larger batches
+      if (i > 0 && i % (MAX_CONCURRENT * 5) === 0) {
+        memoryManager.checkMemoryUsage();
+      }
+    }
+    
+    // Calculate statistics for the response
+    const successResults = results.filter(r => r.success);
+    const appsWithAppAdsTxt = successResults.filter(r => r.appAdsTxt?.exists).length;
+    
+    // Search statistics if applicable
+    let searchStats = null;
+    if (validatedTerms?.length > 0) {
+      searchStats = analyzeSearchTerms(results, validatedTerms);
+    }
+    
+    const processingTime = Date.now() - startTime;
+    
+    logger.info({
+      completed,
+      processingTime,
+      errorCount: errors.length,
+      successCount: successResults.length,
+      endpoint: 'export-csv'
+    }, 'Completed CSV export processing');
+    
+    // Return full dataset without pagination
+    res.json({
+      results,
+      errorCount: errors.length,
+      successCount: successResults.length,
+      totalProcessed: validation.validIds.length,
+      appsWithAppAdsTxt,
+      searchStats,
+      success: true,
+      processingTime: `${processingTime}ms`
+    });
+  } catch (err) {
+    next(err);
+  }
+});
 
 /**
  * @api {get} /api/check-app-ads Check app-ads.txt for a domain
@@ -510,6 +608,48 @@ async function runTestIteration(iteration) {
       error: err.message
     };
   }
+}
+
+/**
+ * Paginate the results data
+ * @param {Object} data - Complete response data
+ * @param {Number} page - Page number
+ * @param {Number} pageSize - Page size
+ * @returns {Object} - Paginated data
+ */
+function paginateResults(data, page, pageSize) {
+  // Calculate pagination values
+  const totalItems = data.results.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const currentPage = Math.max(1, Math.min(page, totalPages || 1));
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  
+  // Extract the items for the current page
+  const paginatedResults = data.results.slice(startIndex, endIndex);
+  
+  // Create pagination metadata
+  const pagination = {
+    currentPage,
+    pageSize,
+    totalPages,
+    totalItems,
+    hasNextPage: currentPage < totalPages,
+    hasPrevPage: currentPage > 1
+  };
+  
+  // Return paginated response
+  return {
+    results: paginatedResults,
+    pagination,
+    errorCount: data.errorCount,
+    successCount: data.successCount,
+    skippedCount: data.skippedCount,
+    totalProcessed: data.totalProcessed,
+    appsWithAppAdsTxt: data.appsWithAppAdsTxt,
+    searchStats: data.searchStats,
+    domainAnalysis: data.domainAnalysis,
+  };
 }
 
 module.exports = router;

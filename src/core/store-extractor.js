@@ -241,7 +241,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     
     // Cache errors for a shorter period
     await cache.set(keys.store(storeType, bundleId), errorResult, 'storeError');
-    throw err;
+    return errorResult;
   }
 }
 
@@ -296,7 +296,7 @@ async function tryAllStores(bundleId, searchTerms = null) {
     }
   }
   
-  // If we get here, all stores failed
+  // If we get here, all stores failed - return an error result instead of throwing
   const errorResult = {
     bundleId: validId,
     success: false,
@@ -309,7 +309,8 @@ async function tryAllStores(bundleId, searchTerms = null) {
   // Cache the combined error result
   await cache.set(`all-stores-${validId}`, errorResult, 'storeError');
   
-  throw new Error('Failed to extract from any store');
+  // Return the error result instead of throwing
+  return errorResult;
 }
 
 /**
@@ -329,27 +330,62 @@ async function getDeveloperInfo(bundleId, searchTerms = null) {
       hasSearchTerms: !!searchTerms 
     }, 'Getting developer info');
     
-    // Try the detected store type first, if known
-    if (storeType !== 'unknown') {
+    // If store type is unknown, return error immediately without trying all stores
+    if (storeType === 'unknown') {
+      logger.info({ 
+        bundleId: validId,
+        storeType: 'unknown'
+      }, 'Unknown store type, skipping bundle ID');
+      
+      return {
+        bundleId: validId,
+        success: false,
+        storeType: 'unknown',
+        error: 'Could not determine store type from bundle ID format',
+        timestamp: Date.now()
+      };
+    }
+    
+    // Try the detected store type
+    try {
+      return await extractFromStore(validId, storeType, searchTerms);
+    } catch (err) {
+      logger.info({ 
+        error: err.message, 
+        bundleId: validId, 
+        detectedStoreType: storeType 
+      }, 'Failed with detected store type, trying all stores');
+      
+      // If the detected store failed, try all stores
       try {
-        return await extractFromStore(validId, storeType, searchTerms);
-      } catch (err) {
-        logger.info({ 
-          error: err.message, 
-          bundleId: validId, 
-          detectedStoreType: storeType 
-        }, 'Failed with detected store type, trying all stores');
-        
-        // If the detected store failed, try all stores
         return await tryAllStores(validId, searchTerms);
+      } catch (allStoresErr) {
+        // If all stores fail, return a more detailed error
+        logger.error({ 
+          error: allStoresErr.message, 
+          bundleId: validId 
+        }, 'All stores failed for bundle ID');
+        
+        return {
+          bundleId: validId,
+          success: false,
+          storeType: storeType,
+          error: `Failed to extract from any store: ${allStoresErr.message}`,
+          attemptedStores: Object.keys(stores),
+          timestamp: Date.now()
+        };
       }
-    } else {
-      // Unknown store type, try all stores
-      return await tryAllStores(validId, searchTerms);
     }
   } catch (err) {
-    logger.error({ error: err.message, bundleId }, 'Error getting developer info');
-    throw err;
+    logger.error({ error: err.message, bundleId }, 'Error validating bundle ID');
+    
+    // Return error object instead of throwing
+    return {
+      bundleId,
+      success: false,
+      error: `Invalid bundle ID: ${err.message}`,
+      timestamp: Date.now()
+    };
   }
 }
 

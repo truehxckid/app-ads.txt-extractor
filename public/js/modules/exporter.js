@@ -59,12 +59,29 @@ class CSVExporter {
       
       // Show stats about the export
       showNotification(
-        `CSV export completed with ${response.results.length} records`, 
+        `CSV export completed with ${response.results.length} records (${response.errorCount} errors)`, 
         'success'
       );
     } catch (err) {
       console.error('Error exporting CSV:', err);
-      showNotification(`Export error: ${err.message}`, 'error');
+      
+      // More detailed error message with potential solutions
+      const errorMsg = err.message || 'Unknown error';
+      const isNetworkError = errorMsg.includes('Network Error') || errorMsg.includes('Failed to fetch');
+      
+      if (isNetworkError) {
+        showNotification(
+          'Network error during export. Please check your connection and try again.',
+          'error'
+        );
+      } else if (errorMsg.includes('Endpoint not found')) {
+        showNotification(
+          'Export error: The server doesn\'t support this feature yet. Please try the "Download Current Page" option instead.',
+          'error'
+        );
+      } else {
+        showNotification(`Export error: ${errorMsg}`, 'error');
+      }
     }
   }
   
