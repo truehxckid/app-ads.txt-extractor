@@ -1,4 +1,4 @@
-// src/config/index.js - Enhanced with memory limit configuration
+// src/config/index.js - Modified with Redis configuration fixes
 
 'use strict';
 
@@ -25,11 +25,33 @@ const config = {
     public: path.join(BASE_DIR, 'public')
   },
   
-  // Redis configuration
+  // IMPROVED REDIS CONFIGURATION
   redis: {
     url: process.env.REDIS_URL || null,
     prefix: 'app-ads-extractor:',
-    enabled: !!process.env.REDIS_URL
+    // Only enable Redis if URL is provided and feature is not disabled
+    enabled: !!process.env.REDIS_URL && process.env.DISABLE_REDIS !== 'true',
+    // Add multiple configuration options
+    options: {
+      // Timeouts and connection limits
+      connectTimeout: 5000,
+      commandTimeout: 3000,
+      maxRetriesPerRequest: 2,
+      // Additional options for stability
+      enableOfflineQueue: false,
+      enableAutoPipelining: false,
+      autoResubscribe: false,
+      // Set these to false to use file-based storage as fallback
+      cacheRequired: false,
+      rateLimitingRequired: false
+    },
+    // Fallback mechanisms
+    fallback: {
+      // After how many consecutive failures to temporarily disable Redis (in ms)
+      disableThreshold: 60000, // 1 minute
+      // How long to disable Redis after reaching threshold (in ms)
+      disableDuration: 300000, // 5 minutes
+    }
   },
   
   // API settings

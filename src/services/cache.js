@@ -1,7 +1,4 @@
-/**
- * Enhanced Cache Service for App-Ads.txt Extractor
- * Provides multi-level caching with memory, file, and optional Redis backends
- */
+// src/services/cache.js - Modified with robust fallback mechanism
 
 'use strict';
 
@@ -15,18 +12,21 @@ const redis = require('./redis');
 const logger = getLogger('cache');
 
 /**
- * Enhanced Cache class with multi-backend support
+ * Enhanced Cache class with multi-backend support and Redis fallback
  */
 class EnhancedCache {
   constructor() {
     // Initialize memory cache
     this.memoryCache = new Map();
     
+    // Track Redis availability
+    this.redisAvailable = redis.isConnected();
+    
     // Statistics for cache operations
     this.stats = {
       memory: { hits: 0, misses: 0 },
       file: { hits: 0, misses: 0 },
-      redis: { hits: 0, misses: 0 },
+      redis: { hits: 0, misses: 0, failures: 0 },
       operations: { get: 0, set: 0, delete: 0 }
     };
     
@@ -36,12 +36,51 @@ class EnhancedCache {
       cacheConfig.cleanup.interval
     );
     
+    // Setup Redis health check interval
+    this.redisHealthCheckInterval = setInterval(
+      () => this._checkRedisHealth(),
+      30000 // Check every 30 seconds
+    );
+    
     // Log initialization
     logger.info({
       memoryEnabled: true,
       fileEnabled: cacheConfig.file.enabled,
-      redisEnabled: !!redis.isConnected()
-    }, 'Cache initialized');
+      redisEnabled: this.redisAvailable
+    }, 'Cache initialized with fallback mechanisms');
+  }
+  
+  /**
+   * Periodically check Redis health and update availability status
+   * @private
+   */
+  async _checkRedisHealth() {
+    // Check if Redis is configured to be enabled
+    if (!config.redis.enabled) {
+      this.redisAvailable = false;
+      return;
+    }
+    
+    try {
+      // Check if the Redis client is healthy
+      const isHealthy = await redis.healthCheck();
+      
+      // Update availability status
+      const previousStatus = this.redisAvailable;
+      this.redisAvailable = isHealthy;
+      
+      // Log status changes
+      if (previousStatus !== isHealthy) {
+        if (isHealthy) {
+          logger.info('Redis connection restored, switching back to Redis for caching');
+        } else {
+          logger.warn('Redis health check failed, falling back to file-based cache');
+        }
+      }
+    } catch (err) {
+      this.redisAvailable = false;
+      logger.error({ error: err.message }, 'Redis health check error');
+    }
   }
   
   /**
@@ -81,28 +120,44 @@ class EnhancedCache {
       }
       
       // Then try Redis if available
-      if (redis.isConnected()) {
-        const redisItem = await redis.get(`cache:${key}`);
-        
-        if (redisItem) {
-          try {
-            const parsedItem = JSON.parse(redisItem);
-            
-            if (Date.now() < parsedItem.expiry) {
-              // Store in memory cache for faster access next time
-              this._storeInMemory(key, parsedItem.value, parsedItem.expiry);
+      if (this.redisAvailable && redis.isConnected()) {
+        try {
+          const redisItem = await redis.get(`cache:${key}`);
+          
+          if (redisItem) {
+            try {
+              const parsedItem = JSON.parse(redisItem);
               
-              this.stats.redis.hits++;
-              logger.debug({ key, backend: 'redis' }, 'Cache hit');
-              return parsedItem.value;
+              if (Date.now() < parsedItem.expiry) {
+                // Store in memory cache for faster access next time
+                this._storeInMemory(key, parsedItem.value, parsedItem.expiry);
+                
+                this.stats.redis.hits++;
+                logger.debug({ key, backend: 'redis' }, 'Cache hit');
+                return parsedItem.value;
+              }
+            } catch (parseErr) {
+              logger.error({ key, error: parseErr.message }, 'Redis parse error');
+              
+              try {
+                await redis.del(`cache:${key}`);
+              } catch (delErr) {
+                // Ignore delete errors
+              }
             }
-          } catch (parseErr) {
-            logger.error({ key, error: parseErr.message }, 'Redis parse error');
-            await redis.del(`cache:${key}`);
+          }
+          
+          this.stats.redis.misses++;
+        } catch (redisErr) {
+          // Track Redis failures
+          this.stats.redis.failures++;
+          logger.error({ key, error: redisErr.message }, 'Redis get error, falling back to file cache');
+          
+          // Update Redis availability if too many failures
+          if (this.stats.redis.failures > 10) {
+            await this._checkRedisHealth();
           }
         }
-        
-        this.stats.redis.misses++;
       }
       
       // Finally try file cache
@@ -120,7 +175,9 @@ class EnhancedCache {
         }
         
         // Remove expired file
-        fs.deleteFile(filePath);
+        if (fileData) {
+          fs.deleteFile(filePath);
+        }
         this.stats.file.misses++;
       }
       
@@ -158,8 +215,10 @@ class EnhancedCache {
       // Store in memory
       this._storeInMemory(key, value, expiry);
       
-      // Store in Redis if available
-      if (redis.isConnected()) {
+      // Try Redis first if available
+      let redisSuccess = false;
+      
+      if (this.redisAvailable && redis.isConnected()) {
         try {
           const ttlSeconds = Math.ceil(ttlMs / 1000);
           const item = JSON.stringify({ value, expiry });
@@ -170,23 +229,37 @@ class EnhancedCache {
             // Store with compression for large items
             const compressed = await fs.gzip(Buffer.from(item));
             await redis.set(`cache:${key}:compressed`, compressed, 'EX', ttlSeconds);
+            redisSuccess = true;
           } else {
             // Store normally for smaller items
             await redis.set(`cache:${key}`, item, 'EX', ttlSeconds);
+            redisSuccess = true;
           }
         } catch (redisErr) {
-          logger.error({ key, error: redisErr.message }, 'Redis set error');
+          // Track Redis failures
+          this.stats.redis.failures++;
+          logger.error({ key, error: redisErr.message }, 'Redis set error, falling back to file cache');
+          
+          // Update Redis availability if too many failures
+          if (this.stats.redis.failures > 10) {
+            await this._checkRedisHealth();
+          }
         }
       }
       
-      // Store in file if enabled
-      if (cacheConfig.file.enabled) {
+      // Store in file as backup or if Redis failed
+      if (cacheConfig.file.enabled && (!redisSuccess || !this.redisAvailable)) {
         const filePath = this.getFilePath(key);
         const data = { value, expiry };
         await fs.saveToFile(filePath, data, cacheConfig.file.compression);
       }
       
-      logger.debug({ key, ttl: ttlMs / 3600000 }, 'Item cached');
+      logger.debug({ 
+        key, 
+        ttl: ttlMs / 3600000,
+        backend: redisSuccess ? 'redis+file' : 'file'
+      }, 'Item cached');
+      
       return true;
     } catch (err) {
       logger.error({ key, error: err.message }, 'Cache set error');
@@ -210,10 +283,22 @@ class EnhancedCache {
       // Remove from memory
       this.memoryCache.delete(key);
       
-      // Remove from Redis if connected
-      if (redis.isConnected()) {
-        await redis.del(`cache:${key}`);
-        await redis.del(`cache:${key}:compressed`);
+      // Try to remove from Redis if connected
+      let redisSuccess = false;
+      if (this.redisAvailable && redis.isConnected()) {
+        try {
+          await redis.del(`cache:${key}`);
+          await redis.del(`cache:${key}:compressed`);
+          redisSuccess = true;
+        } catch (redisErr) {
+          this.stats.redis.failures++;
+          logger.error({ key, error: redisErr.message }, 'Redis delete error');
+          
+          // Update Redis availability if too many failures
+          if (this.stats.redis.failures > 10) {
+            await this._checkRedisHealth();
+          }
+        }
       }
       
       // Remove from file if enabled
@@ -222,7 +307,11 @@ class EnhancedCache {
         fs.deleteFile(filePath);
       }
       
-      logger.debug({ key }, 'Item removed from cache');
+      logger.debug({ 
+        key,
+        backend: redisSuccess ? 'redis+file' : 'file'
+      }, 'Item removed from cache');
+      
       return true;
     } catch (err) {
       logger.error({ key, error: err.message }, 'Cache delete error');
@@ -307,7 +396,7 @@ class EnhancedCache {
       // Cleanup Redis items is handled by Redis TTL
       
       const duration = Date.now() - startTime;
-      logger.info({ 
+      logger.debug({ 
         memoryItemsRemoved, 
         duration: `${duration}ms` 
       }, 'Cache cleanup completed');
@@ -342,7 +431,7 @@ class EnhancedCache {
           }
         } catch (err) {
           // If file is corrupted, delete it
-          logger.error({ filePath, error: err.message }, 'Error processing cache file');
+          logger.debug({ filePath, error: err.message }, 'Error processing cache file');
           await fs.deleteFile(filePath);
           filesRemoved++;
         }
@@ -373,7 +462,11 @@ class EnhancedCache {
         maxSize: cacheConfig.memory.maxItems
       },
       file: this.stats.file,
-      redis: this.stats.redis,
+      redis: {
+        ...this.stats.redis,
+        available: this.redisAvailable,
+        connected: redis.isConnected()
+      },
       operations: this.stats.operations
     };
   }
@@ -396,7 +489,7 @@ class EnhancedCache {
     }
     
     // Clear Redis cache keys with our prefix
-    if (redis.isConnected()) {
+    if (this.redisAvailable && redis.isConnected()) {
       try {
         const keys = await redis.keys('cache:*');
         if (keys.length > 0) {
@@ -411,7 +504,7 @@ class EnhancedCache {
     this.stats = {
       memory: { hits: 0, misses: 0 },
       file: { hits: 0, misses: 0 },
-      redis: { hits: 0, misses: 0 },
+      redis: { hits: 0, misses: 0, failures: 0 },
       operations: { get: 0, set: 0, delete: 0 }
     };
     

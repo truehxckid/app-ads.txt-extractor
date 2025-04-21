@@ -1,7 +1,4 @@
-/**
- * Redis service for App-Ads.txt Extractor
- * Handles Redis connection, retries, and provides a consistent interface
- */
+// Enhanced Redis service with improved connection handling and error detection
 
 'use strict';
 
@@ -11,7 +8,7 @@ const { getLogger } = require('../utils/logger');
 const logger = getLogger('redis');
 
 /**
- * Redis service class
+ * Redis service class with improved connection stability
  */
 class RedisService {
   constructor() {
@@ -21,6 +18,11 @@ class RedisService {
     this.retryCount = 0;
     this.maxRetries = 5;
     this.retryTimeout = null;
+    this.consecutiveErrorCount = 0;
+    this.maxConsecutiveErrors = 3;
+    this.lastErrorTime = 0;
+    this.disableRedisUntil = 0;
+    this.autoDisableThreshold = 60000; // 60 seconds - disable Redis after too many rapid failures
     
     // Initialize Redis if URL is provided
     if (config.redis.url) {
@@ -31,42 +33,121 @@ class RedisService {
   }
   
   /**
-   * Initialize Redis connection
+   * Initialize Redis connection with enhanced error detection
    */
   async initialize() {
     if (this.connecting) return;
+    
+    // Check if Redis is temporarily disabled due to too many connection failures
+    if (Date.now() < this.disableRedisUntil) {
+      logger.warn({ 
+        disabledUntil: new Date(this.disableRedisUntil).toISOString(),
+        remainingMs: this.disableRedisUntil - Date.now()
+      }, 'Redis temporarily disabled due to connection issues');
+      return;
+    }
+    
     this.connecting = true;
     
     try {
-      logger.info('Initializing Redis connection');
+      logger.info({
+        url: config.redis.url ? config.redis.url.replace(/:.+@/, ':***@') : null,
+        retryCount: this.retryCount
+      }, 'Initializing Redis connection');
       
       // Import Redis dynamically to avoid requiring it when not used
       const Redis = require('ioredis');
       
+      // Enhanced connection options with better defaults for stability
       this.client = new Redis(config.redis.url, {
-        maxRetriesPerRequest: 3,
-        retryStrategy: (times) => {
-          const delay = Math.min(times * 200, 3000);
-          logger.debug({ retryCount: times, delay }, 'Redis connection retry');
-          return delay;
+        maxRetriesPerRequest: 2,
+        connectTimeout: 5000,
+        commandTimeout: 3000,
+        enableOfflineQueue: false, // Don't queue commands when disconnected
+        enableReadyCheck: true,
+        autoResubscribe: false, // Disable auto-resubscribe which can cause issues
+        reconnectOnError: (err) => {
+          // Only reconnect on specific errors
+          const targetError = 'READONLY';
+          if (err.message.includes(targetError)) {
+            return 1; // Reconnect for READONLY errors (often occurs with Redis Cluster)
+          }
+          return false; // Don't reconnect for other errors
         },
-        connectTimeout: 10000,
-        keyPrefix: config.redis.prefix,
-        lazyConnect: false
+        retryStrategy: (times) => {
+          // More sophisticated retry strategy
+          if (times > 5) {
+            // After 5 retries, increase delay more aggressively
+            return Math.min(times * 500, 10000);
+          }
+          
+          // Normal delay for first few retries
+          return Math.min(times * 200, 2000);
+        },
+        lazyConnect: false,
+        keyPrefix: config.redis.prefix || '',
       });
       
-      // Setup event handlers
+      // More comprehensive event handling
       this.client.on('connect', () => {
+        logger.info('Redis connection established');
+      });
+      
+      this.client.on('ready', () => {
         this.connected = true;
         this.connecting = false;
         this.retryCount = 0;
-        logger.info('Redis connected');
+        this.consecutiveErrorCount = 0;
+        logger.info('Redis client ready');
+        
+        // Perform a PING to verify connection is fully functional
+        this.client.ping().then(result => {
+          if (result === 'PONG') {
+            logger.info('Redis ping successful');
+          } else {
+            logger.warn({ result }, 'Unexpected Redis ping response');
+          }
+        }).catch(err => {
+          logger.error({ error: err.message }, 'Redis ping error after connection');
+        });
       });
       
       this.client.on('error', (err) => {
-        logger.error({ error: err.message }, 'Redis error');
-        if (this.connected) {
+        const now = Date.now();
+        this.consecutiveErrorCount++;
+        this.lastErrorTime = now;
+        
+        logger.error({ 
+          error: err.message,
+          consecutiveErrors: this.consecutiveErrorCount
+        }, 'Redis error');
+        
+        // Auto-disable Redis temporarily if we're seeing rapid connection failures
+        // This prevents the reconnection loop from consuming resources
+        if (this.consecutiveErrorCount >= this.maxConsecutiveErrors) {
+          const disableTime = now + this.autoDisableThreshold;
+          this.disableRedisUntil = disableTime;
+          
+          logger.warn({
+            disabledUntil: new Date(disableTime).toISOString(),
+            consecutiveErrors: this.consecutiveErrorCount
+          }, 'Temporarily disabling Redis due to excessive connection errors');
+          
+          // Reset error counter
+          this.consecutiveErrorCount = 0;
+          
+          if (this.client) {
+            try {
+              // Force disconnect to clean up resources
+              this.client.disconnect();
+            } catch (err) {
+              // Ignore disconnect errors
+            }
+          }
+          
           this.connected = false;
+          this.connecting = false;
+          this.client = null;
         }
       });
       
@@ -78,23 +159,61 @@ class RedisService {
         }
       });
       
+      this.client.on('reconnecting', (delay) => {
+        logger.info({ reconnectDelay: delay }, 'Redis reconnecting');
+      });
+      
+      this.client.on('end', () => {
+        this.connected = false;
+        logger.info('Redis connection ended');
+      });
+      
+      // Check if connection timeout is needed
+      const connectionTimeout = setTimeout(() => {
+        if (this.connecting && !this.connected) {
+          logger.error('Redis connection timeout');
+          this.connecting = false;
+          
+          try {
+            this.client.disconnect();
+          } catch (err) {
+            // Ignore disconnect errors
+          }
+          
+          this._scheduleReconnect();
+        }
+      }, 8000); // 8 second connection timeout
+      
       // Test the connection
-      await this.client.ping();
-      this.connected = true;
-      this.connecting = false;
-      this.retryCount = 0;
-      logger.info('Redis connection successful');
+      const pingResult = await this.client.ping();
+      
+      // Clear timeout since connection succeeded
+      clearTimeout(connectionTimeout);
+      
+      if (pingResult === 'PONG') {
+        this.connected = true;
+        this.connecting = false;
+        this.retryCount = 0;
+        this.consecutiveErrorCount = 0;
+        logger.info('Redis connection successful');
+      } else {
+        throw new Error(`Unexpected Redis ping response: ${pingResult}`);
+      }
       
     } catch (err) {
       this.connected = false;
       this.connecting = false;
-      logger.error({ error: err.message }, 'Redis initialization failed');
+      logger.error({ 
+        error: err.message,
+        stack: err.stack
+      }, 'Redis initialization failed');
+      
       this._scheduleReconnect();
     }
   }
   
   /**
-   * Schedule a reconnection attempt
+   * Schedule a reconnection attempt with exponential backoff
    * @private
    */
   _scheduleReconnect() {
@@ -103,7 +222,11 @@ class RedisService {
     }
     
     if (this.retryCount < this.maxRetries) {
-      const delay = Math.min(Math.pow(2, this.retryCount) * 1000, 30000);
+      // Exponential backoff with some jitter
+      const baseDelay = Math.min(Math.pow(2, this.retryCount) * 1000, 30000);
+      const jitter = Math.floor(Math.random() * 500); // Add up to 500ms of jitter
+      const delay = baseDelay + jitter;
+      
       this.retryCount++;
       
       logger.info({ 
@@ -116,7 +239,22 @@ class RedisService {
         this.initialize();
       }, delay);
     } else {
-      logger.error({ maxRetries: this.maxRetries }, 'Max Redis reconnection attempts reached');
+      logger.error({ 
+        maxRetries: this.maxRetries
+      }, 'Max Redis reconnection attempts reached');
+      
+      // Disable Redis for a longer period after max retries
+      this.disableRedisUntil = Date.now() + (5 * 60 * 1000); // 5 minutes
+      
+      logger.warn({
+        disabledUntil: new Date(this.disableRedisUntil).toISOString(),
+      }, 'Disabling Redis for extended period after max retries');
+      
+      // Reset retry count after cool-down period
+      setTimeout(() => {
+        this.retryCount = 0;
+        logger.info('Redis retry count reset after cool-down period');
+      }, 5 * 60 * 1000);
     }
   }
   
@@ -272,6 +410,22 @@ class RedisService {
     } catch (err) {
       logger.error({ error: err.message, key }, 'Redis ttl error');
       return -2;
+    }
+  }
+  
+  /**
+   * Run a health check on the Redis connection
+   * @returns {Promise<boolean>} - Whether Redis is healthy
+   */
+  async healthCheck() {
+    if (!this.isConnected()) return false;
+    
+    try {
+      const result = await this.client.ping();
+      return result === 'PONG';
+    } catch (err) {
+      logger.error({ error: err.message }, 'Redis health check failed');
+      return false;
     }
   }
   
