@@ -105,7 +105,7 @@
                 <span class="progress-text">Processing file...</span>
               </div>
             </div>
-            <small id="csvFile-help" class="helper-text">
+           <small id="csvFile-help" class="helper-text">
               Upload a CSV file with bundle IDs in the first column.
               Headers will be automatically detected.
             </small>
@@ -207,13 +207,7 @@
     <!-- Notifications will be added here dynamically -->
   </div>
   
-  <!-- Load error fixes script first -->
-  <script src="fix-errors.js" defer></script>
-  
-  <!-- Load validation script -->
-  <script src="validation.js" defer></script>
-  
-  <!-- Load main app script -->
-  <script src="app.js" defer></script>
+  <!-- Load modular JavaScript with ES modules -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
