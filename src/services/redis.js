@@ -1,4 +1,6 @@
-// Enhanced Redis service with improved connection handling and error detection
+/**
+ * Enhanced Redis service with improved connection handling and TLS support
+ */
 
 'use strict';
 
@@ -58,24 +60,19 @@ class RedisService {
       // Import Redis dynamically to avoid requiring it when not used
       const Redis = require('ioredis');
       
+      // Check if connection uses TLS (rediss://)
+      const isTLS = config.redis.url && config.redis.url.startsWith('rediss://');
+      
       // Enhanced connection options with better defaults for stability
       this.client = new Redis(config.redis.url, {
-        maxRetriesPerRequest: 2,
-        connectTimeout: 5000,
-        commandTimeout: 3000,
-        enableOfflineQueue: false, // Don't queue commands when disconnected
-        enableReadyCheck: true,
-        autoResubscribe: false, // Disable auto-resubscribe which can cause issues
-        reconnectOnError: (err) => {
-          // Only reconnect on specific errors
-          const targetError = 'READONLY';
-          if (err.message.includes(targetError)) {
-            return 1; // Reconnect for READONLY errors (often occurs with Redis Cluster)
-          }
-          return false; // Don't reconnect for other errors
-        },
+        // Connection timeouts
+        connectTimeout: 10000,
+        commandTimeout: 5000,
+        
+        // Retry configuration
+        maxRetriesPerRequest: 3,
         retryStrategy: (times) => {
-          // More sophisticated retry strategy
+          // More sophisticated retry strategy with exponential backoff
           if (times > 5) {
             // After 5 retries, increase delay more aggressively
             return Math.min(times * 500, 10000);
@@ -84,7 +81,31 @@ class RedisService {
           // Normal delay for first few retries
           return Math.min(times * 200, 2000);
         },
-        lazyConnect: false,
+        
+        // CRITICAL: Set to true to queue commands when connection issues occur
+        enableOfflineQueue: true,
+        
+        // Other connection behavior options
+        enableReadyCheck: true,
+        autoResubscribe: true,
+        
+        // TLS options for secured Redis connections
+        tls: isTLS ? { 
+          // For DigitalOcean managed databases
+          rejectUnauthorized: true,
+          minVersion: 'TLSv1.2'
+        } : undefined,
+        
+        reconnectOnError: (err) => {
+          // Only reconnect on specific errors
+          const targetError = 'READONLY';
+          if (err.message.includes(targetError)) {
+            return 1; // Reconnect for READONLY errors (often occurs with Redis Cluster)
+          }
+          return false; // Don't reconnect for other errors
+        },
+        
+        // Prefix for keys
         keyPrefix: config.redis.prefix || '',
       });
       
@@ -182,7 +203,7 @@ class RedisService {
           
           this._scheduleReconnect();
         }
-      }, 8000); // 8 second connection timeout
+      }, 15000); // 15 second connection timeout
       
       // Test the connection
       const pingResult = await this.client.ping();
