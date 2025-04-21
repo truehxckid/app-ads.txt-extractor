@@ -38,7 +38,7 @@ const config = {
       commandTimeout: 3000,
       maxRetriesPerRequest: 2,
       // Additional options for stability
-      enableOfflineQueue: false,
+      enableOfflineQueue: true,
       enableAutoPipelining: false,
       autoResubscribe: false,
       // Set these to false to use file-based storage as fallback
