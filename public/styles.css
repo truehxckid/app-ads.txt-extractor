@@ -797,6 +797,17 @@ button:disabled,
   margin-bottom: var(--space-xs);
 }
 
+
+/* ==========================================
+   Pagination
+   ========================================== */
+.pagination-btn.active[disabled] {
+  opacity: 1; /* Keep it fully visible unlike normal disabled buttons */
+  cursor: default;
+  pointer-events: none; /* Prevents hover effects */
+  /* Keep your existing active button styling */
+}
+
 /* ==========================================
    Results Section
    ========================================== */

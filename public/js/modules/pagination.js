@@ -74,16 +74,28 @@ class PaginationManager {
     pageNumbers.forEach(page => {
       if (page === '...') {
         paginationHtml += `<span class="pagination-ellipsis">...</span>`;
-      } else {
-        paginationHtml += `
-          <button class="pagination-btn ${currentPage === page ? 'active' : ''}" 
-            data-action="pagination" data-page="${page}"
-            aria-label="Page ${page}" ${currentPage === page ? 'aria-current="page"' : ''}>
-            ${page}
-          </button>
-        `;
-      }
-    });
+    } else {
+    // If this is the current page, add disabled attribute
+    if (currentPage === page) {
+      paginationHtml += `
+        <button class="pagination-btn active" 
+          aria-current="page"
+          disabled
+          aria-label="Current page ${page}">
+          ${page}
+        </button>
+      `;
+    } else {
+      paginationHtml += `
+        <button class="pagination-btn" 
+          data-action="pagination" data-page="${page}"
+          aria-label="Page ${page}">
+          ${page}
+        </button>
+      `;
+    }
+  }
+  });
     
     // Next button
     paginationHtml += `
