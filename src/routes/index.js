@@ -8,6 +8,7 @@ const express = require('express');
 const path = require('path');
 const apiRoutes = require('./api');
 const healthRoutes = require('./health');
+const streamingRoutes = require('./streaming-api');
 const { notFoundHandler } = require('../middleware/error-handler');
 const config = require('../config');
 
@@ -18,6 +19,9 @@ router.use('/health', healthRoutes);
 
 // API routes
 router.use('/api', apiRoutes);
+
+// New streaming API routes
+router.use('/api/stream', streamingRoutes);
 
 // Static files
 router.use(express.static(config.dirs.public));

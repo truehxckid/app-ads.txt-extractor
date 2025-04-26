@@ -8,6 +8,7 @@ import EventHandler from './modules/event-handler.js';
 import ThemeManager from './utils/theme.js';
 import { checkBrowserSupport } from './utils/browser-compat.js';
 import DOMUtils from './modules/dom-utils.js';
+import StreamingIntegration from './modules/streaming-integration.js';
 
 /**
  * Initialize the application
@@ -28,6 +29,9 @@ function initApp() {
     
     // Initialize event handlers
     EventHandler.initialize();
+    
+    // Initialize streaming integration
+    StreamingIntegration.initialize();
     
     // Add global error handling
     window.addEventListener('error', EventHandler.handleGlobalError);
@@ -71,5 +75,6 @@ window.AppDebug = {
   resetApp: () => {
     AppState.reset();
     window.location.reload();
-  }
+  },
+  StreamingEnabled: () => StreamingIntegration.streamingEnabled
 };
