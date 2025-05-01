@@ -94,6 +94,25 @@ class StreamProgressUI {
       animate = true 
     } = options;
     
+    // First, check if we already have an active worker progress indicator
+    // If so, remove all other progress indicators to prevent overlap
+    const workerProgressIndicator = document.querySelector('.worker-processing-indicator');
+    if (workerProgressIndicator) {
+      console.log('Active worker progress indicator found, removing other progress indicators before initializing');
+      
+      // Remove any existing progress indicators except the worker indicator
+      const otherProgressIndicators = document.querySelectorAll('.visual-indicators-container, .progress-indicator, #streamProgress');
+      otherProgressIndicators.forEach(indicator => {
+        if (indicator !== workerProgressIndicator && indicator.parentNode) {
+          indicator.parentNode.removeChild(indicator);
+        }
+      });
+      
+      // If worker indicator exists, we shouldn't create a new progress UI
+      console.log('Skipping new progress UI creation as worker indicator already exists');
+      return false;
+    }
+    
     // Reset stats
     this.stats = {
       total: totalItems,
@@ -891,12 +910,15 @@ class StreamProgressUI {
     
     if (!container) return;
     
+    // Check if worker indicator exists - if so, we should preserve it
+    // and remove other indicators to prevent overlap
+    const workerIndicator = document.querySelector('.worker-processing-indicator');
+    
     // List of all selectors to clean up
     const selectorsToRemove = [
       '.progress-indicator',
       '.visual-indicators-container',
-      '.streaming-info-banner',
-      '.worker-processing-indicator',
+      '.streaming-info-banner:not(.worker-processing-indicator)', // Don't remove worker indicator
       '.processing-indicator',
       '.streaming-mode-indicator',
       '.streaming-confirmation',
@@ -915,8 +937,11 @@ class StreamProgressUI {
     selectorsToRemove.forEach(selector => {
       const elements = container.querySelectorAll(selector);
       elements.forEach(element => {
-        console.log(`StreamProgressUI: Removing ${selector} from container`);
-        element.remove();
+        // Do not remove the worker indicator - we want to keep it visible
+        if (!workerIndicator || element !== workerIndicator) {
+          console.log(`StreamProgressUI: Removing ${selector} from container`);
+          element.remove();
+        }
       });
     });
     
@@ -925,14 +950,22 @@ class StreamProgressUI {
     selectorsToRemove.forEach(selector => {
       const elements = document.querySelectorAll(selector);
       elements.forEach(element => {
-        console.log(`StreamProgressUI: Removing ${selector} from document`);
-        element.remove();
+        // Do not remove the worker indicator - we want to keep it visible
+        if (!workerIndicator || element !== workerIndicator) {
+          console.log(`StreamProgressUI: Removing ${selector} from document`);
+          element.remove();
+        }
       });
     });
     
     // Also clean up any elements with progress-related text content
     const allElements = container.querySelectorAll('*');
     allElements.forEach(element => {
+      // Skip the worker indicator - do not remove it
+      if (workerIndicator && (element === workerIndicator || workerIndicator.contains(element))) {
+        return;
+      }
+      
       if (element.textContent && (
           element.textContent.includes('Processing...') || 
           element.textContent.includes('Sending request') ||

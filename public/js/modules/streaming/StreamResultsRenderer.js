@@ -47,6 +47,15 @@ class StreamResultsRenderer {
     
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
+    // First check if we already have any progress indicators
+    // Remove all existing visual-indicators-container to avoid overlap
+    const existingProgressIndicators = document.querySelectorAll('.visual-indicators-container');
+    existingProgressIndicators.forEach(indicator => {
+      if (indicator && indicator.parentNode) {
+        indicator.parentNode.removeChild(indicator);
+      }
+    });
+    
     // Create worker processing indicator div
     const workerIndicator = document.createElement('div');
     workerIndicator.className = 'streaming-info-banner worker-processing-indicator';
