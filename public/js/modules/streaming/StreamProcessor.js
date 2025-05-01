@@ -179,6 +179,15 @@ class StreamProcessor {
       resultElement.style.display = 'block';
     }
     
+    // Clear any existing "Sending request to server..." messages
+    const existingProgressMessages = document.querySelectorAll('.progress-indicator');
+    existingProgressMessages.forEach(element => {
+      if (element.textContent && element.textContent.includes('Sending request')) {
+        console.log('🚀 Removing existing progress message:', element);
+        element.remove();
+      }
+    });
+    
     // Initialize UI components
     this.resultsRenderer.initializeUI(resultElement, bundleIds.length, searchTerms.length > 0);
     
@@ -297,6 +306,15 @@ class StreamProcessor {
       // Add a cache-busting parameter to avoid cached responses
       const timestamp = Date.now();
       console.log(`⚡ CRITICAL DEBUG: Starting stream fetch with timestamp ${timestamp}`);
+      
+      // First clear any "Sending request to server..." message that might be displayed
+      const progressIndicator = document.querySelector('.progress-indicator');
+      if (progressIndicator && progressIndicator.textContent.includes('Sending request')) {
+        progressIndicator.innerHTML = `
+          <h3>Processing Your Request</h3>
+          <p>Preparing to process ${bundleIds.length} bundle IDs</p>
+        `;
+      }
       
       // Create debug info in the UI
       const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');

@@ -128,7 +128,16 @@ class StreamProgressUI {
     // Make sure container is visible
     containerElement.style.display = 'block';
     
-    // Clear previous indicators
+    // Remove any existing progress messages or visual indicators
+    const existingProgressIndicators = document.querySelectorAll('.progress-indicator, .visual-indicators-container');
+    existingProgressIndicators.forEach(element => {
+      console.log('Removing existing indicator:', element);
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+    });
+    
+    // Clear previous indicators from our map
     this.clearIndicators();
     
     // Ensure CSS is loaded

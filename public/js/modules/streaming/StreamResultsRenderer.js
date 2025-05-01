@@ -262,7 +262,48 @@ class StreamResultsRenderer {
   showResults(results) {
     if (!this.resultElement) return;
     
-    console.log('🔄 StreamResultsRenderer: Showing results of processing', results.length, 'items');
+    // Try to get results from AppState if none provided
+    if (!results || !results.length) {
+      console.log('🔄 StreamResultsRenderer: No results provided, trying to get from AppState');
+      
+      // Try to get AppState via import
+      import('../app-state.js').then(module => {
+        console.log('🔄 Imported AppState:', module.default);
+        const importedAppState = module.default;
+        
+        if (importedAppState && importedAppState.results && importedAppState.results.length) {
+          console.log('🔄 Found results in imported AppState:', importedAppState.results.length);
+          this._renderResults(importedAppState.results);
+          return;
+        } else {
+          console.log('🔄 No results in imported AppState, trying window.AppState');
+          // Fall back to window.AppState
+          const windowAppState = window.AppState || {};
+          if (windowAppState.results && windowAppState.results.length) {
+            console.log('🔄 Found results in window.AppState:', windowAppState.results.length);
+            this._renderResults(windowAppState.results);
+          } else {
+            console.log('🔄 No results in window.AppState, rendering empty results');
+            this._renderResults([]);
+          }
+        }
+      }).catch(error => {
+        console.error('🔄 Error importing AppState:', error);
+        this._renderResults(results || []);
+      });
+    } else {
+      // If results are provided, render them directly
+      this._renderResults(results);
+    }
+  }
+  
+  /**
+   * Render results to the UI
+   * @param {Array} results - Results to display
+   * @private
+   */
+  _renderResults(results) {
+    console.log('🔄 StreamResultsRenderer: Rendering', results.length, 'results');
     
     // Create a results display element
     const resultsDisplay = document.createElement('div');
@@ -291,16 +332,23 @@ class StreamResultsRenderer {
       </div>
     `;
     
-    // Add to the page
-    this.resultElement.appendChild(resultsDisplay);
+    // Replace any existing results section or add to the page
+    const existingResults = this.resultElement.querySelector('.stream-results-display');
+    if (existingResults) {
+      existingResults.parentNode.replaceChild(resultsDisplay, existingResults);
+    } else {
+      this.resultElement.appendChild(resultsDisplay);
+    }
     
     // Get the tbody element
     const tbody = resultsDisplay.querySelector('#results-final-tbody');
     if (!tbody) return;
     
     // Add each result
-    if (results.length > 0) {
+    if (results && results.length > 0) {
       results.forEach(result => {
+        if (!result) return; // Skip null/undefined results
+        
         const row = document.createElement('tr');
         row.className = result.success ? 'success-row' : 'error-row';
         
@@ -308,8 +356,8 @@ class StreamResultsRenderer {
           const hasAppAds = result.appAdsTxt?.exists;
           
           row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
-            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType))}</td>
+            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
+            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
             <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
             <td class="app-ads-cell">
               ${hasAppAds 
@@ -323,7 +371,7 @@ class StreamResultsRenderer {
           `;
         } else {
           row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
+            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
             <td colspan="3" class="error-message">
               Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
             </td>
@@ -400,11 +448,20 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
   if (showResultsBtn) {
     showResultsBtn.addEventListener('click', () => {
-      // Show the results immediately
-      this.showResults(window.AppState?.results || []);
-      
-      // Remove the banner after showing results
-      completionBanner.style.display = 'none';
+      // Import AppState directly to ensure we get the latest results
+      import('../app-state.js').then(module => {
+        const appState = module.default;
+        // Show the results immediately
+        this.showResults(appState?.results || []);
+        
+        // Remove the banner after showing results
+        completionBanner.style.display = 'none';
+      }).catch(error => {
+        console.error('Error importing AppState for showing results:', error);
+        // Fallback to window.AppState
+        this.showResults(window.AppState?.results || []);
+        completionBanner.style.display = 'none';
+      });
     });
   }
 };

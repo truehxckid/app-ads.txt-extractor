@@ -202,4 +202,11 @@ class AppStateManager {
 
 // Export singleton instance
 const AppState = new AppStateManager();
+
+// Make AppState available globally
+if (typeof window !== 'undefined') {
+  window.AppState = AppState;
+  console.log('AppState attached to window object');
+}
+
 export default AppState;
