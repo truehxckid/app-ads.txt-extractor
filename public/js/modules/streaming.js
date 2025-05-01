@@ -310,6 +310,18 @@ class StreamingProcessor {
         this.debugDiv.innerHTML += '<hr><strong>Stream processing complete or failed</strong>';
       }
     }
+  } catch (err) {
+    console.error('Main thread streaming error:', err);
+    
+    // Update debug div with error if it exists
+    if (this.debugDiv) {
+      this.debugDiv.innerHTML += `<strong style="color: red">MAIN THREAD ERROR: ${err.message}</strong><br>`;
+      this.debugDiv.innerHTML += `<pre>${err.stack}</pre>`;
+    }
+    
+    showNotification(`Main thread streaming error: ${err.message}`, 'error');
+    DOMUtils.showError('result', `Main thread streaming error: ${err.message}`);
+    return false;
   }
   
   /**
