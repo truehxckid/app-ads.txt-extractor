@@ -677,9 +677,6 @@ class StreamProcessor {
    * @private
    */
   _finalizeUI() {
-    // Update progress UI one last time
-    this.progressUI.updateProgress(this.stats);
-    
     // Enable download button
     const downloadBtn = document.querySelector('[data-action="download-csv"]');
     if (downloadBtn) {
@@ -700,10 +697,18 @@ class StreamProcessor {
       elapsedTime: processingTime
     };
     
-    // Complete visual indicators in the ProgressUI
-    this.progressUI.complete(stats);
+    // First, remove only the detailed progress UI elements (the boxes with statistics)
+    // but keep the simple completion message
+    const detailedProgressElements = document.querySelectorAll(
+      '.visual-indicators-container, .stats-container, .progress-bar-container'
+    );
+    detailedProgressElements.forEach(element => {
+      if (element && element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+    });
     
-    // Also update completion status in the StreamResultsRenderer
+    // Update completion status in the StreamResultsRenderer - this will create the completion banner
     if (this.resultsRenderer && typeof this.resultsRenderer.updateCompletionStatus === 'function') {
       this.resultsRenderer.updateCompletionStatus(stats);
     }

@@ -648,19 +648,22 @@ class StreamResultsRenderer {
    */
   _createCompletionBanner() {
     const completionBanner = document.createElement('div');
-    completionBanner.className = 'streaming-completion-banner';
-    completionBanner.style.cssText = 'margin: 20px 0; padding: 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
+    completionBanner.className = 'streaming-completion-message';
+    completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
     
     completionBanner.innerHTML = `
-      <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
-      <p>All ${this.allResults?.length || 0} bundle IDs have been processed.</p>
-      <div class="action-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
-        <button class="extract-btn" data-action="stream-download-csv">
-          Stream Download CSV
-        </button>
-        <button class="extract-btn" data-action="show-results">
-          Show Results
-        </button>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <p style="margin: 0; color: #2ecc71; font-weight: 500;">Completed processing ${this.allResults?.length || 0} bundle IDs</p>
+        </div>
+        <div class="action-buttons" style="display: flex; gap: 10px;">
+          <button class="extract-btn" data-action="stream-download-csv">
+            Stream Download CSV
+          </button>
+          <button class="extract-btn" data-action="show-results">
+            Show Results
+          </button>
+        </div>
       </div>
     `;
     
@@ -743,10 +746,10 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   
   console.log('🔄 StreamResultsRenderer: Processing complete, updating UI with stats:', stats);
   
-  // Create a new completion banner to replace the worker progress indicator
+  // Create a simple green success message instead of a full banner
   const completionBanner = document.createElement('div');
-  completionBanner.className = 'streaming-completion-banner';
-  completionBanner.style.cssText = 'margin: 20px 0; padding: 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
+  completionBanner.className = 'streaming-completion-message';
+  completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
   
   // Format time in a readable way
   const timeInSeconds = stats.elapsedTime / 1000;
@@ -755,15 +758,18 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     : `${timeInSeconds.toFixed(1)} seconds`;
     
   completionBanner.innerHTML = `
-    <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
-    <p>All ${stats.total} bundle IDs have been processed in ${timeDisplay}.</p>
-    <div class="action-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
-      <button class="extract-btn" data-action="stream-download-csv">
-        Stream Download CSV
-      </button>
-      <button class="extract-btn" data-action="show-results">
-        Show Results
-      </button>
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <div>
+        <p style="margin: 0; color: #2ecc71; font-weight: 500;">Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
+      </div>
+      <div class="action-buttons" style="display: flex; gap: 10px;">
+        <button class="extract-btn" data-action="stream-download-csv">
+          Stream Download CSV
+        </button>
+        <button class="extract-btn" data-action="show-results">
+          Show Results
+        </button>
+      </div>
     </div>
   `;
   
