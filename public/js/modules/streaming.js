@@ -7,6 +7,7 @@ import AppState from './app-state.js';
 import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
 import { formatNumber, getStoreDisplayName } from '../utils/formatting.js';
+import VisualIndicators from './visual-indicators.js';
 
 /**
  * Streaming processor class
@@ -96,13 +97,23 @@ class StreamingProcessor {
     const resultElement = DOMUtils.getElement('result');
     if (!resultElement) return false;
     
-    // Show initial loading state
-    DOMUtils.showLoading('result', 'Starting streaming process...');
+    // Initialize visual indicators
+    VisualIndicators.initialize({
+      totalItems: bundleIds.length,
+      containerSelector: resultElement,
+      showDetails: true,
+      animate: true
+    });
+    
+    // Set initial status message
+    VisualIndicators.setStatusMessage('Starting streaming process...', 'info');
     
     try {
       // If worker is available and initialized, use it
       if (this.worker) {
         console.log('Using Web Worker for streaming processing');
+        VisualIndicators.setStatusMessage('Processing with Web Worker...', 'info');
+        
         this.worker.postMessage({
           type: 'processBundleIds',
           bundleIds,
@@ -115,11 +126,12 @@ class StreamingProcessor {
       }
       
       // If no worker, process with main thread
+      VisualIndicators.setStatusMessage('Processing on main thread...', 'info');
       return await this._processBundleIdsMainThread(bundleIds, searchTerms);
     } catch (err) {
       console.error('Error starting streaming process:', err);
       showNotification(`Streaming error: ${err.message}`, 'error');
-      DOMUtils.showError('result', err.message);
+      VisualIndicators.showError(`Streaming error: ${err.message}`);
       return false;
     }
   }
@@ -312,6 +324,27 @@ class StreamingProcessor {
     
     // Add to buffer for progressive rendering
     this.resultBuffer.push(result);
+    
+    // Update visual indicators
+    VisualIndicators.updateProgress({
+      processed: this.stats.processedCount,
+      success: this.stats.successCount,
+      errors: this.stats.errorCount,
+      withAppAds: this.stats.withAppAdsTxtCount,
+      total: this.stats.totalBundleIds
+    });
+    
+    // Update status message periodically
+    if (this.stats.processedCount % 10 === 0) {
+      const percent = this.stats.totalBundleIds > 0 
+        ? Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100)
+        : 0;
+      
+      VisualIndicators.setStatusMessage(
+        `Processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
+        'info'
+      );
+    }
     
     // Schedule rendering if not already in progress
     this._scheduleRender();
@@ -853,9 +886,30 @@ class StreamingProcessor {
     // Set results in app state
     AppState.setResults(this.results);
     
-    // Show completion notification
+    // Complete visual indicators
     const processingTime = Date.now() - this.stats.startTime;
-    const message = `Completed processing ${this.stats.processedCount} bundle IDs (${this.stats.errorCount} errors) in ${processingTime}ms`;
+    VisualIndicators.complete({
+      processed: this.stats.processedCount,
+      success: this.stats.successCount,
+      errors: this.stats.errorCount,
+      withAppAds: this.stats.withAppAdsTxtCount,
+      total: this.stats.totalBundleIds
+    });
+    
+    // Format the time in a more readable format
+    const timeInSeconds = processingTime / 1000;
+    const timeDisplay = timeInSeconds >= 60 
+      ? `${(timeInSeconds / 60).toFixed(1)} minutes`
+      : `${timeInSeconds.toFixed(1)} seconds`;
+    
+    // Add final status message
+    VisualIndicators.setStatusMessage(
+      `Completed processing ${this.stats.processedCount} bundle IDs (${this.stats.errorCount} errors) in ${timeDisplay}`,
+      'success'
+    );
+    
+    // Show completion notification
+    const message = `Completed processing ${this.stats.processedCount} bundle IDs (${this.stats.errorCount} errors) in ${timeDisplay}`;
     showNotification(message, 'success');
   }
   
@@ -905,7 +959,28 @@ class StreamingProcessor {
         this.stats.errorCount = data.errorCount;
         this.stats.withAppAdsTxtCount = data.withAppAdsTxtCount;
         
-        // Update UI
+        // Update visual indicators
+        VisualIndicators.updateProgress({
+          processed: this.stats.processedCount,
+          success: this.stats.successCount,
+          errors: this.stats.errorCount,
+          withAppAds: this.stats.withAppAdsTxtCount,
+          total: this.stats.totalBundleIds
+        });
+        
+        // Update status message periodically
+        if (this.stats.processedCount % 10 === 0) {
+          const percent = this.stats.totalBundleIds > 0 
+            ? Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100)
+            : 0;
+          
+          VisualIndicators.setStatusMessage(
+            `Worker processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
+            'info'
+          );
+        }
+        
+        // Update legacy UI
         this._updateProgressUI();
         
         // Update progress bar with percentage if provided
@@ -945,7 +1020,7 @@ class StreamingProcessor {
       case 'error':
         console.error('Worker error:', data.message);
         showNotification(`Worker error: ${data.message}`, 'error');
-        DOMUtils.showError('result', data.message);
+        VisualIndicators.showError(`Worker error: ${data.message}`);
         break;
     }
   }
@@ -961,7 +1036,21 @@ class StreamingProcessor {
       return;
     }
     
+    // Get the results container to show progress
+    const resultElement = DOMUtils.getElement('result');
+    if (!resultElement) return;
+    
     try {
+      // Initialize visual indicators for export
+      VisualIndicators.initialize({
+        totalItems: bundleIds.length,
+        containerSelector: resultElement,
+        showDetails: false,
+        animate: true
+      });
+      
+      // Set initial status message
+      VisualIndicators.setStatusMessage('Preparing CSV export stream...', 'info');
       showNotification('Starting CSV export stream...', 'info');
       
       // Create a download link
@@ -969,6 +1058,13 @@ class StreamingProcessor {
       downloadLink.href = `/api/stream/export-csv?ts=${Date.now()}`; // Add timestamp to prevent caching
       downloadLink.download = `developer_domains_${new Date().toISOString().slice(0, 10)}.csv`;
       downloadLink.style.display = 'none';
+      
+      // Update visual progress indicators
+      VisualIndicators.updateProgress({
+        processed: 0,
+        total: bundleIds.length
+      });
+      VisualIndicators.setStatusMessage('Connecting to server...', 'info');
       
       // Set up fetch for streaming response
       const response = await fetch('/api/stream/export-csv', {
@@ -983,11 +1079,31 @@ class StreamingProcessor {
         throw new Error(`Server error: ${response.status} ${response.statusText}`);
       }
       
+      // Update progress indicators
+      VisualIndicators.updateProgress({
+        processed: Math.floor(bundleIds.length * 0.1), // Show some progress
+        total: bundleIds.length
+      });
+      VisualIndicators.setStatusMessage('Processing data on server...', 'info');
+      
       // Get the blob from the response
       const blob = await response.blob();
       
+      // Update progress to 80%
+      VisualIndicators.updateProgress({
+        processed: Math.floor(bundleIds.length * 0.8),
+        total: bundleIds.length
+      });
+      VisualIndicators.setStatusMessage('Creating download file...', 'info');
+      
       // Create object URL for the blob
       const url = URL.createObjectURL(blob);
+      
+      // Update progress to 90%
+      VisualIndicators.updateProgress({
+        processed: Math.floor(bundleIds.length * 0.9),
+        total: bundleIds.length
+      });
       
       // Set the link's href to the object URL
       downloadLink.href = url;
@@ -1002,10 +1118,18 @@ class StreamingProcessor {
         URL.revokeObjectURL(url);
       }, 100);
       
+      // Complete the indicators
+      VisualIndicators.complete({
+        processed: bundleIds.length,
+        total: bundleIds.length
+      });
+      VisualIndicators.setStatusMessage('CSV export complete! Download starting...', 'success');
+      
       showNotification('CSV export complete', 'success');
     } catch (err) {
       console.error('CSV export error:', err);
       showNotification(`Export error: ${err.message}`, 'error');
+      VisualIndicators.showError(`Export error: ${err.message}`);
     }
   }
 }

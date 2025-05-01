@@ -1,0 +1,231 @@
+/* ==========================================
+   Visual Indicators Styles
+   ========================================== */
+
+/* Container for all visual indicators */
+.visual-indicators-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 8px var(--shadow);
+  transition: all 0.3s ease;
+}
+
+/* Add pulsing effect when animated */
+.visual-indicators-container.animated {
+  animation: pulse 1.5s infinite alternate;
+}
+
+/* Status message styles */
+.status-message {
+  font-size: var(--font-size-sm);
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-weight: 500;
+}
+
+.status-message.info {
+  background-color: var(--primary-100);
+  color: var(--primary-900);
+}
+
+.status-message.success {
+  background-color: var(--secondary-100);
+  color: var(--secondary-900);
+}
+
+.status-message.warning {
+  background-color: var(--warning-100);
+  color: var(--warning-900);
+}
+
+.status-message.error {
+  background-color: var(--error-100);
+  color: var(--error-900);
+}
+
+/* Progress bar container */
+.progress-bar-container {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.progress-bar-wrapper {
+  flex: 1;
+  height: 12px;
+  background-color: var(--neutral-light);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-right: 1rem;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary-600) 0%, var(--primary-400) 100%);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Progress bar states */
+.progress-bar.quarter-complete {
+  background: linear-gradient(90deg, var(--primary-600) 0%, var(--primary-400) 100%);
+}
+
+.progress-bar.half-complete {
+  background: linear-gradient(90deg, var(--primary-500) 0%, var(--secondary-400) 100%);
+}
+
+.progress-bar.three-quarter-complete {
+  background: linear-gradient(90deg, var(--secondary-500) 0%, var(--secondary-300) 100%);
+}
+
+.progress-bar.complete {
+  background: var(--secondary-500);
+}
+
+/* Data flow animation inside progress bar */
+.data-stripes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.data-stripe {
+  position: absolute;
+  height: 100%;
+  width: 20px;
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: skewX(-20deg);
+}
+
+/* Completion percentage */
+.completion-percentage {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 40px;
+  text-align: right;
+}
+
+/* Stats container */
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Counter styles */
+.counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 0.5rem;
+  background-color: var(--bg-card);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.counter-icon {
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.counter-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.counter-value {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Counter variants */
+.processed-counter {
+  border-left: 3px solid var(--primary-500);
+}
+
+.success-counter {
+  border-left: 3px solid var(--secondary-500);
+}
+
+.errors-counter {
+  border-left: 3px solid var(--error-500);
+}
+
+.appAds-counter {
+  border-left: 3px solid var(--warning-500);
+}
+
+/* Rate indicator and time remaining */
+.rate-indicator, 
+.time-remaining {
+  grid-column: span 2;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  padding: 0.5rem;
+  background-color: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* Error state */
+.visual-indicators-container.error {
+  border-color: var(--error-500);
+  background-color: var(--error-50);
+}
+
+/* Animation keyframes */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 2px 8px var(--shadow);
+  }
+  100% {
+    box-shadow: 0 0 12px var(--primary-300);
+  }
+}
+
+@keyframes dataFlow {
+  0% {
+    left: -30px;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .stats-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .rate-indicator, 
+  .time-remaining {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-container {
+    grid-template-columns: 1fr;
+  }
+}

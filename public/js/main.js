@@ -9,6 +9,7 @@ import ThemeManager from './utils/theme.js';
 import { checkBrowserSupport } from './utils/browser-compat.js';
 import DOMUtils from './modules/dom-utils.js';
 import StreamingIntegration from './modules/streaming-integration.js';
+import VisualIndicators from './modules/visual-indicators.js';
 
 /**
  * Initialize the application

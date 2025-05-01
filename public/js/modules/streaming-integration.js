@@ -8,6 +8,7 @@ import EventHandler from './event-handler.js';
 import StreamingProcessor from './streaming.js';
 import { showNotification } from '../utils/notification.js';
 import DOMUtils from './dom-utils.js';
+import VisualIndicators from './visual-indicators.js';
 
 /**
  * Streaming Integration Class
