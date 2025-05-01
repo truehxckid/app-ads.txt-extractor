@@ -32,8 +32,13 @@ class ResultsManager {
         DOMUtils.showLoading('result', 'Processing...');
       }
       
-      // Initialize visual indicators
+      // Clear previous visual indicators before initializing new ones
       const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+      if (VisualIndicators) {
+        VisualIndicators.clearIndicators();
+      }
+      
+      // Initialize visual indicators
       if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
         VisualIndicators.initialize({
           totalItems: bundleIds.length,
@@ -172,9 +177,14 @@ class ResultsManager {
       const searchTerms = AppState.searchTerms.length > 0 ? 
         AppState.searchTerms : DOMUtils.getSearchTerms();
       
+      // Clear previous visual indicators before initializing new ones
+      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+      if (VisualIndicators) {
+        VisualIndicators.clearIndicators();
+      }
+      
       // Initialize visual indicators for pagination
       const resultElement = DOMUtils.getElement('result');
-      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
       if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
         VisualIndicators.initialize({
           totalItems: bundleIds.length,
@@ -274,20 +284,9 @@ class ResultsManager {
     const tableHtml = TemplateEngine.generateResultsTable(data.results, searchTermsText);
     const paginationHtml = PaginationManager.renderPagination(data.pagination);
     
-    // Temporarily store any visual indicators that may exist
-    const visualIndicatorsContainer = resultElement.querySelector('.visual-indicators-container');
-    let visualIndicatorsElement = null;
-    if (visualIndicatorsContainer) {
-      visualIndicatorsElement = visualIndicatorsContainer.cloneNode(true);
-    }
-    
-    // Update the DOM
+    // Clear previous content - don't preserve visual indicators from this method
+    // (they should be managed by visual-indicators.js)
     resultElement.innerHTML = '';
-    
-    // Re-add visual indicators if they existed
-    if (visualIndicatorsElement) {
-      resultElement.appendChild(visualIndicatorsElement);
-    }
     
     // Add summary
     const summaryElement = document.createElement('div');
