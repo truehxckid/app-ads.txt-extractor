@@ -200,7 +200,18 @@ class StreamProcessor {
     try {
       // Add a cache-busting parameter to avoid cached responses
       const timestamp = Date.now();
-      console.log(`Starting stream fetch with timestamp ${timestamp}`);
+      console.log(`⚡ CRITICAL DEBUG: Starting stream fetch with timestamp ${timestamp}`);
+      
+      // Create debug info in the UI
+      document.getElementById('debug-information').innerHTML = `
+        <strong>Stream Processing Debug Info:</strong><br>
+        Current time: ${new Date().toLocaleTimeString()}<br>
+        Bundle IDs: ${bundleIds.length}<br>
+        Starting fetch request...
+      `;
+      
+      // Log some network state
+      console.log('⚡ Network status:', navigator.onLine ? 'Online' : 'Offline');
       
       // Create debug panel
       this.debugger.initialize('Stream Debug');
@@ -210,9 +221,15 @@ class StreamProcessor {
       
       // Start streaming process with a shorter timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+      const timeoutId = setTimeout(() => {
+        console.log('⚡ CRITICAL DEBUG: Fetch timed out after 60 seconds!');
+        controller.abort();
+      }, 60000); // 60 second timeout
       
       try {
+        console.log('⚡ CRITICAL DEBUG: Sending fetch request...');
+        document.getElementById('debug-information').innerHTML += '<br>Sending fetch request...';
+        
         const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
           method: 'POST',
           headers: {
@@ -224,6 +241,8 @@ class StreamProcessor {
           body: JSON.stringify({ bundleIds, searchTerms }),
           signal: controller.signal
         });
+        
+        console.log('⚡ CRITICAL DEBUG: Fetch response received:', response.status, response.statusText);
         
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);

@@ -247,13 +247,22 @@ class StreamingIntegration {
       const useStreaming = this.streamingEnabled && bundleIds.length >= 10;
       
       if (useStreaming) {
-        console.log('Using streaming for large dataset:', bundleIds.length);
+        console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
+        
+        // Show debug info element
+        const debugElement = DOMUtils.getElement('debugInfo');
+        if (debugElement) {
+          debugElement.innerHTML = '<div class="debug-info"><strong>Debug Info:</strong><br>Starting streaming process...</div>';
+          debugElement.style.display = 'block';
+        }
         
         try {
           // Process with streaming
-          await StreamingProcessor.processBundleIds(bundleIds, searchTerms);
+          console.log('⚡⚡⚡ ENTRY POINT: Calling StreamingProcessor.processBundleIds');
+          const success = await StreamingProcessor.processBundleIds(bundleIds, searchTerms);
+          console.log('⚡⚡⚡ ENTRY POINT: Streaming process result:', success ? 'Success' : 'Failed');
         } catch (err) {
-          console.error('Streaming error, falling back to regular processing:', err);
+          console.error('⚡⚡⚡ ENTRY POINT: Streaming error, falling back to regular processing:', err);
           showNotification('Streaming error, falling back to regular processing', 'warning');
           
           // Fall back to original handler
