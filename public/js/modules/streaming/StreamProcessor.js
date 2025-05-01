@@ -283,9 +283,60 @@ class StreamProcessor {
             debugInfo.innerHTML += '<br>Sending fetch request...';
         }
         
-        console.log('⚡ CRITICAL DEBUG: Using streaming API endpoint with nocache:', timestamp);
+        // Import API from '../api.js' dynamically to avoid circular dependencies
+        const ApiModule = await import('../api.js');
+        const Api = ApiModule.default;
         
-        // Use the streaming endpoint - this is critical!
+        console.log('⚡ CRITICAL DEBUG: Using API.extractDomains which should redirect to streaming endpoint');
+        
+        // Use the API module which will automatically redirect to streaming endpoint
+        // if streaming is enabled in localStorage
+        const apiResponse = await Api.extractDomains(bundleIds, searchTerms);
+        
+        // Check if we got a streaming response
+        if (apiResponse.isStreaming && apiResponse.response) {
+          console.log('⚡ CRITICAL DEBUG: Api.extractDomains returned a streaming response!');
+          const response = apiResponse.response;
+          
+          console.log('⚡ CRITICAL DEBUG: Fetch response received:', response.status, response.statusText);
+          
+          // Clear the timeout since we got a response
+          clearTimeout(timeoutId);
+          
+          // Add debug info
+          this.debugger.logConnectionInfo(response);
+          
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+          }
+          
+          if (!response.body) {
+            throw new Error('ReadableStream not supported in this browser');
+          }
+          
+          // Process the stream with debug mode
+          await this.dataParser.processStream(
+            response.body, 
+            this._processResult.bind(this),
+            this.debugger,
+            this.progressUI
+          );
+          
+          // Update the UI when complete
+          this._finalizeUI();
+          
+          return true;
+        } else {
+          // We got a regular JSON response, not a streaming response
+          console.error('⚡ CRITICAL DEBUG: Api.extractDomains did not return a streaming response!');
+          throw new Error('Api.extractDomains did not return a streaming response. Check localStorage "streamingEnabled" setting.');
+        }
+        
+        // Legacy code path - direct fetch to streaming endpoint
+        // This is a fallback in case the Api.extractDomains approach doesn't work
+        console.log('⚡ CRITICAL DEBUG: FALLBACK: Using direct streaming API endpoint with nocache:', timestamp);
+        
+        // Use the streaming endpoint directly as a fallback
         const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
           method: 'POST',
           headers: {
@@ -298,7 +349,7 @@ class StreamProcessor {
           signal: controller.signal
         });
         
-        console.log('⚡ CRITICAL DEBUG: Fetch response received:', response.status, response.statusText);
+        console.log('⚡ CRITICAL DEBUG: FALLBACK: Fetch response received:', response.status, response.statusText);
         
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);

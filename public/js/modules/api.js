@@ -26,7 +26,53 @@ class ApiService {
       // Add timestamp to avoid caching
       const cacheBuster = Date.now();
       
-      console.log('📢 API.extractDomains: Using NON-STREAMING endpoint - if you see this when streaming is enabled, there is a bug!');
+      // Check if streaming is enabled in localStorage
+      const streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
+      
+      // FORCE REDIRECT: If streaming is enabled, use the streaming endpoint
+      if (streamingEnabled) {
+        console.log('🔄 API.extractDomains: REDIRECTING to streaming endpoint - streaming is enabled');
+        
+        // SPECIAL INDICATOR TO SHOW STREAMING ENDPOINT IS BEING USED
+        if (window.dispatchEvent) {
+          window.dispatchEvent(new CustomEvent('streaming-api-forced', {
+            detail: { timestamp: Date.now(), endpoint: '/api/stream/extract-multiple' }
+          }));
+        }
+        
+        const response = await fetch(`/api/stream/extract-multiple?_=${cacheBuster}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          body: JSON.stringify({ 
+            bundleIds, 
+            searchTerms,
+            page,
+            pageSize,
+            fullAnalysis: true
+          }),
+          signal: controller.signal
+        });
+        
+        // Clear timeout as we got a response
+        clearTimeout(timeoutId);
+        
+        // For streaming, we don't return JSON, we return the response object
+        // for the StreamProcessor to handle
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+        }
+        
+        return { response, isStreaming: true };
+      }
+      
+      // Non-streaming path below
+      console.log('📢 API.extractDomains: Using NON-STREAMING endpoint - streaming is disabled');
       
       // SPECIAL INDICATOR TO SHOW THIS ENDPOINT WAS USED
       if (window.dispatchEvent) {
@@ -61,6 +107,7 @@ class ApiService {
         throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
       }
       
+      // For regular (non-streaming) endpoints, return the JSON response
       return await response.json();
     } catch (err) {
       console.error('API request failed:', err);

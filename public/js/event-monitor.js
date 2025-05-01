@@ -106,40 +106,88 @@
     };
   }
   
+  // Helper function for creating visual indicators
+  function addVisualIndicator(text, color, bgColor, duration = 10000) {
+    // Remove any existing indicators first
+    const existingIndicators = document.querySelectorAll('.event-monitor-indicator');
+    existingIndicators.forEach(indicator => {
+      indicator.remove();
+    });
+    
+    // Create the indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'event-monitor-indicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: ${bgColor};
+      border: 1px solid ${color};
+      color: ${color};
+      padding: 10px;
+      border-radius: 4px;
+      z-index: 9999;
+      font-size: 14px;
+      font-weight: bold;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      opacity: 0;
+      transform: translateY(-20px);
+      transition: opacity 0.3s, transform 0.3s;
+    `;
+    indicator.innerHTML = text;
+    
+    // Add timestamp
+    const timestamp = document.createElement('div');
+    timestamp.style.cssText = `
+      font-size: 10px;
+      margin-top: 5px;
+      opacity: 0.8;
+    `;
+    timestamp.textContent = new Date().toLocaleTimeString();
+    indicator.appendChild(timestamp);
+    
+    // Add to page
+    document.body.appendChild(indicator);
+    
+    // Animate in
+    setTimeout(() => {
+      indicator.style.opacity = '1';
+      indicator.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Auto-remove after specified duration
+    setTimeout(() => {
+      if (indicator.parentNode) {
+        indicator.style.opacity = '0';
+        indicator.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+          if (indicator.parentNode) {
+            indicator.parentNode.removeChild(indicator);
+          }
+        }, 500);
+      }
+    }, duration);
+    
+    return indicator;
+  }
+
   // Add stream processing monitoring
   window.addEventListener('stream-processing-started', function(event) {
     console.log('EVENT MONITOR: Stream processing started:', event.detail);
-    
-    // Add a visual indicator on the page
-    const indicator = document.createElement('div');
-    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #dcffe4; border: 1px solid #28a745; color: #28a745; padding: 10px; border-radius: 4px; z-index: 9999; font-size: 14px; font-weight: bold;';
-    indicator.innerHTML = '🔄 STREAMING ACTIVE';
-    document.body.appendChild(indicator);
-    
-    // Remove after 3 seconds
-    setTimeout(() => {
-      if (indicator.parentNode) {
-        indicator.parentNode.removeChild(indicator);
-      }
-    }, 3000);
+    addVisualIndicator('🔄 STREAMING ACTIVE', '#28a745', '#dcffe4');
   });
   
   // Add regular API monitoring
   window.addEventListener('regular-api-called', function(event) {
     console.log('EVENT MONITOR: Regular API called:', event.detail);
-    
-    // Add a visual indicator on the page
-    const indicator = document.createElement('div');
-    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #fff2dc; border: 1px solid #f0ad4e; color: #f0ad4e; padding: 10px; border-radius: 4px; z-index: 9999; font-size: 14px; font-weight: bold;';
-    indicator.innerHTML = '⚠️ REGULAR API CALLED (NOT STREAMING)';
-    document.body.appendChild(indicator);
-    
-    // Remove after 3 seconds
-    setTimeout(() => {
-      if (indicator.parentNode) {
-        indicator.parentNode.removeChild(indicator);
-      }
-    }, 3000);
+    // Use more attention-grabbing colors for this warning
+    addVisualIndicator('⚠️ REGULAR API CALLED (NOT STREAMING)', '#e36209', '#fff8f1');
+  });
+  
+  // Add forced streaming API monitoring
+  window.addEventListener('streaming-api-forced', function(event) {
+    console.log('EVENT MONITOR: Streaming API forced:', event.detail);
+    addVisualIndicator('✅ STREAMING API FORCED', '#0366d6', '#f1f8ff');
   });
   
   console.log('EVENT MONITOR: Monitoring initialized successfully with all event listeners');

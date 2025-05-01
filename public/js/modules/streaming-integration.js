@@ -16,7 +16,22 @@ class StreamingIntegration {
   constructor() {
     this.initialized = false;
     this.isStreamingSupported = !!window.ReadableStream;
-    this.streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
+    
+    // Force streaming enabled for debugging - remove in production
+    const forceStreaming = true; // Set to true to force streaming mode for testing
+    
+    if (forceStreaming) {
+      console.log('🚨 StreamingIntegration: FORCING streaming mode ON for debugging');
+      localStorage.setItem('streamingEnabled', 'true');
+      this.streamingEnabled = true;
+    } else {
+      this.streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
+    }
+    
+    // Log current state to console
+    console.log('StreamingIntegration constructed with streaming ' + 
+      (this.streamingEnabled ? 'ENABLED' : 'disabled') + 
+      ' (localStorage value: ' + localStorage.getItem('streamingEnabled') + ')');
   }
   
   /**
