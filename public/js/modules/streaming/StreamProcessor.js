@@ -229,6 +229,7 @@ class StreamProcessor {
         
         // Create visual indicator that worker is being used
         const workerIndicator = document.createElement('div');
+        workerIndicator.className = 'worker-indicator';
         workerIndicator.style.cssText = 'position: fixed; bottom: 10px; left: 10px; background: #dcffe4; border: 1px solid #28a745; color: #28a745; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
         workerIndicator.innerHTML = '⚙️ Using Web Worker';
         document.body.appendChild(workerIndicator);
@@ -607,15 +608,31 @@ class StreamProcessor {
     // Set results in app state
     AppState.setResults(this.results);
     
-    // Complete visual indicators
+    // Calculate elapsed time
     const processingTime = Date.now() - this.stats.startTime;
-    this.progressUI.complete({
+    const stats = {
       processed: this.stats.processedCount,
       success: this.stats.successCount,
       errors: this.stats.errorCount,
       withAppAds: this.stats.withAppAdsTxtCount,
-      total: this.stats.totalBundleIds
-    });
+      total: this.stats.totalBundleIds,
+      elapsedTime: processingTime
+    };
+    
+    // Complete visual indicators in the ProgressUI
+    this.progressUI.complete(stats);
+    
+    // Also update completion status in the StreamResultsRenderer
+    if (this.resultsRenderer && typeof this.resultsRenderer.updateCompletionStatus === 'function') {
+      this.resultsRenderer.updateCompletionStatus(stats);
+    }
+    
+    // Hide any worker progress indicators
+    const workerIndicator = document.querySelector('.worker-processing-indicator');
+    if (workerIndicator) {
+      console.log('⚡ StreamProcessor: Hiding worker processing indicator');
+      workerIndicator.style.display = 'none';
+    }
     
     // Format the time in a more readable format
     const timeInSeconds = processingTime / 1000;
@@ -632,6 +649,11 @@ class StreamProcessor {
     // Show completion notification
     const message = `Completed processing ${this.stats.processedCount} bundle IDs (${this.stats.errorCount} errors) in ${timeDisplay}`;
     showNotification(message, 'success');
+    
+    // Dispatch a "complete" event for other parts of the application to respond to
+    window.dispatchEvent(new CustomEvent('streaming-processing-complete', {
+      detail: { stats, timestamp: Date.now() }
+    }));
   }
   
   /**

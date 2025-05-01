@@ -15,6 +15,16 @@ class StreamResultsRenderer {
     this.hasSearchTerms = false;
     this.animationFrameId = null;
     this.resultElement = null;
+    
+    // Listen for stream completion events to show results
+    window.addEventListener('streaming-show-results', (event) => {
+      console.log('🔄 StreamResultsRenderer: Received show-results event');
+      const appState = window.AppState || {};
+      const results = appState.results || [];
+      
+      // Show the results UI
+      this.showResults(results);
+    });
   }
   
   /**
@@ -40,7 +50,7 @@ class StreamResultsRenderer {
     
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
-    // Create initial structure - SIMPLIFIED VERSION WITHOUT RESULTS TABLE
+    // Create initial structure - PROGRESS MONITORING ONLY VERSION (NO REAL-TIME RESULTS)
     resultElement.innerHTML = `
       <div class="results-summary">
         <div class="summary-stats">
@@ -69,9 +79,10 @@ class StreamResultsRenderer {
       </div>
       
       <!-- Results preview notification -->
-      <div class="streaming-info-banner" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">
+      <div class="streaming-info-banner worker-processing-indicator" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">
         <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
-        <p>Results will be available when processing is complete. Meanwhile, you can monitor progress above.</p>
+        <p>Results will be available when processing is complete. You can monitor progress above.</p>
+        <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
         <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
       </div>
       
@@ -283,410 +294,142 @@ class StreamResultsRenderer {
   renderBatch(results, searchTerms = []) {
     if (!results || !results.length) return;
     
-    console.log('🔄 StreamResultsRenderer: Rendering batch of', results.length, 'results');
+    console.log('🔄 StreamResultsRenderer: Received batch of', results.length, 'results');
     
-    const tbody = document.getElementById('results-tbody');
-    const detailsContainer = document.getElementById('details-container');
+    // Instead of trying to render results in real-time, we'll just accumulate them
+    // and update the counter statistics
     
-    if (!tbody) {
-      console.warn('🔄 StreamResultsRenderer: No results-tbody element found!');
-      return;
-    }
-    
-    // Remove the placeholder row if it exists (only first time)
-    const placeholderRow = tbody.querySelector('.streaming-placeholder-row');
-    if (placeholderRow) {
-      console.log('🔄 StreamResultsRenderer: Removing placeholder row');
-      tbody.removeChild(placeholderRow);
-    }
-    
-    // Create a document fragment for batch DOM updates
-    const fragment = document.createDocumentFragment();
-    const tempDiv = document.createElement('div');
-    
-    // Process all results
-    results.forEach(result => {
-      try {
-        // Create row HTML
-        const rowHtml = this._createResultRow(result, searchTerms);
-        tempDiv.innerHTML = rowHtml;
-        
-        // Append row from temp div to fragment
-        while (tempDiv.firstChild) {
-          fragment.appendChild(tempDiv.firstChild);
-        }
-        
-        // If detailed app-ads.txt info was provided, add to details container
-        if (result.success && result.appAdsTxt?.exists && detailsContainer) {
-          const detailsId = `app-ads-details-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-          this._addAppAdsDetails(result, detailsId, searchTerms);
-        }
-      } catch (err) {
-        console.error('🔄 Error rendering result:', err, result);
+    try {
+      // Count number of results with app-ads.txt
+      const withAppAds = results.filter(r => r.success && r.appAdsTxt?.exists).length;
+      
+      // Update the statistics in the UI
+      const successCount = results.filter(r => r.success).length;
+      const errorCount = results.filter(r => !r.success).length;
+      
+      // Update summary stats with the new counts
+      this.updateSummaryStats({
+        processed: results.length,
+        success: successCount,
+        errors: errorCount,
+        withAppAds: withAppAds,
+        // Don't update the total here as it might overwrite the correct total
+      });
+      
+      // Dispatch a custom event to notify that results were processed
+      if (window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('streaming-results-processed', {
+          detail: { 
+            count: results.length, 
+            timestamp: Date.now(),
+            successCount,
+            errorCount,
+            withAppAds
+          }
+        }));
       }
-    });
-    
-    // Update the DOM in a single operation
-    tbody.appendChild(fragment);
-    
-    // Add a visual flash to the newly added rows
-    const addedRows = tbody.querySelectorAll('tr:nth-last-child(-n+' + results.length + ')');
-    addedRows.forEach(row => {
-      row.style.animation = 'highlight-row 2s ease-out';
-    });
-    
-    // Make sure the highlight animation style exists
-    if (!document.querySelector('style#highlight-animation')) {
-      const style = document.createElement('style');
-      style.id = 'highlight-animation';
-      style.textContent = `
-        @keyframes highlight-row {
-          0% { background-color: rgba(52, 152, 219, 0.2); }
-          100% { background-color: transparent; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-    
-    // Dispatch a custom event to note that results were rendered
-    if (window.dispatchEvent) {
-      window.dispatchEvent(new CustomEvent('streaming-results-rendered', {
-        detail: { count: results.length, timestamp: Date.now() }
-      }));
+    } catch (err) {
+      console.error('🔄 Error processing results batch:', err);
     }
   }
   
   /**
-   * Create a result row HTML
-   * @param {Object} result - Result object
-   * @param {Array} searchTerms - Search terms
-   * @returns {string} - HTML for table row
-   * @private
+   * Show the results after processing is complete
+   * @param {Array} results - Results to display
    */
-  _createResultRow(result, searchTerms = []) {
-    if (result.success) {
-      const hasAppAds = result.appAdsTxt?.exists;
-      const detailsId = hasAppAds ? `app-ads-details-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` : '';
-      
-      // Check if there are search matches
-      const hasSearchMatches = hasAppAds && result.appAdsTxt.searchResults && 
-                              result.appAdsTxt.searchResults.count > 0;
-      const searchMatchCount = hasSearchMatches ? result.appAdsTxt.searchResults.count : 0;
-      
-      let html = `
-        <tr class="success-row ${hasAppAds ? 'has-app-ads' : ''} ${hasSearchMatches ? 'has-search-matches' : ''}">
-          <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
-          <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType))}</td>
-          <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
-          <td class="app-ads-cell">
-      `;
-      
-      if (hasAppAds) {
-        html += `
-          <span class="app-ads-found">Found</span>
-          <button class="toggle-app-ads" data-action="toggle-ads" data-target="${detailsId}" 
-            type="button" aria-expanded="false" aria-controls="${detailsId}">
-            Show app-ads.txt
-          </button>
-        `;
-      } else {
-        html += `<span class="app-ads-missing">Not found</span>`;
-      }
-      
-      html += `</td>`;
-      
-      // Search matches cell if search terms provided
-      if (this.hasSearchTerms) {
-        html += `<td class="search-matches-cell">`;
-        
-        if (hasSearchMatches) {
-          html += `<span class="search-matches-found">`;
-          
-          // For multi-term search, show color-coded indicators
-          if (result.appAdsTxt.searchResults.termResults) {
-            // Generate colored indicators for each term
-            result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
-              if (termResult.count > 0) {
-                const colorClass = `term-match-${termIndex % 5}`;
-                html += `<span class="term-match-indicator ${colorClass}">${termResult.count}</span> `;
-              }
-            });
-          } else {
-            // Fallback for single-term search
-            html += `${searchMatchCount} matches`;
-          }
-          
-          html += `</span>`;
-          
-          if (searchMatchCount > 0) {
-            const targetId = `search-${detailsId}`;
-            html += `
-              <button class="toggle-search-matches" data-action="toggle-matches" data-target="${targetId}" 
-                type="button" aria-expanded="false" aria-controls="${targetId}">
-                Show matches
-              </button>
-            `;
-          }
-        } else {
-          html += `<span class="search-matches-missing">No matches</span>`;
-        }
-        
-        html += `</td>`;
-      }
-      
-      // Actions cell
-      html += `
-        <td>
-          <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
-            type="button" title="Copy domain to clipboard">Copy</button>
-        </td>
-      </tr>
-      `;
-      
-      return html;
-    } else {
-      // Error row
-      return `
-        <tr class="error-row">
-          <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
-          <td class="error-message" colspan="${this.hasSearchTerms ? 4 : 3}">
-            Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
-          </td>
-          <td></td>
-        </tr>
-      `;
-    }
-  }
-  
-  /**
-   * Add app-ads.txt details to the details container
-   * @param {Object} result - Result object
-   * @param {string} detailsId - Custom details ID
-   * @param {Array} searchTerms - Search terms array
-   * @private
-   */
-  _addAppAdsDetails(result, detailsId, searchTerms = []) {
-    const detailsContainer = document.getElementById('details-container');
-    if (!detailsContainer) return;
+  showResults(results) {
+    if (!this.resultElement) return;
     
-    // Limit content length for better performance
-    const contentText = result.appAdsTxt.content && result.appAdsTxt.content.length > 10000 
-      ? result.appAdsTxt.content.substring(0, 10000) + '...\n(truncated for performance)' 
-      : (result.appAdsTxt.content || 'Content not available in streaming mode');
+    console.log('🔄 StreamResultsRenderer: Showing results of processing', results.length, 'items');
     
-    // Create a document fragment for better performance
-    const tempDiv = document.createElement('div');
-    
-    tempDiv.innerHTML = `
-      <div id="${detailsId}" class="app-ads-details" style="display:none;">
-        <h4>app-ads.txt for ${DOMUtils.escapeHtml(result.domain)}</h4>
-        <div class="app-ads-url"><strong>URL:</strong> <a href="${DOMUtils.escapeHtml(result.appAdsTxt.url)}" target="_blank" rel="noopener noreferrer">${DOMUtils.escapeHtml(result.appAdsTxt.url)}</a></div>
-        <div class="app-ads-stats">
-          <strong>Stats:</strong> 
-          ${result.appAdsTxt.analyzed.totalLines} lines, 
-          ${result.appAdsTxt.analyzed.validLines} valid entries
-        </div>
-        <div class="app-ads-content">
-          <pre>${DOMUtils.escapeHtml(contentText)}</pre>
-        </div>
+    // Create a results display element
+    const resultsDisplay = document.createElement('div');
+    resultsDisplay.className = 'stream-results-display';
+    resultsDisplay.innerHTML = `
+      <div class="stream-results-header">
+        <h3>Processing Results</h3>
+        <p>These are the extracted results from your bundle IDs.</p>
+      </div>
+      
+      <div class="stream-results-table-container" style="margin-top: 20px; overflow-x: auto;">
+        <table class="results-table" style="width: 100%; border-collapse: collapse; border: 1px solid #e0e0e0;">
+          <thead>
+            <tr>
+              <th>Bundle ID</th>
+              <th>Store</th>
+              <th>Domain</th>
+              <th>app-ads.txt</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="results-final-tbody">
+            ${results.length === 0 ? '<tr><td colspan="5" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
+          </tbody>
+        </table>
       </div>
     `;
     
-    // Add search matches section if there are matches
-    const hasSearchMatches = result.appAdsTxt.searchResults && 
-                            result.appAdsTxt.searchResults.count > 0;
+    // Add to the page
+    this.resultElement.appendChild(resultsDisplay);
     
-    if (hasSearchMatches) {
-      // Create tabs for search results if multiple terms are available
-      const hasMultipleTerms = result.appAdsTxt.searchResults.termResults && 
-                              result.appAdsTxt.searchResults.termResults.length > 1;
-      
-      let tabsHtml = '<div class="search-matches-tabs" role="tablist">';
-      let tabContentsHtml = '';
-      
-      // "All Matches" tab (always present)
-      const allTabId = `all-${detailsId}`;
-      tabsHtml += `<button class="search-tab active" data-action="tab-switch" data-tab="${allTabId}" role="tab" aria-selected="true" aria-controls="${allTabId}" id="tab-${allTabId}">All Matches</button>`;
-      
-      // Generate the all matches tab content
-      const allMatchingLinesHtml = result.appAdsTxt.searchResults.matchingLines
-        .slice(0, 100) // Limit to 100 matches for performance
-        .map(line => `
-          <tr>
-            <td>${line.lineNumber}</td>
-            <td class="search-match-content">${this._highlightSearchTerms(
-              line.content, 
-              result.appAdsTxt.searchResults.terms || searchTerms
-            )}</td>
-          </tr>
-        `).join('');
-      
-      // Search terms legend
-      const searchTermsForLegend = result.appAdsTxt.searchResults.terms || searchTerms;
-      const legendHtml = this._generateSearchTermLegend(searchTermsForLegend);
-      
-      tabContentsHtml += `
-        <div id="${allTabId}" class="search-tab-content active" role="tabpanel" aria-labelledby="tab-${allTabId}">
-          <div class="search-matches-count">
-            <strong>Total matches:</strong> ${result.appAdsTxt.searchResults.count}
-            ${legendHtml}
-          </div>
-          <div class="search-matches-list">
-            <table class="search-matches-table">
-              <thead>
-                <tr>
-                  <th scope="col">Line #</th>
-                  <th scope="col">Content</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${allMatchingLinesHtml}
-                ${result.appAdsTxt.searchResults.matchingLines.length > 100 ? 
-                  `<tr><td colspan="2">(${result.appAdsTxt.searchResults.matchingLines.length - 100} more matches not shown for performance)</td></tr>` : ''}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-      
-      // Add per-term tabs if available
-      if (hasMultipleTerms) {
-        result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
-          if (termResult.count > 0) {
-            const termTabId = `term-${termIndex}-${detailsId}`;
-            const colorClass = `term-match-${termIndex % 5}`;
-            
-            tabsHtml += `<button class="search-tab ${colorClass}" data-action="tab-switch" data-tab="${termTabId}" role="tab" aria-selected="false" aria-controls="${termTabId}" id="tab-${termTabId}">${DOMUtils.escapeHtml(termResult.term)}</button>`;
-            
-            // Generate the term-specific tab content
-            const termMatchingLinesHtml = termResult.matchingLines
-              .slice(0, 100) // Limit to 100 matches for performance
-              .map(line => `
-                <tr>
-                  <td>${line.lineNumber}</td>
-                  <td class="search-match-content">${this._highlightSearchTerms(
-                    line.content, 
-                    [termResult.term]
-                  )}</td>
-                </tr>
-              `).join('');
-            
-            tabContentsHtml += `
-              <div id="${termTabId}" class="search-tab-content" role="tabpanel" aria-labelledby="tab-${termTabId}" aria-hidden="true">
-                <div class="search-matches-count">
-                  <strong>Matches for "${DOMUtils.escapeHtml(termResult.term)}":</strong> ${termResult.count}
-                </div>
-                <div class="search-matches-list">
-                  <table class="search-matches-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Line #</th>
-                        <th scope="col">Content</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${termMatchingLinesHtml}
-                      ${termResult.matchingLines.length > 100 ? 
-                        `<tr><td colspan="2">(${termResult.matchingLines.length - 100} more matches not shown for performance)</td></tr>` : ''}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            `;
-          }
-        });
-      }
-      
-      tabsHtml += '</div>'; // Close tabs container
-      
-      tempDiv.innerHTML += `
-        <div id="search-${detailsId}" class="search-matches-details" style="display:none;">
-          <h4>Search Matches in ${DOMUtils.escapeHtml(result.domain)}</h4>
-          ${tabsHtml}
-          ${tabContentsHtml}
-        </div>
-      `;
-    }
+    // Get the tbody element
+    const tbody = resultsDisplay.querySelector('#results-final-tbody');
+    if (!tbody) return;
     
-    // Add to details container using document fragment for better performance
-    const fragment = document.createDocumentFragment();
-    while (tempDiv.firstChild) {
-      fragment.appendChild(tempDiv.firstChild);
-    }
-    
-    detailsContainer.appendChild(fragment);
-  }
-  
-  /**
-   * Highlight search terms in text
-   * @param {string} text - Text to highlight
-   * @param {string[]} terms - Search terms
-   * @returns {string} - Highlighted HTML
-   * @private
-   */
-  _highlightSearchTerms(text, terms) {
-    if (!text || !terms || !terms.length) {
-      return DOMUtils.escapeHtml(text);
-    }
-    
-    let escapedText = DOMUtils.escapeHtml(text);
-    
-    // Create positions array to avoid overlapping highlights
-    const positions = [];
-    
-    terms.forEach((term, termIndex) => {
-      if (!term) return;
-      
-      const termLower = term.toLowerCase();
-      let textLower = text.toLowerCase();
-      let lastIndex = 0;
-      let startIndex;
-      
-      while ((startIndex = textLower.indexOf(termLower, lastIndex)) !== -1) {
-        positions.push({
-          start: startIndex,
-          end: startIndex + term.length,
-          termIndex: termIndex % 5 // Limit to 5 different colors
-        });
+    // Add each result
+    if (results.length > 0) {
+      results.forEach(result => {
+        const row = document.createElement('tr');
+        row.className = result.success ? 'success-row' : 'error-row';
         
-        lastIndex = startIndex + termLower.length;
-      }
-    });
+        if (result.success) {
+          const hasAppAds = result.appAdsTxt?.exists;
+          
+          row.innerHTML = `
+            <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
+            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType))}</td>
+            <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
+            <td class="app-ads-cell">
+              ${hasAppAds 
+                ? '<span class="app-ads-found">Found</span>' 
+                : '<span class="app-ads-missing">Not found</span>'}
+            </td>
+            <td>
+              <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
+                type="button" title="Copy domain to clipboard">Copy</button>
+            </td>
+          `;
+        } else {
+          row.innerHTML = `
+            <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
+            <td colspan="3" class="error-message">
+              Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
+            </td>
+            <td></td>
+          `;
+        }
+        
+        tbody.appendChild(row);
+      });
+    }
     
-    // Sort positions by start index (descending) to avoid index shifts during replacement
-    positions.sort((a, b) => b.start - a.start);
-    
-    // Apply highlights
-    positions.forEach(pos => {
-      const before = escapedText.substring(0, pos.start);
-      const match = escapedText.substring(pos.start, pos.end);
-      const after = escapedText.substring(pos.end);
-      
-      escapedText = `${before}<span class="search-highlight term-match-${pos.termIndex}">${match}</span>${after}`;
-    });
-    
-    return escapedText;
+    // Scroll to the results
+    resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   
   /**
-   * Generate search term legend for display
-   * @param {string[]} terms - Search terms
-   * @returns {string} - HTML for search term legend
-   * @private
+   * Placeholder for the removed real-time rendering functionality
+   * These methods have been removed as we're no longer rendering results in real-time
+   * 
+   * The following methods were part of the real-time rendering:
+   * - _createResultRow: Created HTML for a single result row
+   * - _addAppAdsDetails: Added app-ads.txt details to the DOM
+   * - _highlightSearchTerms: Highlighted search terms in content
+   * - _generateSearchTermLegend: Generated a legend for search terms
+   * 
+   * Now we just accumulate results and update counters, with full display handled
+   * after all processing is complete.
    */
-  _generateSearchTermLegend(terms) {
-    if (!terms || !terms.length) return '';
-    
-    let html = '<div class="search-terms-legend"><strong>Search terms:</strong> ';
-    
-    terms.forEach((term, index) => {
-      const colorClass = `term-match-${index % 5}`;
-      html += `<span class="search-highlight ${colorClass}">${DOMUtils.escapeHtml(term)}</span> `;
-    });
-    
-    html += '</div>';
-    return html;
-  }
 }
 
 // Create and export a singleton instance
@@ -697,6 +440,8 @@ const streamResultsRenderer = new StreamResultsRenderer();
  */
 streamResultsRenderer.updateCompletionStatus = function(stats) {
   if (!this.resultElement) return;
+  
+  console.log('🔄 StreamResultsRenderer: Processing complete, updating UI with stats:', stats);
   
   // Update the streaming banner
   const banner = this.resultElement.querySelector('.streaming-info-banner');
@@ -711,11 +456,33 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
         <li><strong>With app-ads.txt:</strong> ${stats.withAppAds}</li>
         <li><strong>Processing Time:</strong> ${(stats.elapsedTime / 1000).toFixed(2)}s</li>
       </ul>
+      <div class="action-buttons">
+        <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Show Results
+        </button>
+      </div>
     `;
     
     // Change the banner color to indicate success
     banner.style.background = '#eafaf1';
     banner.style.border = '1px solid #2ecc71';
+    
+    // Add event listener to the show results button
+    const showResultsBtn = banner.querySelector('[data-action="show-results"]');
+    if (showResultsBtn) {
+      showResultsBtn.addEventListener('click', function() {
+        // Dispatch an event to notify that the user wants to see the results
+        window.dispatchEvent(new CustomEvent('streaming-show-results', {
+          detail: { timestamp: Date.now() }
+        }));
+      });
+    }
+  }
+  
+  // Remove the worker processing indicator
+  const workerIndicator = document.querySelector('.worker-processing-indicator');
+  if (workerIndicator) {
+    workerIndicator.style.display = 'none';
   }
   
   // Update debug panel
@@ -736,6 +503,14 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   if (downloadBtn) {
     downloadBtn.disabled = false;
   }
+  
+  // Notify that processing is complete through a custom event
+  window.dispatchEvent(new CustomEvent('streaming-processing-complete', {
+    detail: {
+      stats: stats,
+      timestamp: Date.now()
+    }
+  }));
 };
 
 export default streamResultsRenderer;
