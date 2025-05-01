@@ -24,12 +24,21 @@ class StreamingProcessor {
       successCount: 0,
       errorCount: 0,
       withAppAdsTxtCount: 0,
-      startTime: 0
+      startTime: 0,
+      totalBundleIds: 0,
+      lastRenderTime: 0
     };
     
     // Results storage
     this.results = [];
     this.searchTerms = [];
+    
+    // Progressive rendering buffers
+    this.resultBuffer = [];
+    this.lastRenderTime = 0;
+    this.renderThrottleTime = 200; // ms between renders
+    this.isRendering = false;
+    this.animationFrameId = null;
   }
   
   /**
@@ -81,6 +90,7 @@ class StreamingProcessor {
     this.resetState();
     this.searchTerms = searchTerms;
     this.stats.startTime = Date.now();
+    this.stats.totalBundleIds = bundleIds.length;
     
     // Get result element and create initial UI
     const resultElement = DOMUtils.getElement('result');
@@ -96,7 +106,8 @@ class StreamingProcessor {
         this.worker.postMessage({
           type: 'processBundleIds',
           bundleIds,
-          searchTerms
+          searchTerms,
+          totalBundleIds: bundleIds.length
         });
         
         // Worker handles the UI updates, so we just return
@@ -299,16 +310,83 @@ class StreamingProcessor {
     // Add to results array
     this.results.push(result);
     
-    // Add to table
-    const tbody = document.getElementById('results-tbody');
-    if (tbody) {
-      const row = this._createResultRow(result);
-      tbody.insertAdjacentHTML('beforeend', row);
+    // Add to buffer for progressive rendering
+    this.resultBuffer.push(result);
+    
+    // Schedule rendering if not already in progress
+    this._scheduleRender();
+  }
+  
+  /**
+   * Schedule a batched render operation using requestAnimationFrame
+   */
+  _scheduleRender() {
+    // If already rendering or if buffer is empty, do nothing
+    if (this.isRendering || this.resultBuffer.length === 0) {
+      return;
     }
     
-    // If detailed app-ads.txt info was provided, add to details container
-    if (result.success && result.appAdsTxt?.exists) {
-      this._addAppAdsDetails(result);
+    const now = Date.now();
+    
+    // Check if we should render now (either first render or enough time has passed)
+    if (this.lastRenderTime === 0 || (now - this.lastRenderTime) > this.renderThrottleTime) {
+      this.isRendering = true;
+      this.animationFrameId = requestAnimationFrame(() => this._renderResultsBatch());
+    }
+  }
+  
+  /**
+   * Render a batch of results using a document fragment for efficiency
+   */
+  _renderResultsBatch() {
+    const tbody = document.getElementById('results-tbody');
+    const detailsContainer = document.getElementById('details-container');
+    
+    if (!tbody) {
+      // If no tbody, clear buffer and return
+      this.resultBuffer = [];
+      this.isRendering = false;
+      return;
+    }
+    
+    // Create a document fragment for batch DOM updates
+    const fragment = document.createDocumentFragment();
+    const tempDiv = document.createElement('div');
+    
+    // Process all buffered results
+    this.resultBuffer.forEach(result => {
+      // Create row HTML
+      const rowHtml = this._createResultRow(result);
+      tempDiv.innerHTML = rowHtml;
+      
+      // Append row from temp div to fragment
+      while (tempDiv.firstChild) {
+        fragment.appendChild(tempDiv.firstChild);
+      }
+      
+      // If detailed app-ads.txt info was provided, add to details container
+      if (result.success && result.appAdsTxt?.exists && detailsContainer) {
+        const detailsId = `app-ads-details-${this.results.indexOf(result) + 1}`;
+        this._addAppAdsDetails(result, detailsId);
+      }
+    });
+    
+    // Update the DOM in a single operation
+    tbody.appendChild(fragment);
+    
+    // Update progress UI
+    this._updateProgressUI();
+    
+    // Clear buffer and reset rendering state
+    this.resultBuffer = [];
+    this.lastRenderTime = Date.now();
+    this.isRendering = false;
+    
+    // Schedule next batch if there are more results
+    if (this.resultBuffer.length > 0) {
+      this.animationFrameId = requestAnimationFrame(() => this._renderResultsBatch());
+    } else {
+      this.animationFrameId = null;
     }
   }
   
@@ -370,7 +448,9 @@ class StreamingProcessor {
     const summaryStats = document.querySelector('.summary-stats');
     if (summaryStats) {
       summaryStats.innerHTML = `
-        <span>Processing: <strong>${formatNumber(this.stats.processedCount)}</strong></span>
+        <span>Processing: <strong>${formatNumber(this.stats.processedCount)}</strong>${
+          this.stats.totalBundleIds > 0 ? ` / ${formatNumber(this.stats.totalBundleIds)}` : ''
+        }</span>
         <span class="success-count">Success: <strong>${formatNumber(this.stats.successCount)}</strong></span>
         <span class="error-count">Errors: <strong>${formatNumber(this.stats.errorCount)}</strong></span>
         <span class="app-ads-count">With app-ads.txt: <strong>${formatNumber(this.stats.withAppAdsTxtCount)}</strong></span>
@@ -380,17 +460,46 @@ class StreamingProcessor {
     // Update progress bar
     const progressElement = document.getElementById('streamProgress');
     if (progressElement) {
-      // Assume we don't know the total, so base percentage on time elapsed
-      // This is just a visual indicator that processing is happening
-      const elapsed = Date.now() - this.stats.startTime;
-      // Estimate 100% after 60 seconds max
-      const percent = Math.min(95, Math.round((elapsed / 60000) * 100));
+      let percent;
+      let statusText;
+      
+      // Calculate percentage based on total if available, otherwise use time-based estimate
+      if (this.stats.totalBundleIds > 0) {
+        percent = Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100);
+        statusText = `${percent}% (${formatNumber(this.stats.processedCount)} of ${formatNumber(this.stats.totalBundleIds)})`;
+      } else {
+        // Fallback: Assume we don't know the total, so base percentage on time elapsed
+        const elapsed = Date.now() - this.stats.startTime;
+        // Estimate 100% after 60 seconds max
+        percent = Math.min(95, Math.round((elapsed / 60000) * 100));
+        statusText = `${formatNumber(this.stats.processedCount)} processed`;
+      }
+      
+      // Calculate processing rate (items per second)
+      const elapsed = (Date.now() - this.stats.startTime) / 1000; // in seconds
+      const itemsPerSecond = elapsed > 0 ? this.stats.processedCount / elapsed : 0;
+      
+      // Estimate remaining time if we know total
+      let remainingText = '';
+      if (this.stats.totalBundleIds > 0 && itemsPerSecond > 0) {
+        const remaining = this.stats.totalBundleIds - this.stats.processedCount;
+        const remainingSecs = Math.round(remaining / itemsPerSecond);
+        
+        if (remainingSecs > 0) {
+          remainingText = remainingSecs > 60 
+            ? ` - est. ${Math.round(remainingSecs/60)} min remaining`
+            : ` - est. ${remainingSecs} sec remaining`;
+        }
+      }
       
       const progressBar = progressElement.querySelector('.progress-bar > div');
       const progressText = progressElement.querySelector('.progress-text');
       
       if (progressBar) progressBar.style.width = `${percent}%`;
-      if (progressText) progressText.textContent = `${this.stats.processedCount} processed`;
+      if (progressText) progressText.textContent = `${statusText}${remainingText}`;
+      
+      // Display progress element if it was hidden
+      progressElement.style.display = 'flex';
     }
   }
   
@@ -497,19 +606,23 @@ class StreamingProcessor {
   /**
    * Add app-ads.txt details to the details container
    * @param {Object} result - Result object
+   * @param {string} [customDetailsId] - Custom details ID, if provided
    */
-  _addAppAdsDetails(result) {
+  _addAppAdsDetails(result, customDetailsId) {
     const detailsContainer = document.getElementById('details-container');
     if (!detailsContainer) return;
     
-    const detailsId = `app-ads-details-${this.stats.processedCount}`;
+    const detailsId = customDetailsId || `app-ads-details-${this.stats.processedCount}`;
     
     // Limit content length for better performance
     const contentText = result.appAdsTxt.content && result.appAdsTxt.content.length > 10000 
       ? result.appAdsTxt.content.substring(0, 10000) + '...\n(truncated for performance)' 
       : (result.appAdsTxt.content || 'Content not available in streaming mode');
     
-    let detailsHtml = `
+    // Create a document fragment for better performance
+    const tempDiv = document.createElement('div');
+    
+    tempDiv.innerHTML = `
       <div id="${detailsId}" class="app-ads-details" style="display:none;">
         <h4>app-ads.txt for ${DOMUtils.escapeHtml(result.domain)}</h4>
         <div class="app-ads-url"><strong>URL:</strong> <a href="${DOMUtils.escapeHtml(result.appAdsTxt.url)}" target="_blank" rel="noopener noreferrer">${DOMUtils.escapeHtml(result.appAdsTxt.url)}</a></div>
@@ -631,7 +744,7 @@ class StreamingProcessor {
       
       tabsHtml += '</div>'; // Close tabs container
       
-      detailsHtml += `
+      tempDiv.innerHTML += `
         <div id="search-${detailsId}" class="search-matches-details" style="display:none;">
           <h4>Search Matches in ${DOMUtils.escapeHtml(result.domain)}</h4>
           ${tabsHtml}
@@ -640,8 +753,13 @@ class StreamingProcessor {
       `;
     }
     
-    // Add to details container
-    detailsContainer.insertAdjacentHTML('beforeend', detailsHtml);
+    // Add to details container using document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    while (tempDiv.firstChild) {
+      fragment.appendChild(tempDiv.firstChild);
+    }
+    
+    detailsContainer.appendChild(fragment);
   }
   
   /**
@@ -750,11 +868,22 @@ class StreamingProcessor {
       successCount: 0,
       errorCount: 0,
       withAppAdsTxtCount: 0,
-      startTime: 0
+      startTime: 0,
+      totalBundleIds: 0,
+      lastRenderTime: 0
     };
     
     this.results = [];
     this.searchTerms = [];
+    this.resultBuffer = [];
+    this.lastRenderTime = 0;
+    this.isRendering = false;
+    
+    // Cancel any pending animation frame
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   }
   
   /**

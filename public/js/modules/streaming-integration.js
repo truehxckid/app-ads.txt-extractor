@@ -76,7 +76,7 @@ class StreamingIntegration {
       <div class="streaming-tooltip">
         <span class="tooltip-icon">?</span>
         <span class="tooltip-text">
-          Streaming processes results as they arrive, enabling faster processing of large datasets.
+          Streaming mode processes results progressively as they arrive, showing real-time updates and preventing timeouts with large datasets (10+ bundle IDs). Enable this to avoid 524 errors.
         </span>
       </div>
     `;
@@ -215,7 +215,7 @@ class StreamingIntegration {
       AppState.setProcessing(true);
       
       // Determine if we should use streaming
-      const useStreaming = this.streamingEnabled && bundleIds.length >= 20;
+      const useStreaming = this.streamingEnabled && bundleIds.length >= 10;
       
       if (useStreaming) {
         console.log('Using streaming for large dataset:', bundleIds.length);

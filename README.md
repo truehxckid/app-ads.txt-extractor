@@ -18,8 +18,8 @@ Extract developer domains and analyze app-ads.txt files from app bundle IDs acro
 
 ### Prerequisites
 
-- Node.js 18.x or higher
-- npm or yarn
+- Node.js 20.x or higher
+- npm
 - Redis (optional, for enhanced caching and rate limiting)
 
 ### Installation
@@ -66,11 +66,14 @@ Extract developer domains and analyze app-ads.txt files from app bundle IDs acro
 
 The tool automatically detects the app store based on the bundle ID format:
 
-- **Google Play**: Package name (e.g., `com.instagram.android`)
-- **App Store**: Numeric ID with/without 'id' prefix (e.g., `id389801252` or `389801252`)
-- **Amazon**: ASIN format (e.g., `B019DCHDZK`)
-- **Roku**: Simple ID (e.g., `41468`) or complex ID
-- **Samsung**: Galaxy Store ID (e.g., `G19068012619`)
+- **Google Play**: Package name format with at least one dot (e.g., `tv.fubo.mobile`)
+- **App Store**: Numeric ID (8-12 digits) with optional 'id' prefix (e.g., `id389801252` or `389801252`)
+- **Amazon**: ASIN format starting with 'B' followed by 9-10 alphanumeric characters (e.g., `B019DCHDZK`)
+- **Roku**: Several formats are supported:
+  - Short numeric IDs (4-6 digits, e.g., `41468`)
+  - UUID-like format (e.g., `a1b2c3d4e5f6g7h8i9j0:1a2b3c4d5e6f7g8h9i0j`)
+  - Other alphanumeric formats without dots
+- **Samsung**: Galaxy Store ID starting with 'G' followed by 8-15 digits (e.g., `G19068012619`)
 
 ### Searching app-ads.txt Files
 
@@ -79,53 +82,21 @@ The tool automatically detects the app store based on the bundle ID format:
 - Results show color-coded highlights for each search term
 - View individual matches for each term in the detailed results
 
-## API Reference
-
-The application provides a REST API for integration with other systems.
-
-### Endpoint: `/api/extract-multiple`
-
-**Method**: POST
-
-**Request Body**:
-```json
-{
-  "bundleIds": ["com.example.app1", "com.example.app2"],
-  "searchTerms": ["google.com", "direct"]
-}
-```
-
-**Response**:
-```json
-{
-  "results": [...],
-  "errorCount": 0,
-  "totalProcessed": 2,
-  "appsWithAppAdsTxt": 1,
-  "searchStats": {...},
-  "domainAnalysis": {...},
-  "cacheStats": {...},
-  "success": true,
-  "processingTime": "1234ms"
-}
-```
-
-See the [API Documentation](docs/api.md) for more details.
-
 ## Performance Considerations
 
 - The tool implements a sophisticated caching system for both stores and app-ads.txt files
 - Rate limiting is applied to prevent IP blocking by app stores
 - Processing is done in batches to manage memory usage and improve performance
 - Large app-ads.txt files are truncated in the UI for better display performance
+- Memory management is optimized with Node.js garbage collection
 
 ## Browser Support
 
 The application is optimized for:
-- Chrome 80+
-- Firefox 75+
-- Safari 13+
-- Edge 80+
+- Chrome 90+
+- Firefox 90+
+- Safari 14+
+- Edge 90+
 
 ## Troubleshooting
 
@@ -145,20 +116,39 @@ The application is optimized for:
 npm run dev
 ```
 
+### Testing and Linting
+
+```
+npm run test
+npm run lint
+```
+
 ### Project Structure
 
 ```
 app-ads.txt-extractor/
-├── server.js                # Main server file
-├── app-ads-parser.worker.js # Worker thread for parsing
-├── public/
-│   ├── index.html          # Main HTML file
-│   ├── app.js              # Main client application
-│   ├── fix-errors.js       # Error handling and fixes
-│   ├── validation.js       # Form validation
-│   └── styles.css          # CSS styles
-├── cache/                  # Cache directory
-└── docs/                   # Documentation
+├── server.js                  # Main server file
+├── src/                       # Server-side source code
+│   ├── app.js                 # Express application setup
+│   ├── config/                # Configuration files
+│   ├── core/                  # Core business logic
+│   ├── middleware/            # Express middleware
+│   ├── routes/                # API routes
+│   ├── services/              # Services and utilities
+│   ├── utils/                 # Utility functions
+│   └── workers/               # Worker thread implementations
+├── public/                    # Client-side assets
+│   ├── index.html             # Main HTML file
+│   ├── app.js                 # Main client application
+│   ├── js/                    # JavaScript modules
+│   │   ├── main.js            # Main client entry point
+│   │   ├── modules/           # Feature modules
+│   │   ├── utils/             # Client utilities
+│   │   └── workers/           # Client-side workers
+│   ├── styles.css             # CSS styles
+│   └── validation.js          # Form validation
+├── cache/                     # Cache directory
+└── logs/                      # Application logs
 ```
 
 ### Contributing
@@ -179,3 +169,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Thanks to all the app stores for providing developer information
 - Built with Express.js, Axios, and Cheerio
+- Optimized with modern JavaScript features
