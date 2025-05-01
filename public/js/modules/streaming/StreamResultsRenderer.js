@@ -376,9 +376,9 @@ class StreamResultsRenderer {
       <div class="stream-results-header">
         <div class="results-header-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
           <h3>Processing Results</h3>
-          <div class="action-buttons">
-            <button class="back-btn extract-btn" data-action="back-to-search">← Back</button>
-            <button class="download-btn extract-btn" data-action="download-csv">Download CSV</button>
+          <div class="action-buttons" style="display: flex; gap: 10px;">
+            <button class="extract-btn" data-action="back-to-search">← Back</button>
+            <button class="extract-btn" data-action="download-csv">Download CSV</button>
           </div>
         </div>
         <p>Showing ${results.length} extracted results from your bundle IDs.</p>
@@ -608,15 +608,35 @@ class StreamResultsRenderer {
       });
     }
     
-    // Pagination buttons
+    // Pagination buttons and Download CSV
     if (container) {
       container.addEventListener('click', (event) => {
         const target = event.target;
+        // Handle pagination
         if (target && target.dataset && target.dataset.action === 'paginate') {
           const page = parseInt(target.dataset.page, 10);
           if (!isNaN(page) && page > 0) {
             this._renderPage(this.allResults, page);
           }
+        }
+        
+        // Handle download CSV button
+        if (target && target.dataset && target.dataset.action === 'download-csv') {
+          // Import streaming processor
+          import('./StreamProcessor.js').then(module => {
+            const StreamProcessor = module.default;
+            // Get bundle IDs and search terms
+            const AppState = window.AppState || {};
+            const bundleIds = AppState.bundleIds || [];
+            const searchTerms = AppState.searchTerms || [];
+            
+            // Call export CSV function
+            if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
+              StreamProcessor.exportCsv(bundleIds, searchTerms);
+            }
+          }).catch(error => {
+            console.error('Error importing StreamProcessor for CSV export:', error);
+          });
         }
       });
     }
@@ -634,8 +654,11 @@ class StreamResultsRenderer {
     completionBanner.innerHTML = `
       <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
       <p>All ${this.allResults?.length || 0} bundle IDs have been processed.</p>
-      <div class="action-buttons">
-        <button class="results-btn extract-btn" data-action="show-results">
+      <div class="action-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+        <button class="extract-btn" data-action="stream-download-csv">
+          Stream Download CSV
+        </button>
+        <button class="extract-btn" data-action="show-results">
           Show Results
         </button>
       </div>
@@ -644,8 +667,18 @@ class StreamResultsRenderer {
     // Add to the result element
     this.resultElement.prepend(completionBanner);
     
-    // Add event listener to show results button
+    // Add event listeners for both buttons
     const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+    const downloadBtn = completionBanner.querySelector('[data-action="stream-download-csv"]');
+    
+    // Set up styles to match other buttons
+    const actionButtons = completionBanner.querySelectorAll('button');
+    actionButtons.forEach(button => {
+      button.style.marginLeft = '5px';
+      button.style.marginRight = '5px';
+    });
+    
+    // Show results button event listener
     if (showResultsBtn) {
       showResultsBtn.addEventListener('click', () => {
         completionBanner.style.display = 'none';
@@ -659,6 +692,27 @@ class StreamResultsRenderer {
           // If results don't exist yet, render them
           this._renderResults(this.allResults || []);
         }
+      });
+    }
+    
+    // Stream download button event listener
+    if (downloadBtn) {
+      downloadBtn.addEventListener('click', () => {
+        // Import streaming processor
+        import('./StreamProcessor.js').then(module => {
+          const StreamProcessor = module.default;
+          // Get bundle IDs and search terms
+          const AppState = window.AppState || {};
+          const bundleIds = AppState.bundleIds || [];
+          const searchTerms = AppState.searchTerms || [];
+          
+          // Call export CSV function
+          if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
+            StreamProcessor.exportCsv(bundleIds, searchTerms);
+          }
+        }).catch(error => {
+          console.error('Error importing StreamProcessor for CSV export:', error);
+        });
       });
     }
   }
@@ -703,8 +757,11 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   completionBanner.innerHTML = `
     <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
     <p>All ${stats.total} bundle IDs have been processed in ${timeDisplay}.</p>
-    <div class="action-buttons">
-      <button class="results-btn extract-btn" data-action="show-results">
+    <div class="action-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 15px;">
+      <button class="extract-btn" data-action="stream-download-csv">
+        Stream Download CSV
+      </button>
+      <button class="extract-btn" data-action="show-results">
         Show Results
       </button>
     </div>
@@ -720,8 +777,18 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     this.resultElement.appendChild(completionBanner);
   }
   
-  // Add event listener to the show results button
+  // Add event listeners for both buttons
   const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+  const downloadBtn = completionBanner.querySelector('[data-action="stream-download-csv"]');
+  
+  // Set up styles to match other buttons
+  const actionButtons = completionBanner.querySelectorAll('button');
+  actionButtons.forEach(button => {
+    button.style.marginLeft = '5px';
+    button.style.marginRight = '5px';
+  });
+  
+  // Show results button event listener
   if (showResultsBtn) {
     showResultsBtn.addEventListener('click', () => {
       // Import AppState directly to ensure we get the latest results
@@ -737,6 +804,27 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
         // Fallback to window.AppState
         this.showResults(window.AppState?.results || []);
         completionBanner.style.display = 'none';
+      });
+    });
+  }
+  
+  // Stream download button event listener
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      // Import streaming processor
+      import('./StreamProcessor.js').then(module => {
+        const StreamProcessor = module.default;
+        // Get bundle IDs and search terms
+        const AppState = window.AppState || {};
+        const bundleIds = AppState.bundleIds || [];
+        const searchTerms = AppState.searchTerms || [];
+        
+        // Call export CSV function
+        if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
+          StreamProcessor.exportCsv(bundleIds, searchTerms);
+        }
+      }).catch(error => {
+        console.error('Error importing StreamProcessor for CSV export:', error);
       });
     });
   }

@@ -193,6 +193,17 @@ class StreamProcessor {
     console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
     console.log('🚀 Search terms:', searchTerms);
     
+    // First, remove any stray progress bars from previous exports or interruptions
+    const extraProgressBars = document.querySelectorAll('.progress-indicator, #streamProgress');
+    if (extraProgressBars.length > 0) {
+      console.log('🚀 Removing extra progress bars before starting new process');
+      extraProgressBars.forEach(bar => {
+        if (bar.parentNode) {
+          bar.parentNode.removeChild(bar);
+        }
+      });
+    }
+    
     // Clear any existing processing indicators from previous runs
     this._clearAllProcessingIndicators();
     
@@ -988,6 +999,9 @@ class StreamProcessor {
     if (!resultElement) return;
     
     try {
+      // First clear any existing indicators to prevent duplication
+      this._clearAllProcessingIndicators();
+      
       // Initialize visual indicators for export
       this.progressUI.initialize({
         totalItems: bundleIds.length,

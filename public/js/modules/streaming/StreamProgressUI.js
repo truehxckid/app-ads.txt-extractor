@@ -385,6 +385,18 @@ class StreamProgressUI {
     
     // Update progress bar - with more robust error handling
     try {
+      // Remove the top progress indicator if there's a duplicate
+      const progressIndicators = document.querySelectorAll('.progress-indicator');
+      if (progressIndicators.length > 1) {
+        console.log('Found multiple progress indicators, removing extras');
+        // Keep only the most recently added one
+        for (let i = 0; i < progressIndicators.length - 1; i++) {
+          if (progressIndicators[i].parentNode) {
+            progressIndicators[i].parentNode.removeChild(progressIndicators[i]);
+          }
+        }
+      }
+      
       // Check if we need to re-initialize the indicators
       const container = this.indicatorElements.get('container');
       if (!container || !container.isConnected) {
