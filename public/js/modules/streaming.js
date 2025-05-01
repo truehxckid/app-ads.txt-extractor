@@ -310,6 +310,7 @@ class StreamingProcessor {
         this.debugDiv.innerHTML += '<hr><strong>Stream processing complete or failed</strong>';
       }
     }
+  }
   
   /**
    * Process response stream with debug information
