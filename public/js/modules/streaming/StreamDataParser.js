@@ -20,11 +20,11 @@ class StreamDataParser {
    * Process a stream and handle results
    * @param {ReadableStream} stream - Response body stream
    * @param {Function} resultCallback - Callback for processing each result
-   * @param {Object} debugger - Debugger instance for logging
+   * @param {Object} debuggerInstance - Debugger instance for logging
    * @param {Object} progressUI - Progress UI instance for updates
    * @returns {Promise<void>}
    */
-  async processStream(stream, resultCallback, debugger, progressUI) {
+  async processStream(stream, resultCallback, debuggerInstance, progressUI) {
     // Get stream reader
     const reader = stream.getReader();
     let buffer = '';
@@ -37,9 +37,9 @@ class StreamDataParser {
       progressUI.forceUpdate();
       
       // Log heartbeat in debug
-      if (debugger) {
+      if (debuggerInstance) {
         const runTime = Math.round((Date.now() - streamStartTime) / 1000);
-        debugger.logStatus(`Heartbeat at ${runTime}s - Buffer size: ${buffer.length}`);
+        debuggerInstance.logStatus(`Heartbeat at ${runTime}s - Buffer size: ${buffer.length}`);
       }
     }, 1000);
     
@@ -50,8 +50,8 @@ class StreamDataParser {
           const { done, value } = await reader.read();
           
           if (done) {
-            if (debugger) {
-              debugger.logStatus('Stream complete (done=true)');
+            if (debuggerInstance) {
+              debuggerInstance.logStatus('Stream complete (done=true)');
             }
             break;
           }
@@ -62,8 +62,8 @@ class StreamDataParser {
           chunkCount++;
           
           // Log chunk details in debugger
-          if (debugger) {
-            debugger.logChunk(chunk, value.length);
+          if (debuggerInstance) {
+            debuggerInstance.logChunk(chunk, value.length);
           }
           
           // Process complete objects
@@ -80,13 +80,13 @@ class StreamDataParser {
               parseCount++;
             }
             
-            if (debugger) {
-              debugger.logStatus(`Processed ${extractedResults.objects.length} objects (total: ${parseCount})`);
+            if (debuggerInstance) {
+              debuggerInstance.logStatus(`Processed ${extractedResults.objects.length} objects (total: ${parseCount})`);
             }
           }
         } catch (readError) {
-          if (debugger) {
-            debugger.logError('Error reading chunk: ' + readError.message);
+          if (debuggerInstance) {
+            debuggerInstance.logError('Error reading chunk: ' + readError.message);
           }
           console.error('Error reading stream chunk:', readError);
           // Continue trying to read in case of recoverable errors
@@ -97,9 +97,9 @@ class StreamDataParser {
       reader.releaseLock();
       
       // Update final status
-      if (debugger) {
+      if (debuggerInstance) {
         const runTime = Math.round((Date.now() - streamStartTime) / 1000);
-        debugger.logSummary(`Stream processing completed in ${runTime}s`, {
+        debuggerInstance.logSummary(`Stream processing completed in ${runTime}s`, {
           totalObjects: parseCount,
           totalChunks: chunkCount
         });
