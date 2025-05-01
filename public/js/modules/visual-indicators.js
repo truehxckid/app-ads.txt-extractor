@@ -39,6 +39,15 @@ class VisualIndicators {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = '/js/utils/visual-indicators.css';
+      link.onload = () => {
+        console.log('Visual indicators CSS loaded successfully');
+        this.cssLoaded = true;
+      };
+      link.onerror = (err) => {
+        console.error('Failed to load visual indicators CSS:', err);
+        // Try an alternate path
+        link.href = './js/utils/visual-indicators.css';
+      };
       document.head.appendChild(link);
     }
     

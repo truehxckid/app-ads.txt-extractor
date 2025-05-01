@@ -59,7 +59,7 @@ const config = {
     rateLimitWindow: 15 * 60 * 1000, // 15 minutes in ms
     rateLimitMax: 100, // Maximum requests per IP in window
     bodyLimit: '1mb',
-    maxBundleIds: 200, // Maximum number of bundle IDs per request
+    maxBundleIds: process.env.MAX_BUNDLE_IDS || 200, // Maximum number of bundle IDs per request
     // New pagination defaults
     defaultPageSize: 20,
     maxPageSize: 100

@@ -87,7 +87,25 @@ class StreamingProcessor {
    * @private
    */
   _updateFallbackIndicator(stats) {
-    if (!this.fallbackProgressBar || !this.fallbackStatusText) return;
+    console.log('Attempting to update fallback indicator', stats);
+    
+    // If fallback doesn't exist yet, create it
+    if (!this.fallbackIndicator || !this.fallbackProgressBar || !this.fallbackStatusText) {
+      console.log('Fallback indicator not found, creating...');
+      const container = document.getElementById('result');
+      if (container) {
+        this._createFallbackIndicator(container, stats.total || 100);
+      } else {
+        console.warn('Could not find result container for fallback indicator');
+        return;
+      }
+    }
+    
+    // Double-check fallback exists after creation attempt
+    if (!this.fallbackProgressBar || !this.fallbackStatusText) {
+      console.error('Failed to create or find fallback indicator elements');
+      return;
+    }
     
     // Calculate percentage
     let percent = 0;
@@ -99,16 +117,25 @@ class StreamingProcessor {
       percent = Math.min(95, Math.round((elapsed / 60000) * 100));
     }
     
-    // Update progress bar
-    this.fallbackProgressBar.style.width = `${percent}%`;
+    console.log(`Fallback indicator update: ${percent}% (${stats.processed}/${stats.total})`);
     
-    // Update status text
-    this.fallbackStatusText.textContent = `Processing... ${percent}% complete (${stats.processed} of ${stats.total})`;
-    
-    // Add completion class if done
-    if (percent >= 100) {
-      this.fallbackIndicator.style.borderColor = '#27ae60';
-      this.fallbackStatusText.textContent = 'Processing complete!';
+    // Update progress bar using direct DOM manipulation to ensure it works
+    try {
+      this.fallbackProgressBar.style.width = `${percent}%`;
+      
+      // Update status text
+      this.fallbackStatusText.textContent = `Processing... ${percent}% complete (${stats.processed} of ${stats.total})`;
+      
+      // Add completion class if done
+      if (percent >= 100) {
+        this.fallbackIndicator.style.borderColor = '#27ae60';
+        this.fallbackStatusText.textContent = 'Processing complete!';
+      }
+      
+      // Make sure the fallback indicator is visible
+      this.fallbackIndicator.style.display = 'block';
+    } catch (err) {
+      console.error('Error updating fallback indicator:', err);
     }
   }
   
@@ -338,7 +365,7 @@ class StreamingProcessor {
     let parseCount = 0;
     let chunkCount = 0;
     
-    // Set up heartbeat for progress indicators
+    // Set up heartbeat for progress indicators - more frequent updates
     let heartbeatInterval = setInterval(() => {
       this._forceUpdateProgressUI();
       
@@ -349,7 +376,44 @@ class StreamingProcessor {
         // Auto-scroll to bottom
         this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
       }
-    }, 2000);
+    }, 1000); // More frequent updates
+    
+    // Set up an independent fallback heartbeat to handle errors
+    let fallbackHeartbeat = setInterval(() => {
+      try {
+        // Force direct DOM updates as a backup
+        this._updateFallbackIndicator({
+          processed: this.stats.processedCount,
+          total: this.stats.totalBundleIds,
+          startTime: this.stats.startTime
+        });
+        
+        // Create or update a simple progress meter in case all else fails
+        const container = document.getElementById('result');
+        if (container) {
+          let simpleIndicator = document.getElementById('simple-progress-indicator');
+          if (!simpleIndicator) {
+            simpleIndicator = document.createElement('div');
+            simpleIndicator.id = 'simple-progress-indicator';
+            simpleIndicator.style.cssText = 'margin: 10px 0; padding: 15px; background: white; border: 1px solid #e0e0e0; border-radius: 8px;';
+            container.insertBefore(simpleIndicator, container.firstChild);
+          }
+          
+          const percent = this.stats.totalBundleIds > 0 
+            ? Math.min(100, Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100))
+            : 0;
+          
+          simpleIndicator.innerHTML = `
+            <div><strong>Streaming Progress:</strong> ${this.stats.processedCount} / ${this.stats.totalBundleIds} items (${percent}%)</div>
+            <div style="height: 10px; background: #f0f0f0; margin: 8px 0; border-radius: 5px; overflow: hidden;">
+              <div style="height: 100%; width: ${percent}%; background: #3498db; transition: width 0.3s ease;"></div>
+            </div>
+          `;
+        }
+      } catch (e) {
+        console.error('Error in fallback heartbeat:', e);
+      }
+    }, 1500); // Offset from main heartbeat
     
     try {
       // Initialize progress indicators
@@ -411,6 +475,7 @@ class StreamingProcessor {
       }
     } finally {
       clearInterval(heartbeatInterval);
+      clearInterval(fallbackHeartbeat); // Clear fallback heartbeat
       reader.releaseLock();
       
       // Update final status
@@ -424,6 +489,13 @@ class StreamingProcessor {
       
       // Force final UI update
       this._forceUpdateProgressUI();
+      
+      // Update one last time via fallback for reliability
+      this._updateFallbackIndicator({
+        processed: this.stats.processedCount,
+        total: this.stats.totalBundleIds,
+        startTime: this.stats.startTime
+      });
     }
   }
   
@@ -708,50 +780,64 @@ class StreamingProcessor {
   _forceUpdateProgressUI() {
     console.log(`Force updating UI: ${this.stats.processedCount}/${this.stats.totalBundleIds}`);
     
-    try {
-      // Try updating through visual indicators
-      VisualIndicators.updateProgress({
-        processed: this.stats.processedCount,
-        success: this.stats.successCount,
-        errors: this.stats.errorCount,
-        withAppAds: this.stats.withAppAdsTxtCount,
-        total: this.stats.totalBundleIds,
-        startTime: this.stats.startTime
-      });
-    } catch (e) {
-      console.warn('Error updating through visual indicators:', e);
-    }
-    
-    try {
-      // Direct DOM updates as a backup strategy
+    // Create a direct DOM update function for reliability
+    const updateDOM = () => {
       // Calculate percent
       const percent = this.stats.totalBundleIds > 0 
         ? Math.min(100, Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100))
         : 0;
-        
-      // Update various progress elements
       
-      // Main visual indicators container
+      console.log(`Calculated percent: ${percent}% (${this.stats.processedCount}/${this.stats.totalBundleIds})`);
+      
+      // Update main visual indicators container
       const mainProgressBar = document.querySelector('.visual-indicators-container .progress-bar');
       if (mainProgressBar) {
+        console.log('Found main progress bar, updating to', `${percent}%`);
         mainProgressBar.style.width = `${percent}%`;
+      } else {
+        console.warn('Main progress bar not found');
       }
       
-      // Stream progress container
-      const streamProgressBar = document.querySelector('#streamProgress .progress-bar > div');
-      if (streamProgressBar) {
+      // Stream progress container - check if it exists, create if not
+      let streamProgressBar = document.querySelector('#streamProgress .progress-bar > div');
+      const streamProgress = document.getElementById('streamProgress');
+      
+      if (!streamProgress) {
+        console.log('Creating stream progress element...');
+        // Create progress element if it doesn't exist
+        const progressElem = document.createElement('div');
+        progressElem.id = 'streamProgress';
+        progressElem.className = 'progress-indicator';
+        progressElem.style.display = 'flex';
+        progressElem.style.margin = '10px 0';
+        progressElem.innerHTML = `
+          <div class="progress-bar" style="flex: 1; background: #f0f0f0; border-radius: 4px; overflow: hidden; height: 20px; margin-right: 10px;">
+            <div style="height: 100%; width: ${percent}%; background: linear-gradient(90deg, #3498db, #2980b9); transition: width 0.3s ease;"></div>
+          </div>
+          <span class="progress-text" style="font-size: 14px; white-space: nowrap;">${percent}% (${this.stats.processedCount}/${this.stats.totalBundleIds})</span>
+        `;
+        
+        // Insert into result container
+        const resultElement = document.getElementById('result');
+        if (resultElement) {
+          const insertBefore = resultElement.querySelector('.results-table-container') || resultElement.firstChild;
+          resultElement.insertBefore(progressElem, insertBefore);
+          streamProgressBar = progressElem.querySelector('.progress-bar > div');
+        }
+      } else if (streamProgressBar) {
+        console.log('Found stream progress bar, updating to', `${percent}%`);
         streamProgressBar.style.width = `${percent}%`;
+        
+        const streamPercentText = document.querySelector('#streamProgress .progress-text');
+        if (streamPercentText) {
+          streamPercentText.textContent = `${percent}% (${this.stats.processedCount}/${this.stats.totalBundleIds})`;
+        }
       }
       
       // Various percentage indicators
       const progressPercentText = document.querySelector('.completion-percentage');
       if (progressPercentText) {
         progressPercentText.textContent = `${percent}%`;
-      }
-      
-      const streamPercentText = document.querySelector('#streamProgress .progress-text');
-      if (streamPercentText) {
-        streamPercentText.textContent = `${percent}% (${this.stats.processedCount}/${this.stats.totalBundleIds})`;
       }
       
       // Counters
@@ -787,9 +873,34 @@ class StreamingProcessor {
           <span class="app-ads-count">With app-ads.txt: <strong>${this.stats.withAppAdsTxtCount}</strong></span>
         `;
       }
-      
+    };
+    
+    try {
+      // First try updating through visual indicators
+      VisualIndicators.updateProgress({
+        processed: this.stats.processedCount,
+        success: this.stats.successCount,
+        errors: this.stats.errorCount,
+        withAppAds: this.stats.withAppAdsTxtCount,
+        total: this.stats.totalBundleIds,
+        startTime: this.stats.startTime
+      });
+    } catch (e) {
+      console.warn('Error updating through visual indicators:', e);
+    }
+    
+    // Then do direct DOM updates as a reliable backup
+    try {
+      // Schedule the update on the next animation frame for better performance
+      requestAnimationFrame(updateDOM);
     } catch (err) {
-      console.error('Error during direct DOM update:', err);
+      console.error('Error scheduling DOM update:', err);
+      // Try immediate update as last resort
+      try {
+        updateDOM();
+      } catch (finalErr) {
+        console.error('Critical error during DOM update:', finalErr);
+      }
     }
   }
   
