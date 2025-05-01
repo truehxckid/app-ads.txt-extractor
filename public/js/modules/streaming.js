@@ -5,8 +5,30 @@
  * This is a refactored, modular version of the original streaming.js file
  */
 
-// Import the new modular components
-import StreamProcessor from './streaming/StreamProcessor.js';
+console.log('🔄 Loading streaming.js module'); 
 
-// Export the stream processor as the default
-export default StreamProcessor;
+// Import the new modular components
+try {
+  // Dynamic import with error handling
+  const StreamProcessorModule = await import('./streaming/StreamProcessor.js');
+  console.log('✅ StreamProcessor loaded successfully');
+  
+  // Export the stream processor as the default
+  export default StreamProcessorModule.default;
+} catch (error) {
+  console.error('❌ Error loading StreamProcessor:', error);
+  
+  // Provide fallback to prevent breaking the application
+  const fallbackProcessor = {
+    initialize() {
+      console.warn('Using fallback streaming processor');
+      return true;
+    },
+    processBundleIds() {
+      console.error('Fallback processor cannot process bundle IDs');
+      return Promise.resolve(false);
+    }
+  };
+  
+  export default fallbackProcessor;
+}
