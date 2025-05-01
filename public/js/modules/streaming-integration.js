@@ -5,10 +5,9 @@
 
 import AppState from './app-state.js';
 import EventHandler from './event-handler.js';
-import StreamingProcessor from './streaming.js';
+import StreamingProcessor from './streaming.js'; // Updated to use new modular version
 import { showNotification } from '../utils/notification.js';
 import DOMUtils from './dom-utils.js';
-import VisualIndicators from './visual-indicators.js';
 
 /**
  * Streaming Integration Class
@@ -96,36 +95,31 @@ class StreamingIntegration {
           
           // Force initialize the streaming processor for immediate feedback
           try {
-            // Initialize visual indicators if they exist
-            if (typeof VisualIndicators !== 'undefined' && 
-                typeof VisualIndicators.initialize === 'function') {
-              const resultContainer = document.getElementById('result');
-              if (resultContainer) {
-                resultContainer.style.display = 'block';
-                StreamingProcessor.initialize();
-                
-                // Show a temporary indicator to confirm it's working
-                VisualIndicators.initialize({
-                  totalItems: 100,
-                  containerSelector: resultContainer,
-                  showDetails: false,
-                  animate: true
-                });
-                
-                VisualIndicators.setStatusMessage('Streaming mode activated', 'success');
-                VisualIndicators.updateProgress({processed: 100, total: 100});
-                
-                // Remove after 3 seconds
-                setTimeout(() => {
-                  VisualIndicators.clearIndicators();
-                  if (resultContainer.children.length === 0) {
-                    resultContainer.style.display = 'none'; 
-                  }
-                }, 3000);
-              }
+            const resultContainer = document.getElementById('result');
+            if (resultContainer) {
+              resultContainer.style.display = 'block';
+              StreamingProcessor.initialize();
+              
+              // Create a simple confirmation feedback
+              const confirmDiv = document.createElement('div');
+              confirmDiv.className = 'streaming-confirmation';
+              confirmDiv.style.cssText = 'padding: 15px; background: #e8f7f3; border: 1px solid #27ae60; border-radius: 4px; margin-bottom: 15px; text-align: center;';
+              confirmDiv.innerHTML = '<strong>Streaming mode activated!</strong> Ready for processing large datasets.';
+              
+              resultContainer.prepend(confirmDiv);
+              
+              // Remove after 3 seconds
+              setTimeout(() => {
+                if (confirmDiv.parentNode) {
+                  confirmDiv.parentNode.removeChild(confirmDiv);
+                }
+                if (resultContainer.children.length === 0) {
+                  resultContainer.style.display = 'none'; 
+                }
+              }, 3000);
             }
           } catch (e) {
-            console.warn('Failed to initialize visual indicators:', e);
+            console.warn('Failed to initialize streaming processor:', e);
           }
         } else {
           showNotification('Streaming mode disabled', 'info');
