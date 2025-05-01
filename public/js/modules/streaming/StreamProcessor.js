@@ -116,6 +116,8 @@ class StreamProcessor {
    * @returns {Promise<boolean>} - Success status
    */
   async processBundleIds(bundleIds, searchTerms = []) {
+    console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
+    
     // Initialize if not already
     if (!this.initialized) {
       if (!this.initialize()) {
@@ -129,6 +131,8 @@ class StreamProcessor {
     this.searchTerms = searchTerms;
     this.stats.startTime = Date.now();
     this.stats.totalBundleIds = bundleIds.length;
+    
+    console.log('👉 State initialized with totalBundleIds:', this.stats.totalBundleIds);
     
     // Get result element and create initial UI
     const resultElement = DOMUtils.getElement('result');
@@ -272,6 +276,8 @@ class StreamProcessor {
    * @private
    */
   _processResult(result) {
+    console.log('📦 Processing result for:', result.bundleId);
+    
     // Update statistics
     this.stats.processedCount++;
     
@@ -283,6 +289,14 @@ class StreamProcessor {
     } else {
       this.stats.errorCount++;
     }
+    
+    console.log('📊 Updated stats:', { 
+      processed: this.stats.processedCount, 
+      success: this.stats.successCount,
+      errors: this.stats.errorCount,
+      withAppAds: this.stats.withAppAdsTxtCount,
+      total: this.stats.totalBundleIds
+    });
     
     // Add to results array
     this.results.push(result);

@@ -340,6 +340,8 @@ class StreamProgressUI {
    * @param {Object} stats - Processing statistics
    */
   updateProgress(stats = {}) {
+    console.log('🔄 StreamProgressUI.updateProgress called with:', stats);
+    
     // Update local stats with provided values
     Object.assign(this.stats, stats);
     
@@ -434,6 +436,8 @@ class StreamProgressUI {
    * @param {Object} stats - Processing statistics
    */
   forceUpdate(stats = {}) {
+    console.log('⚡ StreamProgressUI.forceUpdate: Emergency direct DOM update with:', stats);
+    
     // Update our stats
     this.updateProgress(stats);
     

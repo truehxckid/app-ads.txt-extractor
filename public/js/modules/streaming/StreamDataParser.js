@@ -25,6 +25,8 @@ class StreamDataParser {
    * @returns {Promise<void>}
    */
   async processStream(stream, resultCallback, debuggerInstance, progressUI) {
+    console.log('🌊 StreamDataParser.processStream: Starting stream processing');
+    
     // Get stream reader
     const reader = stream.getReader();
     let buffer = '';
@@ -114,6 +116,8 @@ class StreamDataParser {
    * @private
    */
   _extractObjectsFromBuffer(buffer) {
+    console.log('🔍 Parsing buffer of length:', buffer.length);
+    
     const objects = [];
     let currentIndex = 0;
     let objectStart = -1;
@@ -213,6 +217,11 @@ class StreamDataParser {
           remainingBuffer: buffer.substring(nextStart)
         };
       }
+    }
+    
+    // Log extracted objects
+    if (objects.length > 0) {
+      console.log(`📊 Extracted ${objects.length} objects from buffer`);
     }
     
     // Return objects and remaining buffer
