@@ -212,15 +212,14 @@ async function testModuleLoading() {
       console.log('🧪 INTEGRATION TEST: Attempting to initialize StreamProcessor');
       
       // Use window access for global registration
-      window.StreamProcessorDebug?.initialize()
-        .then(() => {
-          addTestResult('StreamProcessor Init', true, 'Successfully initialized StreamProcessor');
-          console.log('🧪 INTEGRATION TEST: StreamProcessor initialized successfully');
-        })
-        .catch(err => {
-          addTestResult('StreamProcessor Init', false, `Error: ${err.message}`);
-          console.error('🧪 INTEGRATION TEST: StreamProcessor initialization failed:', err);
-        });
+      try {
+        const initResult = window.StreamProcessorDebug?.initialize();
+        addTestResult('StreamProcessor Init', true, `Successfully initialized StreamProcessor: ${initResult}`);
+        console.log('🧪 INTEGRATION TEST: StreamProcessor initialized successfully:', initResult);
+      } catch (err) {
+        addTestResult('StreamProcessor Init', false, `Error: ${err.message}`);
+        console.error('🧪 INTEGRATION TEST: StreamProcessor initialization failed:', err);
+      }
     } catch (err) {
       addTestResult('Integration Test Exception', false, `Error: ${err.message}`);
       console.error('🧪 INTEGRATION TEST: Exception during initialization:', err);
