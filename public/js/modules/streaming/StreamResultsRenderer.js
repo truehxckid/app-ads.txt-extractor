@@ -88,7 +88,7 @@ class StreamResultsRenderer {
     resultElement.style.display = 'block';
     
     // Add event listeners for toggles
-    this._setupEventListeners();
+    this._setupEventListeners(resultElement);
   }
   
   /**
@@ -582,6 +582,12 @@ class StreamResultsRenderer {
    * @private
    */
   _setupEventListeners(container) {
+    // Safety check - if container is undefined, exit early
+    if (!container) {
+      console.warn('StreamResultsRenderer: No container provided to _setupEventListeners');
+      return;
+    }
+    
     // Back button
     const backButton = container.querySelector('[data-action="back-to-search"]');
     if (backButton) {
@@ -590,26 +596,30 @@ class StreamResultsRenderer {
         container.style.display = 'none';
         
         // Show completion banner
-        const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
-        if (completionBanner) {
-          completionBanner.style.display = 'block';
-        } else {
-          // If banner doesn't exist, recreate it
-          this._createCompletionBanner();
+        if (this.resultElement) {
+          const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
+          if (completionBanner) {
+            completionBanner.style.display = 'block';
+          } else {
+            // If banner doesn't exist, recreate it
+            this._createCompletionBanner();
+          }
         }
       });
     }
     
     // Pagination buttons
-    container.addEventListener('click', (event) => {
-      const target = event.target;
-      if (target.dataset.action === 'paginate') {
-        const page = parseInt(target.dataset.page, 10);
-        if (!isNaN(page) && page > 0) {
-          this._renderPage(this.allResults, page);
+    if (container) {
+      container.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target && target.dataset && target.dataset.action === 'paginate') {
+          const page = parseInt(target.dataset.page, 10);
+          if (!isNaN(page) && page > 0) {
+            this._renderPage(this.allResults, page);
+          }
         }
-      }
-    });
+      });
+    }
   }
   
   /**
