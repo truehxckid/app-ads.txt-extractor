@@ -249,6 +249,7 @@ class StreamingIntegration {
       if (useStreaming) {
         console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
         console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
+        console.log('⚡⚡⚡ ENTRY POINT: BYPASSING ORIGINAL HANDLER TO AVOID DOUBLE REQUEST');
         
         // Create a global debug info element if it doesn't exist
         let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');
@@ -352,6 +353,9 @@ class StreamingIntegration {
           
           showNotification('Streaming error, falling back to regular processing', 'warning');
           
+          // Reset processing state before calling original handler
+          AppState.setProcessing(false);
+          
           // Fall back to original handler
           return originalHandler.call(EventHandler, event);
         } finally {
@@ -359,8 +363,12 @@ class StreamingIntegration {
           
           console.log('⚡⚡⚡ ENTRY POINT: Processing completed, AppState.isProcessing set to false');
         }
+        
+        // IMPORTANT: Do not continue execution and call the original handler!
+        return; // Return early to prevent execution continuing
       } else {
         // Use original handler for smaller datasets
+        console.log('⚡⚡⚡ ENTRY POINT: Using regular (non-streaming) processing for smaller dataset:', bundleIds.length);
         return originalHandler.call(EventHandler, event);
       }
     };
