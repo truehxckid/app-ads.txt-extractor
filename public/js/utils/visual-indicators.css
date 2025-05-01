@@ -212,6 +212,16 @@
   }
 }
 
+/* Fix specific animation for data-stripe - ensure it's properly defined */
+.data-stripe {
+  position: absolute;
+  height: 100%;
+  width: 20px;
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: skewX(-20deg);
+  animation: none; /* Will be set dynamically in JS */
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .stats-container {

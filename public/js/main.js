@@ -34,6 +34,13 @@ function initApp() {
     // Initialize streaming integration
     StreamingIntegration.initialize();
     
+    // Initialize visual indicators (explicitly)
+    if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
+      console.info('Initializing visual indicators...');
+      // Create a test indicator if needed
+      // VisualIndicators.initialize({ totalItems: 100, containerSelector: '#result' });
+    }
+    
     // Add global error handling
     window.addEventListener('error', EventHandler.handleGlobalError);
     window.addEventListener('unhandledrejection', EventHandler.handleUnhandledRejection);
