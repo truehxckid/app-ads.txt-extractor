@@ -296,6 +296,10 @@ class StreamProcessor {
         // Check if we got a streaming response
         if (apiResponse.isStreaming && apiResponse.response) {
           console.log('⚡ CRITICAL DEBUG: Api.extractDomains returned a streaming response!');
+          
+          // Log the full response object for debugging
+          console.log('⚡ CRITICAL DEBUG: Api.extractDomains response:', apiResponse);
+          
           const response = apiResponse.response;
           
           console.log('⚡ CRITICAL DEBUG: Fetch response received:', response.status, response.statusText);

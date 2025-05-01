@@ -68,7 +68,23 @@ class ApiService {
           throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
         }
         
-        return { response, isStreaming: true };
+        // For streaming, we need to return a response object that matches
+        // what the ResultsManager expects to avoid "Cannot read properties of undefined (reading 'filter')" errors
+        return { 
+          response, 
+          isStreaming: true,
+          // Add these properties to ensure compatibility with the results manager
+          results: [],
+          totalProcessed: 0,
+          successCount: 0,
+          errorCount: 0,
+          processingTime: 0,
+          pagination: {
+            currentPage: 1,
+            totalPages: 1,
+            totalItems: bundleIds.length
+          }
+        };
       }
       
       // Non-streaming path below

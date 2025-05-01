@@ -72,13 +72,72 @@ class ResultsManager {
         AppState.pageSize
       );
       
+      // Add defensive check for streaming response format
+      if (response.isStreaming) {
+        console.log('⚡ ResultsManager: Detected streaming response, skipping normal results processing');
+        
+        // Show a notification about streaming
+        showNotification('Using streaming mode for processing large dataset', 'info');
+        
+        // Early return as the streaming processor handles the UI separately
+        if (resultElement) {
+          resultElement.innerHTML = `
+            <div class="streaming-mode-indicator">
+              <h3>Streaming Mode Active</h3>
+              <p>Processing ${bundleIds.length} bundle IDs via streaming API.</p>
+              <p>Results will appear progressively as they are processed...</p>
+              <div class="streaming-animation"></div>
+            </div>
+          `;
+          resultElement.style.display = 'block';
+        }
+        
+        // Insert some CSS for the streaming indicator
+        const style = document.createElement('style');
+        style.textContent = `
+          .streaming-mode-indicator {
+            background: #f1f8ff;
+            border: 1px solid #0366d6;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 20px 0;
+          }
+          .streaming-animation {
+            height: 4px;
+            background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%);
+            background-size: 200% 100%;
+            animation: streaming-animation 1.5s infinite linear;
+            border-radius: 2px;
+            margin-top: 15px;
+          }
+          @keyframes streaming-animation {
+            0% { background-position: 100% 0; }
+            100% { background-position: 0 0; }
+          }
+        `;
+        document.head.appendChild(style);
+        
+        // Return early as streaming processor handles the UI
+        return;
+      }
+      
+      // Safety check for response.results (to prevent "Cannot read properties of undefined (reading 'filter')" error)
+      if (!response.results || !Array.isArray(response.results)) {
+        console.error('⚡ ResultsManager: response.results is not an array:', response);
+        response.results = [];
+      }
+      
       // Update visual indicators after receiving response
       if (VisualIndicators) {
+        const withAppAds = Array.isArray(response.results) ? 
+          response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
+          
         VisualIndicators.updateProgress({
           processed: response.totalProcessed || bundleIds.length,
           success: response.successCount || 0,
           errors: response.errorCount || 0,
-          withAppAds: response.results.filter(r => r.success && r.appAdsTxt?.exists).length,
+          withAppAds: withAppAds,
           total: bundleIds.length
         });
         VisualIndicators.setStatusMessage('Processing complete, rendering results...', 'success');
@@ -111,11 +170,15 @@ class ResultsManager {
       
       // Complete visual indicators
       if (VisualIndicators) {
+        // Safety check for response.results (to prevent "Cannot read properties of undefined (reading 'filter')" error)
+        const withAppAds = Array.isArray(response.results) ? 
+          response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
+          
         VisualIndicators.complete({
           processed: response.totalProcessed || bundleIds.length,
           success: response.successCount || 0,
           errors: response.errorCount || 0,
-          withAppAds: response.results.filter(r => r.success && r.appAdsTxt?.exists).length,
+          withAppAds: withAppAds,
           total: bundleIds.length
         });
       }
@@ -252,6 +315,18 @@ class ResultsManager {
   displayResults(data) {
     const resultElement = DOMUtils.getElement('result');
     if (!resultElement) return;
+    
+    // Early return for streaming response
+    if (data.isStreaming) {
+      console.log('⚡ ResultsManager.displayResults: Detected streaming response, skipping display');
+      return;
+    }
+    
+    // Safety check for data.results (to prevent "Cannot read properties of undefined (reading 'filter')" error)
+    if (!data.results || !Array.isArray(data.results)) {
+      console.error('⚡ ResultsManager.displayResults: data.results is not an array:', data);
+      data.results = [];
+    }
     
     // Calculate statistics
     const successResults = data.results.filter(r => r.success);
