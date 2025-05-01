@@ -143,6 +143,21 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
         if (typeof res.flush === 'function') {
           res.flush();
         }
+        
+        // Add small delay between items to avoid overwhelming clients and prevent timeouts
+        if (i % 3 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      
+      // Send a heartbeat message every few batches to keep connection alive
+      if (batchIndex % 2 === 0) {
+        // Send a comment in the JSON stream to act as a heartbeat
+        res.write(`\n/* heartbeat: ${Date.now()} */\n`);
+        
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
       }
       
       // Log progress for large batches

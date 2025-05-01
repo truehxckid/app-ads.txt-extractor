@@ -273,7 +273,24 @@ class StreamingProcessor {
     let resultArrayStarted = false;
     let parseCount = 0;
     
+    // Set up heartbeat for progress indicators to update every second regardless of stream data
+    let heartbeatInterval = setInterval(() => {
+      console.log('Heartbeat update UI');
+      this._forceUpdateProgressUI();
+    }, 1000);
+    
     try {
+      // Initialize progress indicators immediately
+      this.stats.startTime = Date.now();
+      this._forceUpdateProgressUI();
+      
+      // Add server status message
+      const statusMessage = document.querySelector('.status-message');
+      if (statusMessage) {
+        statusMessage.textContent = 'Connected to server, waiting for data...';
+        statusMessage.className = 'status-message info';
+      }
+      
       // Process the stream
       while (true) {
         const { done, value } = await reader.read();
@@ -286,15 +303,19 @@ class StreamingProcessor {
         const chunk = this.decoder.decode(value, { stream: true });
         buffer += chunk;
         
+        console.log('Received chunk:', chunk.substring(0, 100) + (chunk.length > 100 ? '...' : ''));
+        
         // Process buffer for complete JSON objects
         if (!jsonStarted && buffer.includes('{"success":')) {
           jsonStarted = true;
+          console.log('JSON response started');
           
           // Extract any initial metadata
           const resultsStart = buffer.indexOf('"results":[');
           if (resultsStart !== -1) {
             resultArrayStarted = true;
             buffer = buffer.substring(resultsStart + 11); // Skip over "results":[
+            console.log('Results array started');
           }
         }
         
@@ -342,8 +363,11 @@ class StreamingProcessor {
                   // Process the result
                   this._processResult(resultObject);
                   
-                  // Update progress every 5 items
-                  if (++parseCount % 5 === 0) {
+                  // Force update UI on each result
+                  this._forceUpdateProgressUI();
+                  
+                  // Update progress every few items
+                  if (++parseCount % 2 === 0) {
                     this._updateProgressUI();
                   }
                   
@@ -365,6 +389,9 @@ class StreamingProcessor {
             }
           }
         }
+        
+        // Force update UI after processing each chunk
+        this._forceUpdateProgressUI();
       }
       
       // Final buffer processing for any trailing metadata
@@ -373,13 +400,115 @@ class StreamingProcessor {
         if (totalProcessedMatch && totalProcessedMatch[1]) {
           const totalProcessed = parseInt(totalProcessedMatch[1], 10);
           console.log(`Total processed according to server: ${totalProcessed}`);
+          
+          // Force update UI with server-reported total
+          this.stats.processedCount = totalProcessed;
+          this._forceUpdateProgressUI();
         }
       }
     } catch (err) {
       console.error('Error processing stream:', err);
       throw err;
     } finally {
+      // Clear heartbeat interval
+      clearInterval(heartbeatInterval);
+      
+      // Make sure we do a final UI update
+      this._forceUpdateProgressUI();
+      
       reader.releaseLock();
+    }
+  }
+  
+  /**
+   * Force update all progress UI elements directly
+   * @private
+   */
+  _forceUpdateProgressUI() {
+    console.log(`Force updating UI: ${this.stats.processedCount}/${this.stats.totalBundleIds}`);
+    
+    try {
+      // Try updating through visual indicators
+      VisualIndicators.updateProgress({
+        processed: this.stats.processedCount,
+        success: this.stats.successCount,
+        errors: this.stats.errorCount,
+        withAppAds: this.stats.withAppAdsTxtCount,
+        total: this.stats.totalBundleIds,
+        startTime: this.stats.startTime
+      });
+    } catch (e) {
+      console.warn('Error updating through visual indicators:', e);
+    }
+    
+    try {
+      // Direct DOM updates as a backup strategy
+      // Calculate percent
+      const percent = this.stats.totalBundleIds > 0 
+        ? Math.min(100, Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100))
+        : 0;
+        
+      // Update various progress elements
+      
+      // Main visual indicators container
+      const mainProgressBar = document.querySelector('.visual-indicators-container .progress-bar');
+      if (mainProgressBar) {
+        mainProgressBar.style.width = `${percent}%`;
+      }
+      
+      // Stream progress container
+      const streamProgressBar = document.querySelector('#streamProgress .progress-bar > div');
+      if (streamProgressBar) {
+        streamProgressBar.style.width = `${percent}%`;
+      }
+      
+      // Various percentage indicators
+      const progressPercentText = document.querySelector('.completion-percentage');
+      if (progressPercentText) {
+        progressPercentText.textContent = `${percent}%`;
+      }
+      
+      const streamPercentText = document.querySelector('#streamProgress .progress-text');
+      if (streamPercentText) {
+        streamPercentText.textContent = `${percent}% (${this.stats.processedCount}/${this.stats.totalBundleIds})`;
+      }
+      
+      // Counters
+      const processedCounter = document.querySelector('.processed-counter .counter-value');
+      if (processedCounter) {
+        processedCounter.textContent = `${this.stats.processedCount} / ${this.stats.totalBundleIds}`;
+      }
+      
+      const successCounter = document.querySelector('.success-counter .counter-value');
+      if (successCounter) {
+        successCounter.textContent = this.stats.successCount.toString();
+      }
+      
+      const errorsCounter = document.querySelector('.errors-counter .counter-value');
+      if (errorsCounter) {
+        errorsCounter.textContent = this.stats.errorCount.toString();
+      }
+      
+      const appAdsCounter = document.querySelector('.appAds-counter .counter-value');
+      if (appAdsCounter) {
+        appAdsCounter.textContent = this.stats.withAppAdsTxtCount.toString();
+      }
+      
+      // Update summary stats
+      const summaryStats = document.querySelector('.summary-stats');
+      if (summaryStats) {
+        summaryStats.innerHTML = `
+          <span>Processing: <strong>${this.stats.processedCount}</strong>${
+            this.stats.totalBundleIds > 0 ? ` / ${this.stats.totalBundleIds}` : ''
+          }</span>
+          <span class="success-count">Success: <strong>${this.stats.successCount}</strong></span>
+          <span class="error-count">Errors: <strong>${this.stats.errorCount}</strong></span>
+          <span class="app-ads-count">With app-ads.txt: <strong>${this.stats.withAppAdsTxtCount}</strong></span>
+        `;
+      }
+      
+    } catch (err) {
+      console.error('Error during direct DOM update:', err);
     }
   }
   
