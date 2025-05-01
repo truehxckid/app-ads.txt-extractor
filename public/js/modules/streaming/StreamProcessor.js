@@ -46,7 +46,7 @@ class StreamProcessor {
     // Progressive rendering buffers
     this.resultBuffer = [];
     this.lastRenderTime = 0;
-    this.renderThrottleTime = 200; // ms between renders
+    this.renderThrottleTime = 100; // ms between renders (reduced from 200ms for more frequent updates)
     this.isRendering = false;
     this.animationFrameId = null;
   }
@@ -406,6 +406,11 @@ class StreamProcessor {
    * @private
    */
   _processResult(result) {
+    if (!result || !result.bundleId) {
+      console.error('📦 Error: Invalid result object received', result);
+      return;
+    }
+    
     console.log('📦 Processing result for:', result.bundleId);
     
     // Update statistics
@@ -420,13 +425,17 @@ class StreamProcessor {
       this.stats.errorCount++;
     }
     
-    console.log('📊 Updated stats:', { 
-      processed: this.stats.processedCount, 
-      success: this.stats.successCount,
-      errors: this.stats.errorCount,
-      withAppAds: this.stats.withAppAdsTxtCount,
-      total: this.stats.totalBundleIds
-    });
+    // Log every 10th result to avoid console spam
+    if (this.stats.processedCount % 10 === 0 || this.stats.processedCount < 5) {
+      console.log('📊 Updated stats:', { 
+        processed: this.stats.processedCount, 
+        success: this.stats.successCount,
+        errors: this.stats.errorCount,
+        withAppAds: this.stats.withAppAdsTxtCount,
+        total: this.stats.totalBundleIds,
+        bufferSize: this.resultBuffer ? this.resultBuffer.length + 1 : 0 // +1 for current result
+      });
+    }
     
     // Add to results array
     this.results.push(result);
@@ -435,14 +444,22 @@ class StreamProcessor {
     this.resultBuffer.push(result);
     
     // Update progress UI
-    this.progressUI.updateProgress({
+    const stats = {
       processed: this.stats.processedCount,
       success: this.stats.successCount,
       errors: this.stats.errorCount,
       withAppAds: this.stats.withAppAdsTxtCount,
       total: this.stats.totalBundleIds,
       startTime: this.stats.startTime
-    });
+    };
+    
+    // Update the progress UI
+    this.progressUI.updateProgress(stats);
+    
+    // Also update the results summary in StreamResultsRenderer
+    if (this.resultsRenderer && typeof this.resultsRenderer.updateSummaryStats === 'function') {
+      this.resultsRenderer.updateSummaryStats(stats);
+    }
     
     // Update status message periodically
     if (this.stats.processedCount % 5 === 0) {
@@ -481,17 +498,24 @@ class StreamProcessor {
         // Update progress UI
         this.progressUI.updateProgress(this.stats);
         
+        // Save the current buffer length before clearing it
+        const hadResults = this.resultBuffer.length > 0;
+        
+        // Log rendering operation
+        console.log('📊 StreamProcessor: Rendered batch of', this.resultBuffer.length, 'results');
+        
         // Clear buffer and reset rendering state
         this.resultBuffer = [];
         this.lastRenderTime = Date.now();
         this.isRendering = false;
         
-        // Schedule next batch if there are more results
-        if (this.resultBuffer.length > 0) {
-          this.animationFrameId = requestAnimationFrame(() => this._scheduleRender());
-        } else {
-          this.animationFrameId = null;
-        }
+        // Force a check for more results (not relying on the now-empty buffer)
+        this.animationFrameId = null;
+        
+        // Re-check for new results after a short delay to allow batch processing
+        setTimeout(() => {
+          if (this._processResult) this._scheduleRender();
+        }, 100);
       });
     }
   }

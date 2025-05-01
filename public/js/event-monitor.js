@@ -190,5 +190,49 @@
     addVisualIndicator('✅ STREAMING API FORCED', '#0366d6', '#f1f8ff');
   });
   
+  // Add fade-out animation style if it doesn't exist
+  if (!document.querySelector('style#streaming-animations')) {
+    const fadeStyle = document.createElement('style');
+    fadeStyle.id = 'streaming-animations';
+    fadeStyle.textContent = `
+      @keyframes fade-out {
+        0% { opacity: 1; }
+        80% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+    `;
+    document.head.appendChild(fadeStyle);
+  }
+  
+  // Monitor streaming results rendered
+  window.addEventListener('streaming-results-rendered', function(event) {
+    console.log('EVENT MONITOR: Streaming results rendered:', event.detail);
+    
+    // Add a small visual indicator that doesn't interfere too much
+    const indicator = document.createElement('div');
+    indicator.style.cssText = `
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(40, 167, 69, 0.2);
+      border: 1px solid rgba(40, 167, 69, 0.4);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #28a745;
+      z-index: 9999;
+      animation: fade-out 1s ease-out forwards;
+    `;
+    indicator.innerHTML = `✅ Rendered ${event.detail.count} results`;
+    document.body.appendChild(indicator);
+    
+    // Auto-remove after 1 second
+    setTimeout(() => {
+      if (indicator.parentNode) {
+        indicator.parentNode.removeChild(indicator);
+      }
+    }, 1000);
+  });
+  
   console.log('EVENT MONITOR: Monitoring initialized successfully with all event listeners');
 })();

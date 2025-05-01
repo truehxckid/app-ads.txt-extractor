@@ -193,6 +193,39 @@ class StreamResultsRenderer {
   }
   
   /**
+   * Update the summary statistics in the UI
+   * @param {Object} stats - Statistics object
+   * @private
+   */
+  updateSummaryStats(stats) {
+    if (!this.resultElement) return;
+    
+    const summaryElement = this.resultElement.querySelector('.results-summary .summary-stats');
+    if (!summaryElement) return;
+    
+    // Update each stat element
+    const processedElement = summaryElement.querySelector('span:nth-child(1) strong');
+    const successElement = summaryElement.querySelector('.success-count strong');
+    const errorElement = summaryElement.querySelector('.error-count strong');
+    const appAdsElement = summaryElement.querySelector('.app-ads-count strong');
+    
+    if (processedElement) processedElement.textContent = stats.processed || 0;
+    if (successElement) successElement.textContent = stats.success || 0;
+    if (errorElement) errorElement.textContent = stats.errors || 0;
+    if (appAdsElement) appAdsElement.textContent = stats.withAppAds || 0;
+    
+    // Update progress bar if available
+    const progressBar = this.resultElement.querySelector('#streamProgress .progress-bar div');
+    const progressText = this.resultElement.querySelector('#streamProgress .progress-text');
+    
+    if (progressBar && progressText && stats.total > 0) {
+      const percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
+      progressBar.style.width = `${percent}%`;
+      progressText.textContent = `${percent}% (${stats.processed}/${stats.total})`;
+    }
+  }
+
+  /**
    * Render a batch of results
    * @param {Array} results - Results to render
    * @param {Array} searchTerms - Search terms for highlighting
@@ -200,10 +233,15 @@ class StreamResultsRenderer {
   renderBatch(results, searchTerms = []) {
     if (!results || !results.length) return;
     
+    console.log('🔄 StreamResultsRenderer: Rendering batch of', results.length, 'results');
+    
     const tbody = document.getElementById('results-tbody');
     const detailsContainer = document.getElementById('details-container');
     
-    if (!tbody) return;
+    if (!tbody) {
+      console.warn('🔄 StreamResultsRenderer: No results-tbody element found!');
+      return;
+    }
     
     // Create a document fragment for batch DOM updates
     const fragment = document.createDocumentFragment();
@@ -222,13 +260,20 @@ class StreamResultsRenderer {
       
       // If detailed app-ads.txt info was provided, add to details container
       if (result.success && result.appAdsTxt?.exists && detailsContainer) {
-        const detailsId = `app-ads-details-${results.indexOf(result) + 1}`;
+        const detailsId = `app-ads-details-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
         this._addAppAdsDetails(result, detailsId, searchTerms);
       }
     });
     
     // Update the DOM in a single operation
     tbody.appendChild(fragment);
+    
+    // Dispatch a custom event to note that results were rendered
+    if (window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('streaming-results-rendered', {
+        detail: { count: results.length, timestamp: Date.now() }
+      }));
+    }
   }
   
   /**
