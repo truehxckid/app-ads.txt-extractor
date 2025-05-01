@@ -22,6 +22,45 @@ class VisualIndicators {
       withAppAds: 0,
       startTime: 0
     };
+    this.cssLoaded = false;
+  }
+  
+  /**
+   * Ensure CSS for visual indicators is loaded
+   * @private
+   */
+  _ensureCssIsLoaded() {
+    if (this.cssLoaded) return;
+    
+    // Check if CSS is already loaded
+    const cssLinkExists = document.querySelector('link[href*="visual-indicators.css"]');
+    if (!cssLinkExists) {
+      console.info('Loading visual indicators CSS');
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/js/utils/visual-indicators.css';
+      document.head.appendChild(link);
+    }
+    
+    // Create keyframes if not already defined
+    const keyframesExists = document.querySelector('style[data-visual-indicators="keyframes"]');
+    if (!keyframesExists) {
+      const keyframes = document.createElement('style');
+      keyframes.setAttribute('data-visual-indicators', 'keyframes');
+      keyframes.textContent = `
+        @keyframes pulse {
+          0% { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+          100% { box-shadow: 0 0 12px rgba(52, 152, 219, 0.5); }
+        }
+        @keyframes dataFlow {
+          0% { left: -30px; }
+          100% { left: 100%; }
+        }
+      `;
+      document.head.appendChild(keyframes);
+    }
+    
+    this.cssLoaded = true;
   }
 
   /**
@@ -75,13 +114,13 @@ class VisualIndicators {
     // Clear previous indicators
     this.clearIndicators();
     
+    // Ensure CSS is loaded
+    this._ensureCssIsLoaded();
+    
     // Create indicator container
     const indicatorContainer = DOMUtils.createElement('div', {
       className: 'visual-indicators-container'
     });
-    
-    // Add custom inline styles as fallback for CSS file
-    indicatorContainer.style.cssText = 'background: var(--bg-card, white); border: 1px solid var(--border, #e0e0e0); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.3s ease;';
     
     // Create progress bar
     const progressBar = this._createProgressBar();
@@ -89,11 +128,8 @@ class VisualIndicators {
     
     // Create status message
     const statusMessage = DOMUtils.createElement('div', {
-      className: 'status-message'
+      className: 'status-message info'
     }, 'Starting...');
-    
-    // Add fallback inline styles
-    statusMessage.style.cssText = 'font-size: 14px; margin-bottom: 1rem; padding: 0.5rem; border-radius: 4px; text-align: center; font-weight: 500; background: rgba(52, 152, 219, 0.1); color: #3498db;';
     
     indicatorContainer.appendChild(statusMessage);
     
@@ -115,8 +151,6 @@ class VisualIndicators {
     // Add pulsing effect if animate is true
     if (animate) {
       indicatorContainer.classList.add('animated');
-      // Add fallback animation
-      indicatorContainer.style.animation = 'pulse 1.5s infinite alternate';
     }
     
     console.log('Visual indicators initialized successfully');
@@ -131,35 +165,25 @@ class VisualIndicators {
     const barContainer = DOMUtils.createElement('div', {
       className: 'progress-bar-container'
     });
-    // Add fallback inline styles
-    barContainer.style.cssText = 'display: flex; align-items: center; margin-bottom: 1rem;';
     
     const barWrapper = DOMUtils.createElement('div', {
       className: 'progress-bar-wrapper'
     });
-    // Add fallback inline styles
-    barWrapper.style.cssText = 'flex: 1; height: 12px; background-color: #f0f0f0; border-radius: 6px; overflow: hidden; margin-right: 1rem; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);';
     
     const bar = DOMUtils.createElement('div', {
       className: 'progress-bar'
     });
-    // Add fallback inline styles
-    bar.style.cssText = 'height: 100%; width: 0%; background: linear-gradient(90deg, #3498db 0%, #2980b9 100%); border-radius: 6px; transition: width 0.3s ease; position: relative; overflow: hidden;';
     
     // Create data visualizer stripes inside the bar
     const dataStripes = DOMUtils.createElement('div', {
       className: 'data-stripes'
     });
-    // Add fallback inline styles
-    dataStripes.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden;';
     
     // Add stripes to represent data chunks
     for (let i = 0; i < 4; i++) {
       const stripe = DOMUtils.createElement('div', {
         className: 'data-stripe'
       });
-      // Add fallback inline styles
-      stripe.style.cssText = 'position: absolute; height: 100%; width: 20px; background-color: rgba(255, 255, 255, 0.3); transform: skewX(-20deg);';
       dataStripes.appendChild(stripe);
     }
     
@@ -167,8 +191,6 @@ class VisualIndicators {
     const percentage = DOMUtils.createElement('span', {
       className: 'completion-percentage'
     }, '0%');
-    // Add fallback inline styles
-    percentage.style.cssText = 'font-size: 12px; font-weight: 600; color: #333; min-width: 40px; text-align: right;';
     
     bar.appendChild(dataStripes);
     barWrapper.appendChild(bar);
@@ -404,14 +426,18 @@ class VisualIndicators {
     
     // Animate each stripe with varying delay
     dataStripes.forEach((stripe, index) => {
+      // Apply css animation with custom properties
+      stripe.style.setProperty('--flow-duration', `${speed}ms`);
+      stripe.style.setProperty('--flow-delay', `${index * 250}ms`);
+      
       // Reset animation
       stripe.style.animation = 'none';
       
       // Force reflow
       void stripe.offsetWidth;
       
-      // Apply new animation
-      stripe.style.animation = `dataFlow ${speed}ms ${(index * 250)}ms infinite`;
+      // Apply new animation (using the CSS variables)
+      stripe.style.animation = 'dataFlow var(--flow-duration) var(--flow-delay) infinite';
     });
   }
   
