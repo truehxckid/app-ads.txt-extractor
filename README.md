@@ -139,7 +139,6 @@ app-ads.txt-extractor/
 │   └── workers/               # Worker thread implementations
 ├── public/                    # Client-side assets
 │   ├── index.html             # Main HTML file
-│   ├── app.js                 # Main client application
 │   ├── js/                    # JavaScript modules
 │   │   ├── main.js            # Main client entry point
 │   │   ├── modules/           # Feature modules

@@ -4,13 +4,13 @@
  */
 
 import AppState from './app-state.js';
-import ResultsManager from './results.js';
 import SearchManager from './search.js';
 import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
 import ThemeManager from '../utils/theme.js';
 import Api from './api.js';
 import CSVExporter from './exporter.js';
+import StreamProcessor from './streaming/StreamProcessor.js';
 
 /**
  * Event Handler Class
@@ -107,8 +107,8 @@ class EventHandlerManager {
     // Show processing indicator and disable extract button
     AppState.setProcessing(true);
     
-    // Process the bundleIds
-    ResultsManager.processBundleIds(bundleIds, searchTerms);
+    // Process the bundleIds with StreamProcessor
+    StreamProcessor.processBundleIds(bundleIds, searchTerms);
   }
   
   /**
@@ -440,14 +440,13 @@ class EventHandlerManager {
   }
   
   /**
-   * Handle pagination button click
+   * Handle pagination button click - now handled directly in StreamResultsRenderer
    * @param {HTMLElement} button - Pagination button
    */
   handlePaginationClick(button) {
-    const page = parseInt(button.dataset.page, 10);
-    if (!isNaN(page) && page > 0) {
-      ResultsManager.loadPage(page);
-    }
+    // Pagination is now handled within StreamResultsRenderer 
+    // through event delegation on pagination buttons
+    console.log('Pagination is now handled internally by StreamResultsRenderer');
   }
   
   /**
