@@ -74,51 +74,97 @@ class ResultsManager {
       
       // Add defensive check for streaming response format
       if (response.isStreaming) {
-        console.log('⚡ ResultsManager: Detected streaming response, skipping normal results processing');
+        console.log('⚡ ResultsManager: Detected streaming response, delegating to StreamProcessor');
         
         // Show a notification about streaming
         showNotification('Using streaming mode for processing large dataset', 'info');
         
-        // Early return as the streaming processor handles the UI separately
-        if (resultElement) {
-          resultElement.innerHTML = `
-            <div class="streaming-mode-indicator">
-              <h3>Streaming Mode Active</h3>
-              <p>Processing ${bundleIds.length} bundle IDs via streaming API.</p>
-              <p>Results will appear progressively as they are processed...</p>
-              <div class="streaming-animation"></div>
-            </div>
-          `;
-          resultElement.style.display = 'block';
+        // When we have a streaming response, don't do normal processing - 
+        // instead import and initialize the StreamProcessor module
+        try {
+          // Show a basic "preparing" message while we initialize streaming
+          if (resultElement) {
+            if (!resultElement.querySelector('.streaming-mode-indicator')) {
+              resultElement.innerHTML = `
+                <div class="streaming-mode-indicator">
+                  <h3>Streaming Mode Active</h3>
+                  <p>Processing ${bundleIds.length} bundle IDs via streaming API.</p>
+                  <p>Preparing streaming pipeline...</p>
+                  <div class="streaming-animation"></div>
+                </div>
+              `;
+              resultElement.style.display = 'block';
+              
+              // Insert CSS for the streaming indicator
+              if (!document.querySelector('style#streaming-animation-style')) {
+                const style = document.createElement('style');
+                style.id = 'streaming-animation-style';
+                style.textContent = `
+                  .streaming-mode-indicator {
+                    background: #f1f8ff;
+                    border: 1px solid #0366d6;
+                    padding: 20px;
+                    border-radius: 8px;
+                    text-align: center;
+                    margin: 20px 0;
+                  }
+                  .streaming-animation {
+                    height: 4px;
+                    background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%);
+                    background-size: 200% 100%;
+                    animation: streaming-animation 1.5s infinite linear;
+                    border-radius: 2px;
+                    margin-top: 15px;
+                  }
+                  @keyframes streaming-animation {
+                    0% { background-position: 100% 0; }
+                    100% { background-position: 0 0; }
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+            }
+          }
+          
+          // We need to handle the actual response object correctly:
+          // For streaming, we don't want to parse JSON - instead we want to 
+          // pass the raw response to StreamProcessor
+          if (response.response && response.response.body) {
+            console.log('⚡ ResultsManager: Importing StreamProcessor to handle streaming response');
+            
+            // Dynamically import the stream processor (doesn't need to be async/await since we're in an async func)
+            import('./streaming/StreamProcessor.js')
+              .then(module => {
+                const StreamProcessor = module.default;
+                
+                if (StreamProcessor && typeof StreamProcessor.initialize === 'function') {
+                  console.log('⚡ ResultsManager: Calling StreamProcessor.initialize()');
+                  if (!StreamProcessor.initialized) {
+                    StreamProcessor.initialize();
+                  }
+                }
+                
+                if (StreamProcessor && typeof StreamProcessor.processBundleIds === 'function') {
+                  console.log('⚡ ResultsManager: Calling StreamProcessor.processBundleIds()');
+                  return StreamProcessor.processBundleIds(bundleIds, searchTerms);
+                } else {
+                  console.error('⚡ ResultsManager: StreamProcessor.processBundleIds is not a function');
+                  throw new Error('StreamProcessor does not have processBundleIds method');
+                }
+              })
+              .catch(err => {
+                console.error('⚡ ResultsManager: Error handling stream response:', err);
+                showNotification(`Error initializing stream processor: ${err.message}`, 'error');
+              });
+          } else {
+            console.log('⚡ ResultsManager: No streaming response body available, falling back to normal processing');
+          }
+        } catch (err) {
+          console.error('⚡ ResultsManager: Error in streaming delegation:', err);
+          showNotification(`Streaming error: ${err.message}`, 'error');
         }
         
-        // Insert some CSS for the streaming indicator
-        const style = document.createElement('style');
-        style.textContent = `
-          .streaming-mode-indicator {
-            background: #f1f8ff;
-            border: 1px solid #0366d6;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin: 20px 0;
-          }
-          .streaming-animation {
-            height: 4px;
-            background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%);
-            background-size: 200% 100%;
-            animation: streaming-animation 1.5s infinite linear;
-            border-radius: 2px;
-            margin-top: 15px;
-          }
-          @keyframes streaming-animation {
-            0% { background-position: 100% 0; }
-            100% { background-position: 0 0; }
-          }
-        `;
-        document.head.appendChild(style);
-        
-        // Return early as streaming processor handles the UI
+        // Return early - either StreamProcessor will handle it or we'll show an error
         return;
       }
       

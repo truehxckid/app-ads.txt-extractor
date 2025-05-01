@@ -32,6 +32,14 @@ class StreamResultsRenderer {
     
     this.resultElement = resultElement;
     
+    // Check if the result element already has our UI setup
+    if (resultElement.querySelector('#results-tbody')) {
+      console.log('🔄 StreamResultsRenderer: UI already initialized, skipping');
+      return;
+    }
+    
+    console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
+    
     // Create initial structure
     resultElement.innerHTML = `
       <div class="results-summary">
@@ -73,11 +81,28 @@ class StreamResultsRenderer {
             </tr>
           </thead>
           <tbody id="results-tbody">
+            <!-- Initial table row to ensure the table is visible -->
+            <tr class="streaming-placeholder-row">
+              <td colspan="${hasSearchTerms ? 6 : 5}" style="text-align: center; padding: 15px;">
+                <div style="display: inline-block; width: 20px; height: 20px; border: 2px solid #3498db; border-radius: 50%; border-top-color: transparent; animation: spin 1s linear infinite; margin-right: 10px;"></div>
+                Streaming results will appear here as they are processed...
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
       <div class="details-container" id="details-container"></div>
     `;
+    
+    // Add animation style
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
     
     // Show the result element
     resultElement.style.display = 'block';
@@ -243,30 +268,60 @@ class StreamResultsRenderer {
       return;
     }
     
+    // Remove the placeholder row if it exists (only first time)
+    const placeholderRow = tbody.querySelector('.streaming-placeholder-row');
+    if (placeholderRow) {
+      console.log('🔄 StreamResultsRenderer: Removing placeholder row');
+      tbody.removeChild(placeholderRow);
+    }
+    
     // Create a document fragment for batch DOM updates
     const fragment = document.createDocumentFragment();
     const tempDiv = document.createElement('div');
     
     // Process all results
     results.forEach(result => {
-      // Create row HTML
-      const rowHtml = this._createResultRow(result, searchTerms);
-      tempDiv.innerHTML = rowHtml;
-      
-      // Append row from temp div to fragment
-      while (tempDiv.firstChild) {
-        fragment.appendChild(tempDiv.firstChild);
-      }
-      
-      // If detailed app-ads.txt info was provided, add to details container
-      if (result.success && result.appAdsTxt?.exists && detailsContainer) {
-        const detailsId = `app-ads-details-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        this._addAppAdsDetails(result, detailsId, searchTerms);
+      try {
+        // Create row HTML
+        const rowHtml = this._createResultRow(result, searchTerms);
+        tempDiv.innerHTML = rowHtml;
+        
+        // Append row from temp div to fragment
+        while (tempDiv.firstChild) {
+          fragment.appendChild(tempDiv.firstChild);
+        }
+        
+        // If detailed app-ads.txt info was provided, add to details container
+        if (result.success && result.appAdsTxt?.exists && detailsContainer) {
+          const detailsId = `app-ads-details-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          this._addAppAdsDetails(result, detailsId, searchTerms);
+        }
+      } catch (err) {
+        console.error('🔄 Error rendering result:', err, result);
       }
     });
     
     // Update the DOM in a single operation
     tbody.appendChild(fragment);
+    
+    // Add a visual flash to the newly added rows
+    const addedRows = tbody.querySelectorAll('tr:nth-last-child(-n+' + results.length + ')');
+    addedRows.forEach(row => {
+      row.style.animation = 'highlight-row 2s ease-out';
+    });
+    
+    // Make sure the highlight animation style exists
+    if (!document.querySelector('style#highlight-animation')) {
+      const style = document.createElement('style');
+      style.id = 'highlight-animation';
+      style.textContent = `
+        @keyframes highlight-row {
+          0% { background-color: rgba(52, 152, 219, 0.2); }
+          100% { background-color: transparent; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
     
     // Dispatch a custom event to note that results were rendered
     if (window.dispatchEvent) {
