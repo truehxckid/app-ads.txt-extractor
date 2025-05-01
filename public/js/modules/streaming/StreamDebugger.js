@@ -206,4 +206,6 @@ class StreamDebugger {
   }
 }
 
-export default StreamDebugger;
+// Create and export a singleton instance
+const streamDebugger = new StreamDebugger();
+export default streamDebugger;

@@ -807,4 +807,6 @@ class StreamProgressUI {
   }
 }
 
-export default StreamProgressUI;
+// Create and export a singleton instance
+const streamProgressUI = new StreamProgressUI();
+export default streamProgressUI;

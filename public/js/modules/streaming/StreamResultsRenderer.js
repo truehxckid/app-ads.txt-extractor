@@ -564,4 +564,6 @@ class StreamResultsRenderer {
   }
 }
 
-export default StreamResultsRenderer;
+// Create and export a singleton instance
+const streamResultsRenderer = new StreamResultsRenderer();
+export default streamResultsRenderer;

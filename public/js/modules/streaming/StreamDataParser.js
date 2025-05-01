@@ -48,7 +48,20 @@ class StreamDataParser {
     try {
       // Process the stream
       console.log('⚡ SUPER CRITICAL DEBUG: Starting to read stream');
-      document.getElementById('debug-information').innerHTML += '<br>Starting to read stream...';
+      
+      // Update debug info safely
+      const updateDebugInfo = (message) => {
+        try {
+          const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
+          if (debugElement) {
+            debugElement.innerHTML += message;
+          }
+        } catch (err) {
+          console.error('Error updating debug info:', err);
+        }
+      };
+      
+      updateDebugInfo('<br>Starting to read stream...');
       
       while (true) {
         try {
@@ -57,7 +70,7 @@ class StreamDataParser {
           
           if (done) {
             console.log('⚡ Stream reader: Read complete, stream done');
-            document.getElementById('debug-information').innerHTML += '<br>Stream read complete!';
+            updateDebugInfo('<br>Stream read complete!');
             if (debuggerInstance) {
               debuggerInstance.logStatus('Stream complete (done=true)');
             }
@@ -66,7 +79,7 @@ class StreamDataParser {
           
           // Decode the chunk and add to buffer
           console.log(`⚡ Stream reader: Received data chunk of size ${value?.length || 0} bytes`);
-          document.getElementById('debug-information').innerHTML += `<br>Received chunk #${chunkCount+1} (${value?.length || 0} bytes)`;
+          updateDebugInfo(`<br>Received chunk #${chunkCount+1} (${value?.length || 0} bytes)`);
           
           const chunk = this.decoder.decode(value, { stream: true });
           buffer += chunk;
@@ -79,25 +92,25 @@ class StreamDataParser {
           
           // Process complete objects
           console.log('⚡ Parsing buffer of length:', buffer.length);
-          document.getElementById('debug-information').innerHTML += `<br>Parsing buffer (${buffer.length} bytes)...`;
+          updateDebugInfo(`<br>Parsing buffer (${buffer.length} bytes)...`);
           
           const extractedResults = this._extractObjectsFromBuffer(buffer);
           
           if (extractedResults.objects.length > 0) {
             console.log(`⚡⚡⚡ SUCCESS!! Extracted ${extractedResults.objects.length} results from buffer!`);
-            document.getElementById('debug-information').innerHTML += `<br><strong style="color:green">SUCCESS! Found ${extractedResults.objects.length} results</strong>`;
+            updateDebugInfo(`<br><strong style="color:green">SUCCESS! Found ${extractedResults.objects.length} results</strong>`);
             buffer = extractedResults.remainingBuffer;
             
             // Process each extracted result
             for (const resultObject of extractedResults.objects) {
               console.log(`⚡⚡⚡ Processing result object:`, resultObject.bundleId);
-              document.getElementById('debug-information').innerHTML += `<br>Processing: ${resultObject.bundleId || 'unknown'}`;
+              updateDebugInfo(`<br>Processing: ${resultObject.bundleId || 'unknown'}`);
               
               if (resultCallback) {
                 resultCallback(resultObject);
               } else {
                 console.error('⚡⚡⚡ CRITICAL ERROR: resultCallback is not defined!');
-                document.getElementById('debug-information').innerHTML += '<br><span style="color:red">ERROR: Result callback missing!</span>';
+                updateDebugInfo('<br><span style="color:red">ERROR: Result callback missing!</span>');
               }
               parseCount++;
             }
@@ -284,4 +297,6 @@ class StreamDataParser {
   }
 }
 
-export default StreamDataParser;
+// Create and export a singleton instance with TextDecoder
+const streamDataParser = new StreamDataParser(new TextDecoder());
+export default streamDataParser;
