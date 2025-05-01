@@ -22,11 +22,11 @@ class StreamProcessor {
     this.streamController = null;
     this.decoder = new TextDecoder();
     
-    // Initialize components
-    this.progressUI = new StreamProgressUI();
-    this.dataParser = new StreamDataParser(this.decoder);
-    this.resultsRenderer = new StreamResultsRenderer();
-    this.debugger = new StreamDebugger();
+    // Use the imported singleton instances instead of creating new ones
+    this.progressUI = StreamProgressUI;
+    this.dataParser = StreamDataParser;
+    this.resultsRenderer = StreamResultsRenderer;
+    this.debugger = StreamDebugger;
     
     // Initialize stats
     this.stats = {
@@ -58,10 +58,20 @@ class StreamProcessor {
   initialize() {
     if (this.initialized) return true;
     
+    console.log('🚀 StreamProcessor: Initializing streaming processor');
+    
     // Check if browser supports streaming
     if (!window.ReadableStream || !window.TextDecoder) {
       console.warn('Browser does not support streaming, falling back to regular processing');
       return false;
+    }
+    
+    // Ensure the components are properly initialized
+    if (this.dataParser) {
+      console.log('🚀 StreamProcessor: Setting decoder on dataParser');
+      this.dataParser.setDecoder(this.decoder);
+    } else {
+      console.error('🚀 StreamProcessor: dataParser is not available!');
     }
     
     // Try to initialize web worker if supported
@@ -78,6 +88,21 @@ class StreamProcessor {
       console.warn('Failed to initialize streaming worker:', err);
     }
     
+    // Create a debug element to verify initialization
+    try {
+      const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
+      if (!debugElement) {
+        const debugDiv = document.createElement('div');
+        debugDiv.id = 'debug-information';
+        debugDiv.style.cssText = 'background: #f7f7f7; border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px;';
+        debugDiv.innerHTML = '<strong>Stream Processing Debug Info:</strong><br>Initialization successful';
+        document.body.appendChild(debugDiv);
+      }
+    } catch (err) {
+      console.error('Failed to create debug element:', err);
+    }
+    
+    console.log('🚀 StreamProcessor: Initialization complete');
     this.initialized = true;
     return true;
   }

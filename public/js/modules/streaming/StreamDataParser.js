@@ -14,6 +14,18 @@ class StreamDataParser {
    */
   constructor(decoder) {
     this.decoder = decoder || new TextDecoder();
+    console.log('🔍 StreamDataParser instance created with decoder:', !!this.decoder);
+  }
+  
+  /**
+   * Set the decoder to use for stream processing
+   * @param {TextDecoder} decoder - Text decoder to use
+   */
+  setDecoder(decoder) {
+    if (decoder) {
+      console.log('🔍 StreamDataParser: Setting decoder');
+      this.decoder = decoder;
+    }
   }
   
   /**
@@ -297,6 +309,6 @@ class StreamDataParser {
   }
 }
 
-// Create and export a singleton instance with TextDecoder
-const streamDataParser = new StreamDataParser(new TextDecoder());
+// Create and export a singleton instance
+const streamDataParser = new StreamDataParser();
 export default streamDataParser;

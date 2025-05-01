@@ -127,7 +127,47 @@ async function testModuleLoading() {
       }
     }
     
-    // Test each module with required methods
+    // Add special diagnostic test function for critical modules
+    const testCriticalModule = async (path, name, methods) => {
+      try {
+        console.log(`🧪🔍 SPECIAL TEST: Loading ${name} directly with import`);
+        const module = await import(path);
+        console.log(`🧪🔍 SPECIAL TEST: ${name} module loaded:`, module);
+        
+        if (module && module.default) {
+          console.log(`🧪🔍 SPECIAL TEST: ${name} default export:`, module.default);
+          console.log(`🧪🔍 SPECIAL TEST: ${name} methods:`, Object.keys(module.default));
+          
+          // Add a special result in the test UI
+          addTestResult(
+            `IMPORTANT! ${name} Export Type`,
+            true,
+            `Export type: ${typeof module.default} | Has methods: ${methods.map(m => `${m}: ${typeof module.default[m] === 'function'}`).join(', ')}`
+          );
+          
+          // Add to global window for easier debugging
+          window[`test_${name}`] = module.default;
+        } else {
+          console.error(`🧪🔍 SPECIAL TEST: ${name} has no default export!`);
+          addTestResult(
+            `IMPORTANT! ${name} Export Type`,
+            false,
+            `No default export found!`
+          );
+        }
+      } catch (err) {
+        console.error(`🧪🔍 SPECIAL TEST: Error testing ${name}:`, err);
+      }
+    };
+    
+    // Run special tests on critical modules first
+    await testCriticalModule('./modules/streaming/StreamProgressUI.js', 'StreamProgressUI', ['initialize', 'updateProgress', 'setStatusMessage']);
+    await testCriticalModule('./modules/streaming/StreamDataParser.js', 'StreamDataParser', ['processStream']);
+    await testCriticalModule('./modules/streaming/StreamResultsRenderer.js', 'StreamResultsRenderer', ['initializeUI', 'renderBatch']);
+    await testCriticalModule('./modules/streaming/StreamDebugger.js', 'StreamDebugger', ['initialize', 'logConnectionInfo']);
+    await testCriticalModule('./modules/streaming/StreamProcessor.js', 'StreamProcessor', ['initialize', 'processBundleIds', 'exportCsv']);
+    
+    // Regular tests
     await testModule('./modules/streaming/StreamProcessor.js', 'StreamProcessor', ['initialize', 'processBundleIds', 'exportCsv']);
     await testModule('./modules/streaming/StreamProgressUI.js', 'StreamProgressUI', ['initialize', 'updateProgress', 'setStatusMessage']);
     await testModule('./modules/streaming/StreamDataParser.js', 'StreamDataParser', ['processStream']);
