@@ -32,6 +32,18 @@ class ResultsManager {
         DOMUtils.showLoading('result', 'Processing...');
       }
       
+      // Initialize visual indicators
+      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+      if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
+        VisualIndicators.initialize({
+          totalItems: bundleIds.length,
+          containerSelector: resultElement,
+          showDetails: true,
+          animate: true
+        });
+        VisualIndicators.setStatusMessage('Starting extraction process...', 'info');
+      }
+      
       // Show debug info if in debug mode
       if (debugElement && AppState.debugMode) {
         debugElement.innerHTML = '<div class="debug-info"><h3>Debug Information</h3><p>Sending request to server...</p></div>';
@@ -41,6 +53,12 @@ class ResultsManager {
       // Store search terms in app state
       AppState.setSearchTerms(searchTerms);
       
+      // Update visual indicators before API call
+      if (VisualIndicators) {
+        VisualIndicators.updateProgress({processed: 0, total: bundleIds.length});
+        VisualIndicators.setStatusMessage('Sending request to server...', 'info');
+      }
+      
       // Call API with pagination parameters
       const response = await Api.extractDomains(
         bundleIds, 
@@ -48,6 +66,18 @@ class ResultsManager {
         1, // Start with page 1
         AppState.pageSize
       );
+      
+      // Update visual indicators after receiving response
+      if (VisualIndicators) {
+        VisualIndicators.updateProgress({
+          processed: response.totalProcessed || bundleIds.length,
+          success: response.successCount || 0,
+          errors: response.errorCount || 0,
+          withAppAds: response.results.filter(r => r.success && r.appAdsTxt?.exists).length,
+          total: bundleIds.length
+        });
+        VisualIndicators.setStatusMessage('Processing complete, rendering results...', 'success');
+      }
       
       // Store results in app state
       AppState.setResults(response.results, response.pagination);
@@ -74,6 +104,17 @@ class ResultsManager {
       // Display results
       this.displayResults(response);
       
+      // Complete visual indicators
+      if (VisualIndicators) {
+        VisualIndicators.complete({
+          processed: response.totalProcessed || bundleIds.length,
+          success: response.successCount || 0,
+          errors: response.errorCount || 0,
+          withAppAds: response.results.filter(r => r.success && r.appAdsTxt?.exists).length,
+          total: bundleIds.length
+        });
+      }
+      
       // Final completion notification
       const processingTime = Date.now() - startTime;
       const message = `Completed processing ${response.totalProcessed} bundle IDs (${response.errorCount} errors) in ${processingTime}ms`;
@@ -88,6 +129,16 @@ class ResultsManager {
       
       // Update result area with error
       DOMUtils.showError('result', errorMessage);
+      
+      // Show error in visual indicators
+      try {
+        const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+        if (VisualIndicators) {
+          VisualIndicators.showError(`Error: ${errorMessage}`);
+        }
+      } catch (indicatorError) {
+        console.warn('Failed to display error in visual indicators:', indicatorError);
+      }
       
       // Update debug info if in debug mode
       const debugElement = DOMUtils.getElement('debugInfo');
@@ -121,6 +172,19 @@ class ResultsManager {
       const searchTerms = AppState.searchTerms.length > 0 ? 
         AppState.searchTerms : DOMUtils.getSearchTerms();
       
+      // Initialize visual indicators for pagination
+      const resultElement = DOMUtils.getElement('result');
+      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+      if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
+        VisualIndicators.initialize({
+          totalItems: bundleIds.length,
+          containerSelector: resultElement,
+          showDetails: false,
+          animate: true
+        });
+        VisualIndicators.setStatusMessage(`Loading page ${page}...`, 'info');
+      }
+      
       // Fetch the specific page
       const response = await Api.extractDomains(
         bundleIds,
@@ -129,16 +193,43 @@ class ResultsManager {
         AppState.pageSize
       );
       
+      // Update visual indicators
+      if (VisualIndicators) {
+        VisualIndicators.updateProgress({
+          processed: AppState.pageSize, 
+          total: response.pagination?.totalItems || bundleIds.length
+        });
+        VisualIndicators.setStatusMessage(`Page ${page} loaded successfully`, 'success');
+      }
+      
       // Update app state with new results
       AppState.setResults(response.results, response.pagination);
       
       // Display the results
       this.displayResults(response);
       
+      // Complete visual indicators
+      if (VisualIndicators) {
+        VisualIndicators.complete({
+          processed: AppState.pageSize,
+          total: response.pagination?.totalItems || bundleIds.length
+        });
+      }
+      
     } catch (err) {
       console.error('Error loading page:', err);
       showNotification(`Error: ${err.message}`, 'error');
       DOMUtils.showError('result', err.message);
+      
+      // Show error in visual indicators
+      try {
+        const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
+        if (VisualIndicators) {
+          VisualIndicators.showError(`Error loading page: ${err.message}`);
+        }
+      } catch (indicatorError) {
+        console.warn('Failed to display error in visual indicators:', indicatorError);
+      }
     } finally {
       AppState.setProcessing(false);
     }
@@ -183,8 +274,20 @@ class ResultsManager {
     const tableHtml = TemplateEngine.generateResultsTable(data.results, searchTermsText);
     const paginationHtml = PaginationManager.renderPagination(data.pagination);
     
+    // Temporarily store any visual indicators that may exist
+    const visualIndicatorsContainer = resultElement.querySelector('.visual-indicators-container');
+    let visualIndicatorsElement = null;
+    if (visualIndicatorsContainer) {
+      visualIndicatorsElement = visualIndicatorsContainer.cloneNode(true);
+    }
+    
     // Update the DOM
     resultElement.innerHTML = '';
+    
+    // Re-add visual indicators if they existed
+    if (visualIndicatorsElement) {
+      resultElement.appendChild(visualIndicatorsElement);
+    }
     
     // Add summary
     const summaryElement = document.createElement('div');

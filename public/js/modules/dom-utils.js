@@ -156,7 +156,27 @@ class DOMUtils {
     const container = this.getElement(containerId);
     if (!container) return;
     
-    container.innerHTML = `<div class="loading">${this.escapeHtml(message)}</div>`;
+    // Preserve any visual indicators container if it exists
+    const visualIndicatorsContainer = container.querySelector('.visual-indicators-container');
+    
+    if (visualIndicatorsContainer) {
+      // Just add loading element after visual indicators
+      const loadingDiv = this.createElement('div', { className: 'loading' }, this.escapeHtml(message));
+      
+      // Clear everything except visual indicators
+      Array.from(container.children).forEach(child => {
+        if (!child.classList.contains('visual-indicators-container')) {
+          child.remove();
+        }
+      });
+      
+      // Add loading div
+      container.appendChild(loadingDiv);
+    } else {
+      // No visual indicators, proceed normally
+      container.innerHTML = `<div class="loading">${this.escapeHtml(message)}</div>`;
+    }
+    
     container.style.display = 'block';
   }
   
@@ -169,11 +189,32 @@ class DOMUtils {
     const container = this.getElement(containerId);
     if (!container) return;
     
-    container.innerHTML = `
-      <div class="error">
-        <strong>Error:</strong> ${this.escapeHtml(message)}
-      </div>
-    `;
+    // Preserve any visual indicators container if it exists
+    const visualIndicatorsContainer = container.querySelector('.visual-indicators-container');
+    
+    if (visualIndicatorsContainer) {
+      // Create error element
+      const errorDiv = this.createElement('div', { className: 'error' });
+      errorDiv.innerHTML = `<strong>Error:</strong> ${this.escapeHtml(message)}`;
+      
+      // Clear everything except visual indicators
+      Array.from(container.children).forEach(child => {
+        if (!child.classList.contains('visual-indicators-container')) {
+          child.remove();
+        }
+      });
+      
+      // Add error div
+      container.appendChild(errorDiv);
+    } else {
+      // No visual indicators, proceed normally
+      container.innerHTML = `
+        <div class="error">
+          <strong>Error:</strong> ${this.escapeHtml(message)}
+        </div>
+      `;
+    }
+    
     container.style.display = 'block';
   }
   
