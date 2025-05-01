@@ -228,15 +228,44 @@ class StreamingProcessor {
       // Prepare the DOM for streaming results
       this._initializeResultsUI(searchTerms.length > 0);
       
-      // Start streaming process
-      const response = await fetch('/api/stream/extract-multiple', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({ bundleIds, searchTerms })
-      });
+      // Add a cache-busting parameter to avoid cached responses
+      const timestamp = Date.now();
+      console.log(`Starting stream fetch with timestamp ${timestamp}`);
+      
+      // Create a debugging div to show raw stream data
+      const debugDiv = document.createElement('div');
+      debugDiv.id = 'stream-debug';
+      debugDiv.style.cssText = 'position: fixed; bottom: 10px; right: 10px; width: 300px; height: 200px; background: #f0f0f0; border: 1px solid #999; padding: 10px; overflow: auto; z-index: 9999; font-size: 10px;';
+      document.body.appendChild(debugDiv);
+      
+      // Start streaming process with a shorter timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+      
+      try {
+        const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Debug-Mode': 'true',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          },
+          body: JSON.stringify({ bundleIds, searchTerms }),
+          signal: controller.signal
+        });
+        
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
+        
+        // Update debug info
+        debugDiv.innerHTML = `
+          <strong>Connection established</strong><br>
+          Status: ${response.status}<br>
+          Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}<br>
+          <hr>
+        `;
+      
       
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
@@ -246,8 +275,18 @@ class StreamingProcessor {
         throw new Error('ReadableStream not supported in this browser');
       }
       
-      // Process the stream
-      await this._processResponseStream(response.body);
+      // Update debug info
+      debugDiv.innerHTML += 'Stream body available, starting to read...<br>';
+      
+      // Set up a special debug stream reader
+      this.debugDiv = debugDiv;
+      this.streamStartTime = Date.now();
+      
+      // Force UI update now that we have a stream
+      this._forceUpdateProgressUI();
+      
+      // Process the stream with debug mode
+      await this._processResponseStreamWithDebug(response.body);
       
       // Update the UI when complete
       this._finalizeUI();
@@ -255,14 +294,243 @@ class StreamingProcessor {
       return true;
     } catch (err) {
       console.error('Streaming error:', err);
+      
+      // Update debug div with error
+      if (this.debugDiv) {
+        this.debugDiv.innerHTML += `<strong style="color: red">ERROR: ${err.message}</strong><br>`;
+        this.debugDiv.innerHTML += `<pre>${err.stack}</pre>`;
+      }
+      
       showNotification(`Streaming error: ${err.message}`, 'error');
       DOMUtils.showError('result', err.message);
       return false;
+    } finally {
+      // Keep the debug div visible after error or completion
+      if (this.debugDiv) {
+        this.debugDiv.innerHTML += '<hr><strong>Stream processing complete or failed</strong>';
+      }
     }
   }
   
   /**
-   * Process response body as a stream
+   * Process response stream with debug information
+   * @param {ReadableStream} stream - Response body stream
+   */
+  async _processResponseStreamWithDebug(stream) {
+    // Get stream reader
+    const reader = stream.getReader();
+    let buffer = '';
+    let jsonStarted = false;
+    let resultArrayStarted = false;
+    let parseCount = 0;
+    let chunkCount = 0;
+    
+    // Set up heartbeat for progress indicators
+    let heartbeatInterval = setInterval(() => {
+      this._forceUpdateProgressUI();
+      
+      // Update debug div with heartbeat status
+      if (this.debugDiv) {
+        const runTime = Math.round((Date.now() - this.streamStartTime) / 1000);
+        this.debugDiv.innerHTML += `Heartbeat at ${runTime}s - Buffer size: ${buffer.length}<br>`;
+        // Auto-scroll to bottom
+        this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
+      }
+    }, 2000);
+    
+    try {
+      // Initialize progress indicators
+      this.stats.startTime = Date.now();
+      this._forceUpdateProgressUI();
+      
+      // Process the stream
+      while (true) {
+        try {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            if (this.debugDiv) {
+              this.debugDiv.innerHTML += '<strong>Stream complete (done=true)</strong><br>';
+            }
+            break;
+          }
+          
+          // Decode the chunk and add to buffer
+          const chunk = this.decoder.decode(value, { stream: true });
+          buffer += chunk;
+          chunkCount++;
+          
+          // Log chunk details
+          if (this.debugDiv) {
+            const displayChunk = chunk.length > 50 ? chunk.substring(0, 50) + '...' : chunk;
+            this.debugDiv.innerHTML += `Chunk #${chunkCount} (${value.length} bytes): ${displayChunk.replace(/</g, '&lt;')}<br>`;
+            this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
+          }
+          
+          // Process complete objects
+          const extractedResults = this._extractObjectsFromBuffer(buffer);
+          
+          if (extractedResults.objects.length > 0) {
+            buffer = extractedResults.remainingBuffer;
+            
+            // Process each extracted result
+            for (const resultObject of extractedResults.objects) {
+              this._processResult(resultObject);
+              parseCount++;
+            }
+            
+            if (this.debugDiv) {
+              this.debugDiv.innerHTML += `Processed ${extractedResults.objects.length} objects (total: ${parseCount})<br>`;
+              this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
+            }
+            
+            // Force update UI
+            this._forceUpdateProgressUI();
+          }
+        } catch (readError) {
+          if (this.debugDiv) {
+            this.debugDiv.innerHTML += `<span style="color:red">Error reading chunk: ${readError.message}</span><br>`;
+            this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
+          }
+          console.error('Error reading stream chunk:', readError);
+          // Continue trying to read in case of recoverable errors
+        }
+      }
+    } finally {
+      clearInterval(heartbeatInterval);
+      reader.releaseLock();
+      
+      // Update final status
+      if (this.debugDiv) {
+        const runTime = Math.round((Date.now() - this.streamStartTime) / 1000);
+        this.debugDiv.innerHTML += `<strong>Stream processing completed in ${runTime}s</strong><br>`;
+        this.debugDiv.innerHTML += `Total processed objects: ${parseCount}<br>`;
+        this.debugDiv.innerHTML += `Total chunks received: ${chunkCount}<br>`;
+        this.debugDiv.scrollTop = this.debugDiv.scrollHeight;
+      }
+      
+      // Force final UI update
+      this._forceUpdateProgressUI();
+    }
+  }
+  
+  /**
+   * Extract complete JSON objects from buffer
+   * @param {string} buffer - Current buffer content
+   * @returns {Object} Object containing extracted objects and remaining buffer
+   * @private
+   */
+  _extractObjectsFromBuffer(buffer) {
+    const objects = [];
+    let currentIndex = 0;
+    let objectStart = -1;
+    let objectDepth = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    // First locate where JSON array begins if not already identified
+    if (buffer.includes('{"success":') && buffer.includes('"results":[')) {
+      const resultsStart = buffer.indexOf('"results":[');
+      if (resultsStart !== -1) {
+        // Move current position to start of array data
+        currentIndex = resultsStart + 11; // Skip over "results":[
+      }
+    }
+    
+    // Process buffer character by character from current index
+    for (let i = currentIndex; i < buffer.length; i++) {
+      const char = buffer[i];
+      
+      // Handle escape characters
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+      
+      // Track string boundaries
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      // Skip if in string
+      if (inString) continue;
+      
+      // Handle comments in the stream (used as heartbeats)
+      if (char === '/' && i+1 < buffer.length && buffer[i+1] === '*') {
+        // Found start of comment, find the end
+        const commentEnd = buffer.indexOf('*/', i + 2);
+        if (commentEnd !== -1) {
+          i = commentEnd + 1; // Skip over comment
+          continue;
+        }
+      }
+      
+      // Track object nesting
+      if (char === '{') {
+        if (objectDepth === 0) {
+          objectStart = i;
+        }
+        objectDepth++;
+      } else if (char === '}') {
+        objectDepth--;
+        
+        if (objectDepth === 0 && objectStart !== -1) {
+          // We have a complete object
+          try {
+            const objectStr = buffer.substring(objectStart, i + 1);
+            const resultObject = JSON.parse(objectStr);
+            objects.push(resultObject);
+            
+            // Update object start for next object
+            objectStart = -1;
+            
+            // Skip comma if present
+            if (i + 1 < buffer.length && buffer[i + 1] === ',') {
+              i++;
+            }
+          } catch (parseErr) {
+            // Incomplete or invalid JSON, reset depth and continue
+            objectDepth = 0;
+            objectStart = -1;
+          }
+        }
+      }
+    }
+    
+    // If we've extracted any objects, return the remainder of the buffer
+    if (objects.length > 0 && objectStart === -1) {
+      // Find the next object start or comment
+      let nextStart = buffer.indexOf('{', currentIndex);
+      const nextComment = buffer.indexOf('/*', currentIndex);
+      
+      if (nextComment !== -1 && (nextStart === -1 || nextComment < nextStart)) {
+        nextStart = nextComment;
+      }
+      
+      // If we found a valid next point, return buffer from there
+      if (nextStart !== -1) {
+        return { 
+          objects, 
+          remainingBuffer: buffer.substring(nextStart)
+        };
+      }
+    }
+    
+    // Return objects and remaining buffer
+    return { 
+      objects, 
+      remainingBuffer: buffer
+    };
+  }
+  
+  /**
+   * Original process response body as a stream method (for reference)
    * @param {ReadableStream} stream - Response body stream
    */
   async _processResponseStream(stream) {

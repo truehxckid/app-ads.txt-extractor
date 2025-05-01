@@ -27,6 +27,10 @@ function initializeApp() {
   // Initialize Express app
   const app = express();
   
+  // Increase server timeout for streaming responses
+  app.set('keepAliveTimeout', 65000); // 65 seconds
+  app.set('headersTimeout', 66000); // 66 seconds (slightly more than keepAliveTimeout)
+  
   // Apply middleware
   app.use(helmet(helmetConfig));
   app.use(cors(corsConfig));

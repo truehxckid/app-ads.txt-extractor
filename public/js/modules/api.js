@@ -19,11 +19,20 @@ class ApiService {
    */
   async extractDomains(bundleIds, searchTerms = [], page = 1, pageSize = 20) {
     try {
-      const response = await fetch('/api/extract-multiple', {
+      // Increase fetch timeout with AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+      
+      // Add timestamp to avoid caching
+      const cacheBuster = Date.now();
+      
+      const response = await fetch(`/api/extract-multiple?_=${cacheBuster}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         body: JSON.stringify({ 
           bundleIds, 
@@ -31,8 +40,12 @@ class ApiService {
           page,
           pageSize,
           fullAnalysis: true
-        })
+        }),
+        signal: controller.signal
       });
+      
+      // Clear timeout as we got a response
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

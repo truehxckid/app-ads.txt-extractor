@@ -33,7 +33,9 @@ const helmetConfig = {
   hsts: {
     maxAge: 15552000, // 180 days in seconds
     includeSubDomains: true
-  }
+  },
+  // Allow frames to avoid X-Frame-Options error
+  frameguard: false
 };
 
 /**
@@ -55,9 +57,6 @@ const corsConfig = {
  * @param {function} next - Express next function
  */
 function securityMiddleware(req, res, next) {
-  // Set X-Frame-Options header
-  res.setHeader('X-Frame-Options', 'DENY');
-  
   // Set X-Content-Type-Options header
   res.setHeader('X-Content-Type-Options', 'nosniff');
   
@@ -65,6 +64,17 @@ function securityMiddleware(req, res, next) {
   res.setHeader('Permissions-Policy', 
     'camera=(), microphone=(), geolocation=(), interest-cohort=()'
   );
+  
+  // Allow long connections for streaming
+  if (req.path.includes('/stream/')) {
+    // Set timeout to 5 minutes for streaming endpoints
+    req.setTimeout(300000); // 5 minutes
+    
+    // Add CORS headers for streaming to avoid CORS errors
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
   
   next();
 }

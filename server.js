@@ -13,14 +13,24 @@ const { shutdown: shutdownAppAdsChecker } = require('./src/core/app-ads-checker'
 
 const logger = getLogger('server');
 
+// Configure server with longer timeouts for streaming
+const server = require('http').createServer(app);
+
+// Set longer timeouts for HTTP server
+server.timeout = 300000; // 5 minutes
+server.keepAliveTimeout = 65000; // 65 seconds
+server.headersTimeout = 66000; // Slightly longer than keepAliveTimeout
+
 // Start the server
-const server = app.listen(config.server.port, config.server.host, () => {
+server.listen(config.server.port, config.server.host, () => {
   logger.info({ 
     port: config.server.port, 
     host: config.server.host,
     environment: config.server.env,
-    nodeVersion: process.version
-  }, 'Server started');
+    nodeVersion: process.version,
+    timeout: server.timeout,
+    keepAliveTimeout: server.keepAliveTimeout
+  }, 'Server started with increased timeouts');
 });
 
 // Graceful shutdown

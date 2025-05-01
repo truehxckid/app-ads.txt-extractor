@@ -76,10 +76,24 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
     // Set appropriate headers for streaming
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
-    // Start the response with opening metadata
-    res.write('{"success":true,"results":[');
+    // Check if client requested debug mode
+    const debugMode = req.headers['x-debug-mode'] === 'true';
+    if (debugMode) {
+      res.setHeader('X-Debug-Enabled', 'true');
+    }
+    
+    // Start the response with opening metadata and include timestamp for debugging
+    res.write(`{"success":true,"timestamp":${Date.now()},"debugMode":${debugMode},"results":[`);
+    
+    // Send initial heartbeat to confirm connection is working
+    res.write(`\n/* Initial connection heartbeat: ${Date.now()} */\n`);
+    if (typeof res.flush === 'function') {
+      res.flush();
+    }
     
     // Process bundle IDs in small batches
     const BATCH_SIZE = 10;
@@ -95,37 +109,64 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
       const batchEnd = Math.min((batchIndex + 1) * BATCH_SIZE, validation.validIds.length);
       const batch = validation.validIds.slice(batchStart, batchEnd);
       
-      // Process batch concurrently
-      const batchPromises = batch.map(bundleId => (async () => {
-        try {
-          const result = await getDeveloperInfo(bundleId, validatedTerms);
-          processedCount++;
-          
-          if (result.success) {
-            successCount++;
-            if (result.appAdsTxt?.exists) {
-              withAppAdsTxtCount++;
-            }
-          } else {
-            errorCount++;
-          }
-          
-          return result;
-        } catch (err) {
-          processedCount++;
-          errorCount++;
-          
-          return { 
-            bundleId, 
-            success: false, 
-            error: err.message,
-            timestamp: Date.now()
-          };
+      // Send batch progress message as comment to keep connection alive
+      if (batchIndex > 0 || batch.length > 0) {
+        res.write(`\n/* Processing batch ${batchIndex + 1}/${totalBatches} at ${Date.now()} */\n`);
+        if (typeof res.flush === 'function') {
+          res.flush();
         }
-      })());
+      }
       
-      // Wait for all bundle IDs in batch to complete
-      const batchResults = await Promise.all(batchPromises);
+      // Process just a few items concurrently to avoid overloading
+      const MAX_CONCURRENT = Math.min(3, batch.length);
+      const results = [];
+      
+      // Process in smaller groups to maintain responsiveness
+      for (let i = 0; i < batch.length; i += MAX_CONCURRENT) {
+        const currentBatch = batch.slice(i, Math.min(i + MAX_CONCURRENT, batch.length));
+        
+        // Process this smaller batch
+        const batchPromises = currentBatch.map(bundleId => (async () => {
+          try {
+            const result = await getDeveloperInfo(bundleId, validatedTerms);
+            processedCount++;
+            
+            if (result.success) {
+              successCount++;
+              if (result.appAdsTxt?.exists) {
+                withAppAdsTxtCount++;
+              }
+            } else {
+              errorCount++;
+            }
+            
+            return result;
+          } catch (err) {
+            processedCount++;
+            errorCount++;
+            
+            return { 
+              bundleId, 
+              success: false, 
+              error: err.message,
+              timestamp: Date.now()
+            };
+          }
+        })());
+        
+        // Wait for current batch to complete
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+        
+        // Send progress heartbeat after each small batch
+        res.write(`\n/* Progress: ${processedCount}/${validation.validIds.length} at ${Date.now()} */\n`);
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
+      }
+      
+      // Use the results from our processed batches
+      const batchResults = results;
       
       // Stream each result immediately
       for (let i = 0; i < batchResults.length; i++) {
@@ -174,10 +215,16 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
       }
     }
     
+    // Send final heartbeat before closing
+    res.write(`\n/* Final heartbeat before closing: ${Date.now()} */\n`);
+    if (typeof res.flush === 'function') {
+      res.flush();
+    }
+    
     // Complete the response with closing metadata
     const processingTime = Date.now() - startTime;
     
-    res.write(`],"totalProcessed":${processedCount},"successCount":${successCount},"errorCount":${errorCount},"appsWithAppAdsTxt":${withAppAdsTxtCount},"processingTime":"${processingTime}ms"}`);
+    res.write(`],"totalProcessed":${processedCount},"successCount":${successCount},"errorCount":${errorCount},"appsWithAppAdsTxt":${withAppAdsTxtCount},"processingTime":"${processingTime}ms","endTimestamp":${Date.now()}}`);
     res.end();
     
     logger.info({
