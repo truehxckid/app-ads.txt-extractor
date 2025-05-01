@@ -249,26 +249,114 @@ class StreamingIntegration {
       if (useStreaming) {
         console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
         
-        // Show debug info element
-        const debugElement = DOMUtils.getElement('debugInfo');
+        // Create a global debug info element if it doesn't exist
+        let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');
+        
+        if (!debugElement) {
+          console.log('⚡⚡⚡ ENTRY POINT: Creating debug info element from scratch');
+          debugElement = document.createElement('div');
+          debugElement.id = 'debugInfo';
+          debugElement.className = 'debug-section';
+          debugElement.style.cssText = 'background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; overflow: auto; max-height: 300px; display: block;';
+          
+          // Add to the page - try to position it in a sensible location
+          const resultElement = document.getElementById('result');
+          if (resultElement && resultElement.parentNode) {
+            resultElement.parentNode.insertBefore(debugElement, resultElement.nextSibling);
+          } else {
+            // Fallback to container or body
+            const container = document.querySelector('.container') || document.body;
+            container.appendChild(debugElement);
+          }
+          
+          console.log('⚡⚡⚡ ENTRY POINT: Debug info element created successfully');
+        }
+        
+        // Update the debug element
         if (debugElement) {
-          debugElement.innerHTML = '<div class="debug-info"><strong>Debug Info:</strong><br>Starting streaming process...</div>';
+          console.log('⚡⚡⚡ ENTRY POINT: Updating debug element with initial information');
+          debugElement.innerHTML = `
+            <div class="debug-info">
+              <strong>Debug Info (${new Date().toLocaleTimeString()}):</strong><br>
+              Bundle IDs: ${bundleIds.length}<br>
+              Search Terms: ${searchTerms.length ? searchTerms.join(', ') : 'None'}<br>
+              Browser: ${navigator.userAgent}<br>
+              Network: ${navigator.onLine ? 'Online' : 'Offline'}<br>
+              Starting streaming process...
+            </div>
+          `;
           debugElement.style.display = 'block';
+        } else {
+          console.error('⚡⚡⚡ ENTRY POINT: Failed to create or find debug element');
         }
         
         try {
+          // First check that StreamingProcessor exists and is properly initialized
+          if (!StreamingProcessor) {
+            throw new Error('StreamingProcessor module is not loaded properly');
+          }
+          
+          if (typeof StreamingProcessor.processBundleIds !== 'function') {
+            throw new Error(`StreamingProcessor.processBundleIds is not a function. Type: ${typeof StreamingProcessor.processBundleIds}`);
+          }
+          
+          // Add debugging to debug element
+          const debugInfo = document.getElementById('debugInfo') || document.getElementById('debug-information');
+          if (debugInfo) {
+            debugInfo.innerHTML += `<br><br><strong>Function Check (${new Date().toLocaleTimeString()}):</strong><br>
+              StreamingProcessor loaded: ${!!StreamingProcessor}<br>
+              StreamingProcessor type: ${typeof StreamingProcessor}<br>
+              processBundleIds type: ${typeof StreamingProcessor.processBundleIds}<br>
+              Starting method call...
+            `;
+          }
+          
           // Process with streaming
           console.log('⚡⚡⚡ ENTRY POINT: Calling StreamingProcessor.processBundleIds');
+          console.log('⚡⚡⚡ ENTRY POINT: StreamingProcessor content:', StreamingProcessor);
+          console.log('⚡⚡⚡ ENTRY POINT: processBundleIds function:', StreamingProcessor.processBundleIds);
+          
           const success = await StreamingProcessor.processBundleIds(bundleIds, searchTerms);
           console.log('⚡⚡⚡ ENTRY POINT: Streaming process result:', success ? 'Success' : 'Failed');
+          
+          // Update debug element with result
+          if (debugInfo) {
+            debugInfo.innerHTML += `<br><br><strong>Process Result (${new Date().toLocaleTimeString()}):</strong><br>
+              Success: ${success}<br>
+              Processing complete
+            `;
+          }
         } catch (err) {
           console.error('⚡⚡⚡ ENTRY POINT: Streaming error, falling back to regular processing:', err);
+          
+          // Log detailed error information
+          console.error('⚡⚡⚡ ENTRY POINT: Error details:', {
+            name: err.name,
+            message: err.message,
+            stack: err.stack,
+            StreamingProcessor: StreamingProcessor ? 'Exists' : 'Missing',
+            processBundleIds: typeof StreamingProcessor?.processBundleIds
+          });
+          
+          // Update debug element with error
+          const debugInfo = document.getElementById('debugInfo') || document.getElementById('debug-information');
+          if (debugInfo) {
+            debugInfo.innerHTML += `<br><br><strong>Error (${new Date().toLocaleTimeString()}):</strong><br>
+              Error: ${err.message}<br>
+              Type: ${err.name}<br>
+              Stack: ${err.stack ? err.stack.split('\n').slice(0, 5).join('<br>') : 'No stack trace'}<br>
+              Falling back to regular processing...
+            `;
+          }
+          
           showNotification('Streaming error, falling back to regular processing', 'warning');
           
           // Fall back to original handler
           return originalHandler.call(EventHandler, event);
         } finally {
           AppState.setProcessing(false);
+          
+          console.log('⚡⚡⚡ ENTRY POINT: Processing completed, AppState.isProcessing set to false');
         }
       } else {
         // Use original handler for smaller datasets

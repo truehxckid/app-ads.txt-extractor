@@ -203,12 +203,35 @@ class StreamProcessor {
       console.log(`⚡ CRITICAL DEBUG: Starting stream fetch with timestamp ${timestamp}`);
       
       // Create debug info in the UI
-      document.getElementById('debug-information').innerHTML = `
-        <strong>Stream Processing Debug Info:</strong><br>
-        Current time: ${new Date().toLocaleTimeString()}<br>
-        Bundle IDs: ${bundleIds.length}<br>
-        Starting fetch request...
-      `;
+      const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
+      
+      // If debug element doesn't exist, create it
+      if (!debugElement) {
+        console.log('⚡ CRITICAL DEBUG: Creating debug information element');
+        const debugInfoElement = document.createElement('div');
+        debugInfoElement.id = 'debug-information';
+        debugInfoElement.style.cssText = 'background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; overflow: auto; max-height: 300px; display: block;';
+        
+        // Add to the page
+        const container = document.querySelector('.container') || document.body;
+        container.appendChild(debugInfoElement);
+        
+        console.log('⚡ CRITICAL DEBUG: Debug information element created');
+      }
+      
+      // Now get the element (should exist now) and update it
+      const debugInfoElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
+      if (debugInfoElement) {
+        debugInfoElement.innerHTML = `
+          <strong>Stream Processing Debug Info:</strong><br>
+          Current time: ${new Date().toLocaleTimeString()}<br>
+          Bundle IDs: ${bundleIds.length}<br>
+          Starting fetch request...
+        `;
+        debugInfoElement.style.display = 'block';
+      } else {
+        console.error('⚡ CRITICAL DEBUG: Failed to create or find debug information element');
+      }
       
       // Log some network state
       console.log('⚡ Network status:', navigator.onLine ? 'Online' : 'Offline');
@@ -228,7 +251,12 @@ class StreamProcessor {
       
       try {
         console.log('⚡ CRITICAL DEBUG: Sending fetch request...');
-        document.getElementById('debug-information').innerHTML += '<br>Sending fetch request...';
+        
+        // Update debug information
+        const debugInfo = document.getElementById('debug-information') || document.getElementById('debugInfo');
+        if (debugInfo) {
+            debugInfo.innerHTML += '<br>Sending fetch request...';
+        }
         
         const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
           method: 'POST',
