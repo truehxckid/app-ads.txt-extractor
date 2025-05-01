@@ -50,38 +50,13 @@ class StreamResultsRenderer {
     
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
-    // Create initial structure - PROGRESS MONITORING ONLY VERSION (NO REAL-TIME RESULTS)
+    // Create minimal structure with just the worker info banner - 
+    // Progress bars and stats are handled by the VisualIndicators module
     resultElement.innerHTML = `
-      <div class="results-summary">
-        <div class="summary-stats">
-          <span>Processing: <strong>0</strong></span>
-          <span class="success-count">Success: <strong>0</strong></span>
-          <span class="error-count">Errors: <strong>0</strong></span>
-          <span class="app-ads-count">With app-ads.txt: <strong>0</strong></span>
-        </div>
-        <div class="action-buttons">
-          <button class="download-btn" data-action="download-csv" disabled>Download Results</button>
-        </div>
-      </div>
-      
-      <!-- Enhanced progress display -->
-      <div id="stream-progress-indicator" class="progress-indicator" style="display: flex; margin: 15px 0; align-items: center;">
-        <div class="progress-bar" style="flex: 1; background: #f0f0f0; border-radius: 4px; height: 20px; overflow: hidden; margin-right: 10px;">
-          <div style="width: 0%; height: 100%; background: linear-gradient(90deg, #3498db, #2980b9); transition: width 0.3s ease;"></div>
-        </div>
-        <span class="progress-text" style="white-space: nowrap; font-weight: bold;">0% (0/${totalItems})</span>
-      </div>
-      
-      <!-- Enhanced debug panel -->
-      <div id="debug-information" class="debug-info" style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; font-family: monospace; font-size: 13px; white-space: pre-line;">
-        <strong>Stream Processing Debug Info:</strong>
-        Waiting for server connection...
-      </div>
-      
       <!-- Results preview notification -->
       <div class="streaming-info-banner worker-processing-indicator" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">
         <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
-        <p>Results will be available when processing is complete. You can monitor progress above.</p>
+        <p>Results will be available when processing is complete.</p>
         <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
         <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
       </div>
@@ -225,64 +200,11 @@ class StreamResultsRenderer {
   updateSummaryStats(stats) {
     if (!this.resultElement) return;
     
-    const summaryElement = this.resultElement.querySelector('.results-summary .summary-stats');
-    if (!summaryElement) return;
-    
-    // Update each stat element
-    const processedElement = summaryElement.querySelector('span:nth-child(1) strong');
-    const successElement = summaryElement.querySelector('.success-count strong');
-    const errorElement = summaryElement.querySelector('.error-count strong');
-    const appAdsElement = summaryElement.querySelector('.app-ads-count strong');
-    
-    if (processedElement) processedElement.textContent = stats.processed || 0;
-    if (successElement) successElement.textContent = stats.success || 0;
-    if (errorElement) errorElement.textContent = stats.errors || 0;
-    if (appAdsElement) appAdsElement.textContent = stats.withAppAds || 0;
-    
-    // Update progress visualization
-    this.updateProgressUI(stats);
-  }
-  
-  /**
-   * Update progress visualization in the UI
-   * @param {Object} stats - Statistics object containing processed and total counts
-   */
-  updateProgressUI(stats) {
-    if (!this.resultElement) return;
-    
-    // Update progress bar if available
-    const progressBar = this.resultElement.querySelector('#stream-progress-indicator .progress-bar div');
-    const progressText = this.resultElement.querySelector('#stream-progress-indicator .progress-text');
-    
-    if (progressBar && progressText && stats.total > 0) {
+    // Update worker processing indicator
+    const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator h3');
+    if (workerIndicator && stats.total > 0) {
       const percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
-      progressBar.style.width = `${percent}%`;
-      progressText.textContent = `${percent}% (${stats.processed}/${stats.total})`;
-      
-      // Update debug information
-      const debugInfo = this.resultElement.querySelector('#debug-information');
-      if (debugInfo) {
-        const currentTime = new Date().toLocaleTimeString();
-        const processingRate = stats.processed > 0 && stats.elapsedTime > 0 
-          ? (stats.processed / (stats.elapsedTime / 1000)).toFixed(2) 
-          : 'calculating...';
-          
-        debugInfo.innerHTML = `
-          <strong>Stream Processing Debug Info:</strong>
-          Time: ${currentTime}
-          Processed: ${stats.processed} / ${stats.total} (${percent}%)
-          Processing rate: ${processingRate} items/sec
-          Success: ${stats.success || 0}
-          Errors: ${stats.errors || 0}
-          Items with app-ads.txt: ${stats.withAppAds || 0}
-        `;
-      }
-      
-      // Update download button state when processing is complete
-      const downloadBtn = this.resultElement.querySelector('.download-btn');
-      if (downloadBtn && stats.processed === stats.total) {
-        downloadBtn.disabled = false;
-      }
+      workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${stats.processed} of ${stats.total})`;
     }
   }
 
@@ -443,74 +365,48 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   
   console.log('🔄 StreamResultsRenderer: Processing complete, updating UI with stats:', stats);
   
-  // Update the streaming banner
-  const banner = this.resultElement.querySelector('.streaming-info-banner');
-  if (banner) {
-    banner.innerHTML = `
-      <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
-      <p>All ${stats.total} bundle IDs have been processed successfully.</p>
-      <ul style="text-align: left; max-width: 400px; margin: 10px auto;">
-        <li><strong>Processed:</strong> ${stats.total}</li>
-        <li><strong>Success:</strong> ${stats.success}</li>
-        <li><strong>Errors:</strong> ${stats.errors}</li>
-        <li><strong>With app-ads.txt:</strong> ${stats.withAppAds}</li>
-        <li><strong>Processing Time:</strong> ${(stats.elapsedTime / 1000).toFixed(2)}s</li>
-      </ul>
-      <div class="action-buttons">
-        <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
-          Show Results
-        </button>
-      </div>
-    `;
-    
-    // Change the banner color to indicate success
-    banner.style.background = '#eafaf1';
-    banner.style.border = '1px solid #2ecc71';
-    
-    // Add event listener to the show results button
-    const showResultsBtn = banner.querySelector('[data-action="show-results"]');
-    if (showResultsBtn) {
-      showResultsBtn.addEventListener('click', function() {
-        // Dispatch an event to notify that the user wants to see the results
-        window.dispatchEvent(new CustomEvent('streaming-show-results', {
-          detail: { timestamp: Date.now() }
-        }));
-      });
-    }
-  }
+  // Create a new completion banner to replace the worker progress indicator
+  const completionBanner = document.createElement('div');
+  completionBanner.className = 'streaming-completion-banner';
+  completionBanner.style.cssText = 'margin: 20px 0; padding: 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
   
-  // Remove the worker processing indicator
-  const workerIndicator = document.querySelector('.worker-processing-indicator');
+  // Format time in a readable way
+  const timeInSeconds = stats.elapsedTime / 1000;
+  const timeDisplay = timeInSeconds >= 60 
+    ? `${(timeInSeconds / 60).toFixed(1)} minutes` 
+    : `${timeInSeconds.toFixed(1)} seconds`;
+    
+  completionBanner.innerHTML = `
+    <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
+    <p>All ${stats.total} bundle IDs have been processed in ${timeDisplay}.</p>
+    <div class="action-buttons">
+      <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        Show Results
+      </button>
+    </div>
+  `;
+  
+  // First hide the worker processing indicator
+  const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator');
   if (workerIndicator) {
-    workerIndicator.style.display = 'none';
+    // Replace it with the completion banner
+    workerIndicator.parentNode.replaceChild(completionBanner, workerIndicator);
+  } else {
+    // If for some reason we can't find it, just append the banner
+    this.resultElement.appendChild(completionBanner);
   }
   
-  // Update debug panel
-  const debugInfo = this.resultElement.querySelector('#debug-information');
-  if (debugInfo) {
-    const finishTime = new Date().toLocaleTimeString();
-    debugInfo.innerHTML = `
-      <strong>Stream Processing Complete ✅</strong>
-      Completed at: ${finishTime}
-      Total time: ${(stats.elapsedTime / 1000).toFixed(2)}s
-      Average rate: ${(stats.total / (stats.elapsedTime / 1000)).toFixed(2)} items/sec
-      Results: ${stats.success} successes, ${stats.errors} errors, ${stats.withAppAds} with app-ads.txt
-    `;
+  // Add event listener to the show results button
+  const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+  if (showResultsBtn) {
+    showResultsBtn.addEventListener('click', () => {
+      // Show the results immediately
+      this.showResults(window.AppState?.results || []);
+      
+      // Remove the banner after showing results
+      completionBanner.style.display = 'none';
+    });
   }
-  
-  // Ensure the download button is enabled
-  const downloadBtn = this.resultElement.querySelector('.download-btn');
-  if (downloadBtn) {
-    downloadBtn.disabled = false;
-  }
-  
-  // Notify that processing is complete through a custom event
-  window.dispatchEvent(new CustomEvent('streaming-processing-complete', {
-    detail: {
-      stats: stats,
-      timestamp: Date.now()
-    }
-  }));
 };
 
 export default streamResultsRenderer;
