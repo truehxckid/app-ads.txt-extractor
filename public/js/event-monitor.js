@@ -109,7 +109,38 @@
   // Add stream processing monitoring
   window.addEventListener('stream-processing-started', function(event) {
     console.log('EVENT MONITOR: Stream processing started:', event.detail);
+    
+    // Add a visual indicator on the page
+    const indicator = document.createElement('div');
+    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #dcffe4; border: 1px solid #28a745; color: #28a745; padding: 10px; border-radius: 4px; z-index: 9999; font-size: 14px; font-weight: bold;';
+    indicator.innerHTML = '🔄 STREAMING ACTIVE';
+    document.body.appendChild(indicator);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+      if (indicator.parentNode) {
+        indicator.parentNode.removeChild(indicator);
+      }
+    }, 3000);
   });
   
-  console.log('EVENT MONITOR: Monitoring initialized successfully with stream event listener');
+  // Add regular API monitoring
+  window.addEventListener('regular-api-called', function(event) {
+    console.log('EVENT MONITOR: Regular API called:', event.detail);
+    
+    // Add a visual indicator on the page
+    const indicator = document.createElement('div');
+    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #fff2dc; border: 1px solid #f0ad4e; color: #f0ad4e; padding: 10px; border-radius: 4px; z-index: 9999; font-size: 14px; font-weight: bold;';
+    indicator.innerHTML = '⚠️ REGULAR API CALLED (NOT STREAMING)';
+    document.body.appendChild(indicator);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+      if (indicator.parentNode) {
+        indicator.parentNode.removeChild(indicator);
+      }
+    }, 3000);
+  });
+  
+  console.log('EVENT MONITOR: Monitoring initialized successfully with all event listeners');
 })();

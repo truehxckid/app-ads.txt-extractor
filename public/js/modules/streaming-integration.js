@@ -216,12 +216,19 @@ class StreamingIntegration {
    * Patch the extract button click handler
    */
   _patchExtractHandler() {
+    // Completely replace the original handler instead of wrapping it
     const originalHandler = EventHandler.handleExtractButtonClick;
     
+    // Store reference to the original handler for use in the new handler
+    this._originalExtractHandler = originalHandler;
+    
+    // Completely replace the extract button click handler
     EventHandler.handleExtractButtonClick = async (event) => {
       // Prevent default and prevent double submission
       event.preventDefault();
       if (AppState.isProcessing) return;
+      
+      console.log('⚡⚡⚡ COMPLETELY REPLACED HANDLER: Extract button clicked');
       
       // Get bundle IDs
       const bundleIdsElement = DOMUtils.getElement('bundleIds');
@@ -249,7 +256,20 @@ class StreamingIntegration {
       if (useStreaming) {
         console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
         console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
-        console.log('⚡⚡⚡ ENTRY POINT: BYPASSING ORIGINAL HANDLER TO AVOID DOUBLE REQUEST');
+        console.log('⚡⚡⚡ ENTRY POINT: COMPLETELY BYPASSING ORIGINAL HANDLER');
+        
+        // Create direct DOM manipulation to show what's happening
+        const streamingDebugHelper = document.createElement('div');
+        streamingDebugHelper.style.cssText = 'position: fixed; bottom: 40px; left: 10px; background: #f1f8ff; border: 1px solid #0366d6; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
+        streamingDebugHelper.innerHTML = 'Using <strong>STREAMING</strong> endpoint (/api/stream/...)';
+        document.body.appendChild(streamingDebugHelper);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+          if (streamingDebugHelper.parentNode) {
+            streamingDebugHelper.parentNode.removeChild(streamingDebugHelper);
+          }
+        }, 5000);
         
         // Create a global debug info element if it doesn't exist
         let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');
@@ -280,6 +300,7 @@ class StreamingIntegration {
           debugElement.innerHTML = `
             <div class="debug-info">
               <strong>Debug Info (${new Date().toLocaleTimeString()}):</strong><br>
+              <strong style="color: blue;">STREAMING MODE ACTIVE - USING /api/stream/extract-multiple</strong><br>
               Bundle IDs: ${bundleIds.length}<br>
               Search Terms: ${searchTerms.length ? searchTerms.join(', ') : 'None'}<br>
               Browser: ${navigator.userAgent}<br>
@@ -369,7 +390,22 @@ class StreamingIntegration {
       } else {
         // Use original handler for smaller datasets
         console.log('⚡⚡⚡ ENTRY POINT: Using regular (non-streaming) processing for smaller dataset:', bundleIds.length);
-        return originalHandler.call(EventHandler, event);
+        
+        // Create direct DOM manipulation to show what's happening
+        const regularDebugHelper = document.createElement('div');
+        regularDebugHelper.style.cssText = 'position: fixed; bottom: 40px; left: 10px; background: #fff8f1; border: 1px solid #e36209; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
+        regularDebugHelper.innerHTML = 'Using <strong>REGULAR</strong> endpoint (/api/extract-multiple)';
+        document.body.appendChild(regularDebugHelper);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+          if (regularDebugHelper.parentNode) {
+            regularDebugHelper.parentNode.removeChild(regularDebugHelper);
+          }
+        }, 5000);
+        
+        // Call original handler through our stored reference
+        return this._originalExtractHandler.call(EventHandler, event);
       }
     };
     

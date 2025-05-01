@@ -26,6 +26,15 @@ class ApiService {
       // Add timestamp to avoid caching
       const cacheBuster = Date.now();
       
+      console.log('📢 API.extractDomains: Using NON-STREAMING endpoint - if you see this when streaming is enabled, there is a bug!');
+      
+      // SPECIAL INDICATOR TO SHOW THIS ENDPOINT WAS USED
+      if (window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('regular-api-called', {
+          detail: { timestamp: Date.now(), endpoint: '/api/extract-multiple' }
+        }));
+      }
+      
       const response = await fetch(`/api/extract-multiple?_=${cacheBuster}`, {
         method: 'POST',
         headers: {
