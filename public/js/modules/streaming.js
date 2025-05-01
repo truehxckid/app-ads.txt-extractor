@@ -323,6 +323,7 @@ class StreamingProcessor {
     DOMUtils.showError('result', `Main thread streaming error: ${err.message}`);
     return false;
   }
+  }
   
   /**
    * Process response stream with debug information
