@@ -77,15 +77,26 @@ class StreamProcessor {
     // Try to initialize web worker if supported
     try {
       if (window.Worker) {
+        console.log('⚡ StreamProcessor: Web Workers are supported, initializing worker');
         this.worker = new Worker('/js/workers/stream-worker.js');
         
         // Set up event listener for worker messages
         this.worker.onmessage = (e) => {
+          console.log('⚡ StreamProcessor: Received worker message:', e.data.type);
           this._handleWorkerMessage(e.data);
         };
+        
+        // Add error handler for worker errors
+        this.worker.onerror = (error) => {
+          console.error('⚡ StreamProcessor: Worker error:', error);
+        };
+        
+        console.log('⚡ StreamProcessor: Worker initialized successfully');
+      } else {
+        console.warn('⚡ StreamProcessor: Web Workers not supported by browser');
       }
     } catch (err) {
-      console.warn('Failed to initialize streaming worker:', err);
+      console.error('⚡ StreamProcessor: Failed to initialize streaming worker:', err);
     }
     
     // Create a debug element to verify initialization
@@ -187,11 +198,49 @@ class StreamProcessor {
     }
     
     try {
+      // Force attempt to create a worker if not already initialized
+      if (!this.worker && window.Worker) {
+        try {
+          console.log('⚡ StreamProcessor: Late initialization of Web Worker');
+          this.worker = new Worker('/js/workers/stream-worker.js');
+          
+          // Set up event listener for worker messages
+          this.worker.onmessage = (e) => {
+            console.log('⚡ StreamProcessor: Received worker message:', e.data.type);
+            this._handleWorkerMessage(e.data);
+          };
+          
+          // Add error handler for worker errors
+          this.worker.onerror = (error) => {
+            console.error('⚡ StreamProcessor: Worker error:', error);
+            // Fall back to main thread if worker errors during setup
+            this.worker = null;
+          };
+        } catch (workerError) {
+          console.error('⚡ StreamProcessor: Late worker initialization failed:', workerError);
+          this.worker = null;
+        }
+      }
+      
       // If worker is available and initialized, use it
       if (this.worker) {
-        console.log('Using Web Worker for streaming processing');
-        this.progressUI.setStatusMessage('Processing with Web Worker...', 'info');
+        console.log('⚡ StreamProcessor: Using Web Worker for streaming processing');
+        this.progressUI.setStatusMessage('Processing with Web Worker (faster)...', 'info');
         
+        // Create visual indicator that worker is being used
+        const workerIndicator = document.createElement('div');
+        workerIndicator.style.cssText = 'position: fixed; bottom: 10px; left: 10px; background: #dcffe4; border: 1px solid #28a745; color: #28a745; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
+        workerIndicator.innerHTML = '⚙️ Using Web Worker';
+        document.body.appendChild(workerIndicator);
+        
+        // Remove indicator after 5 seconds
+        setTimeout(() => {
+          if (workerIndicator.parentNode) {
+            workerIndicator.parentNode.removeChild(workerIndicator);
+          }
+        }, 5000);
+        
+        // Send message to worker
         this.worker.postMessage({
           type: 'processBundleIds',
           bundleIds,
@@ -199,12 +248,33 @@ class StreamProcessor {
           totalBundleIds: bundleIds.length
         });
         
+        // Update debug information with worker status
+        const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
+        if (debugElement) {
+          debugElement.innerHTML += `<br><strong style="color: green;">Using Web Worker for processing! (faster parallel processing)</strong>`;
+        }
+        
         // Worker handles the UI updates, so we just return
         return true;
       }
       
       // If no worker, process with main thread
-      this.progressUI.setStatusMessage('Processing on main thread...', 'info');
+      console.warn('⚡ StreamProcessor: No worker available, falling back to main thread processing');
+      this.progressUI.setStatusMessage('Processing on main thread (slower)...', 'info');
+      
+      // Create visual indicator that main thread is being used
+      const mainThreadIndicator = document.createElement('div');
+      mainThreadIndicator.style.cssText = 'position: fixed; bottom: 10px; left: 10px; background: #fff3cd; border: 1px solid #ffc107; color: #664d03; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
+      mainThreadIndicator.innerHTML = '⚠️ Using Main Thread (slower)';
+      document.body.appendChild(mainThreadIndicator);
+      
+      // Remove indicator after 5 seconds
+      setTimeout(() => {
+        if (mainThreadIndicator.parentNode) {
+          mainThreadIndicator.parentNode.removeChild(mainThreadIndicator);
+        }
+      }, 5000);
+      
       return await this._processBundleIdsMainThread(bundleIds, searchTerms);
     } catch (err) {
       console.error('Error starting streaming process:', err);
@@ -570,11 +640,19 @@ class StreamProcessor {
    * @private
    */
   _handleWorkerMessage(message) {
+    console.log('⚡ StreamProcessor: Handling worker message:', message.type);
     const { type, data } = message;
     
     switch (type) {
       case 'initialize':
-        this.resultsRenderer.initializeUI(null, data.totalBundleIds, data.hasSearchTerms);
+        console.log('⚡ StreamProcessor: Worker initialize message received');
+        // Initialize UI if needed
+        if (!document.getElementById('results-tbody')) {
+          console.log('⚡ StreamProcessor: Initializing UI from worker message');
+          this.resultsRenderer.initializeUI(null, data.totalBundleIds || this.stats.totalBundleIds, data.hasSearchTerms || false);
+        } else {
+          console.log('⚡ StreamProcessor: UI already initialized, skipping');
+        }
         break;
         
       case 'progress':
@@ -587,6 +665,11 @@ class StreamProcessor {
         // Update progress UI
         this.progressUI.updateProgress(this.stats);
         
+        // Also update the results summary in StreamResultsRenderer
+        if (this.resultsRenderer && typeof this.resultsRenderer.updateSummaryStats === 'function') {
+          this.resultsRenderer.updateSummaryStats(this.stats);
+        }
+        
         // Update status message periodically
         if (this.stats.processedCount % 10 === 0) {
           const percent = this.stats.totalBundleIds > 0 
@@ -594,7 +677,7 @@ class StreamProcessor {
             : 0;
           
           this.progressUI.setStatusMessage(
-            `Worker processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
+            `⚙️ Worker processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
             'info'
           );
         }
@@ -603,13 +686,32 @@ class StreamProcessor {
       case 'result':
         // Process individual result
         if (data.result) {
-          this._processResult(data.result);
+          console.log('⚡ Worker result received:', data.result.bundleId);
+          
+          // Add directly to results array - bypassing buffer since worker has its own batching
+          this.results.push(data.result);
+          
+          // Use special direct render method for worker results
+          // to avoid double-counting stats
+          if (this.resultsRenderer) {
+            this.resultsRenderer.renderBatch([data.result], this.searchTerms);
+          }
         }
         break;
         
       case 'complete':
-        // Store final results
-        this.results = data.results || this.results;
+        console.log('⚡ StreamProcessor: Worker complete message received', {
+          processedCount: data.processedCount,
+          successCount: data.successCount, 
+          errorCount: data.errorCount,
+          withAppAdsTxtCount: data.withAppAdsTxtCount
+        });
+        
+        // Store final results if provided
+        if (data.results && Array.isArray(data.results)) {
+          console.log('⚡ StreamProcessor: Storing final results array from worker');
+          this.results = data.results;
+        }
         
         // Update final stats
         this.stats.processedCount = data.processedCount || this.stats.processedCount;
@@ -619,13 +721,38 @@ class StreamProcessor {
         
         // Finalize UI
         this._finalizeUI();
+        
+        // Create completion indicator
+        const completeIndicator = document.createElement('div');
+        completeIndicator.style.cssText = 'position: fixed; bottom: 10px; left: 10px; background: #dcffe4; border: 1px solid #28a745; color: #28a745; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
+        completeIndicator.innerHTML = '✅ Worker processing complete!';
+        document.body.appendChild(completeIndicator);
+        
+        // Remove indicator after 5 seconds
+        setTimeout(() => {
+          if (completeIndicator.parentNode) {
+            completeIndicator.parentNode.removeChild(completeIndicator);
+          }
+        }, 5000);
+        
         break;
         
       case 'error':
-        console.error('Worker error:', data.message);
+        console.error('⚡ Worker error:', data.message);
         showNotification(`Worker error: ${data.message}`, 'error');
         this.progressUI.showError(`Worker error: ${data.message}`);
+        
+        // Try to fall back to main thread if worker fails
+        try {
+          console.warn('⚡ StreamProcessor: Worker failed, trying to fall back to main thread');
+          this._processBundleIdsMainThread(this.stats.bundleIds || [], this.searchTerms || []);
+        } catch (fallbackError) {
+          console.error('⚡ StreamProcessor: Fallback to main thread also failed:', fallbackError);
+        }
         break;
+        
+      default:
+        console.warn('⚡ StreamProcessor: Unknown worker message type:', type);
     }
   }
   
