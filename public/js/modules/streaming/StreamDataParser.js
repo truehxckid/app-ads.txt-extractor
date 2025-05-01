@@ -38,6 +38,8 @@ class StreamDataParser {
    */
   async processStream(stream, resultCallback, debuggerInstance, progressUI) {
     console.log('🌊 StreamDataParser.processStream: Starting stream processing');
+    console.log('🌊 CRITICAL CHECK: Stream exists:', !!stream);
+    console.log('🌊 CRITICAL CHECK: Stream is readable:', !!stream.getReader);
     
     // Get stream reader
     const reader = stream.getReader();
@@ -45,6 +47,19 @@ class StreamDataParser {
     let parseCount = 0;
     let chunkCount = 0;
     const streamStartTime = Date.now();
+    
+    // Add debug event
+    try {
+      // Add an event to the monitor to help debug
+      if (window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('stream-processing-started', {
+          detail: { streamStartTime, timestamp: Date.now() }
+        }));
+        console.log('🌊 STREAM EVENT: Dispatched stream-processing-started event');
+      }
+    } catch (e) {
+      console.error('Error dispatching stream event:', e);
+    }
     
     // Set up heartbeat for progress updates
     let heartbeatInterval = setInterval(() => {

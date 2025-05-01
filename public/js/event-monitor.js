@@ -106,5 +106,10 @@
     };
   }
   
-  console.log('EVENT MONITOR: Monitoring initialized successfully');
+  // Add stream processing monitoring
+  window.addEventListener('stream-processing-started', function(event) {
+    console.log('EVENT MONITOR: Stream processing started:', event.detail);
+  });
+  
+  console.log('EVENT MONITOR: Monitoring initialized successfully with stream event listener');
 })();

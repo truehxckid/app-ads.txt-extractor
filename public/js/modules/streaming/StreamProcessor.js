@@ -283,6 +283,9 @@ class StreamProcessor {
             debugInfo.innerHTML += '<br>Sending fetch request...';
         }
         
+        console.log('⚡ CRITICAL DEBUG: Using streaming API endpoint with nocache:', timestamp);
+        
+        // Use the streaming endpoint - this is critical!
         const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
           method: 'POST',
           headers: {

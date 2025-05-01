@@ -248,6 +248,7 @@ class StreamingIntegration {
       
       if (useStreaming) {
         console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
+        console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
         
         // Create a global debug info element if it doesn't exist
         let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');
