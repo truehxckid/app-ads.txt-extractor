@@ -36,9 +36,34 @@ function initApp() {
     
     // Initialize visual indicators (explicitly)
     if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
-      console.info('Initializing visual indicators...');
-      // Create a test indicator if needed
-      // VisualIndicators.initialize({ totalItems: 100, containerSelector: '#result' });
+      console.info('Initializing visual indicators module...');
+      
+      // Expose globally for debugging and direct access
+      window.VisualIndicatorsAPI = VisualIndicators;
+      
+      // Force load CSS if not already loaded
+      const cssLinkExists = document.querySelector('link[href*="visual-indicators.css"]');
+      if (!cssLinkExists) {
+        console.warn('Visual indicators CSS link not found, adding dynamically');
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/js/utils/visual-indicators.css';
+        document.head.appendChild(link);
+      }
+      
+      // Create a keyframe for fallback animation
+      const keyframes = document.createElement('style');
+      keyframes.textContent = `
+        @keyframes pulse {
+          0% { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+          100% { box-shadow: 0 0 12px rgba(52, 152, 219, 0.5); }
+        }
+        @keyframes dataFlow {
+          0% { left: -30px; }
+          100% { left: 100%; }
+        }
+      `;
+      document.head.appendChild(keyframes);
     }
     
     // Add global error handling

@@ -40,6 +40,76 @@ class StreamingProcessor {
     this.renderThrottleTime = 200; // ms between renders
     this.isRendering = false;
     this.animationFrameId = null;
+    
+    // References for fallback indicators
+    this.fallbackIndicator = null;
+    this.fallbackProgressBar = null;
+    this.fallbackStatusText = null;
+  }
+  
+  /**
+   * Create a fallback indicator if the main one fails
+   * @param {HTMLElement} container - Container element
+   * @param {number} totalItems - Total items to process
+   * @private
+   */
+  _createFallbackIndicator(container, totalItems) {
+    if (!container) return;
+    
+    // Create indicator container
+    const indicator = document.createElement('div');
+    indicator.className = 'fallback-indicator';
+    indicator.style.cssText = 'margin-bottom: 20px; padding: 15px; border-radius: 8px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid #e0e0e0;';
+    
+    // Create content
+    indicator.innerHTML = `
+      <div style="margin-bottom: 10px; font-weight: bold;">Processing ${totalItems} bundle IDs</div>
+      <div style="height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden; margin-bottom: 10px;">
+        <div class="fallback-progress-bar" style="height: 100%; width: 10%; background: linear-gradient(90deg, #3498db, #2980b9); transition: width 0.5s ease;"></div>
+      </div>
+      <div class="fallback-status-text">Starting process...</div>
+    `;
+    
+    // Insert at the beginning of the container
+    container.insertBefore(indicator, container.firstChild);
+    
+    // Store references
+    this.fallbackIndicator = indicator;
+    this.fallbackProgressBar = indicator.querySelector('.fallback-progress-bar');
+    this.fallbackStatusText = indicator.querySelector('.fallback-status-text');
+    
+    console.log('Fallback indicator created');
+  }
+  
+  /**
+   * Update the fallback indicator
+   * @param {Object} stats - Current processing statistics
+   * @private
+   */
+  _updateFallbackIndicator(stats) {
+    if (!this.fallbackProgressBar || !this.fallbackStatusText) return;
+    
+    // Calculate percentage
+    let percent = 0;
+    if (stats.total > 0) {
+      percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
+    } else {
+      // If total unknown, use a time-based estimate (max 95%)
+      const elapsed = Date.now() - stats.startTime;
+      percent = Math.min(95, Math.round((elapsed / 60000) * 100));
+    }
+    
+    // Update progress bar
+    this.fallbackProgressBar.style.width = `${percent}%`;
+    
+    // Update status text
+    this.fallbackStatusText.textContent = `Processing... ${percent}% complete (${stats.processed} of ${stats.total})`;
+    
+    // Add completion class if done
+    if (percent >= 100) {
+      this.fallbackIndicator.style.borderColor = '#27ae60';
+      this.fallbackStatusText.textContent = 'Processing complete!';
+    }
   }
   
   /**
@@ -97,16 +167,27 @@ class StreamingProcessor {
     const resultElement = DOMUtils.getElement('result');
     if (!resultElement) return false;
     
-    // Initialize visual indicators
-    VisualIndicators.initialize({
+    // Make sure the result section is visible
+    if (resultElement) {
+      resultElement.style.display = 'block';
+    }
+    
+    // Initialize visual indicators with direct DOM element and fallback
+    const initSuccess = VisualIndicators.initialize({
       totalItems: bundleIds.length,
-      containerSelector: resultElement,
+      containerSelector: resultElement || document.getElementById('result'),
       showDetails: true,
       animate: true
     });
     
-    // Set initial status message
-    VisualIndicators.setStatusMessage('Starting streaming process...', 'info');
+    if (!initSuccess) {
+      console.error('Failed to initialize visual indicators, creating direct fallback');
+      // Create a direct fallback if initialization fails
+      this._createFallbackIndicator(resultElement || document.getElementById('result'), bundleIds.length);
+    } else {
+      // Set initial status message
+      VisualIndicators.setStatusMessage('Starting streaming process...', 'info');
+    }
     
     try {
       // If worker is available and initialized, use it
@@ -325,14 +406,24 @@ class StreamingProcessor {
     // Add to buffer for progressive rendering
     this.resultBuffer.push(result);
     
-    // Update visual indicators
-    VisualIndicators.updateProgress({
+    // Create stats object for updates
+    const statUpdate = {
       processed: this.stats.processedCount,
       success: this.stats.successCount,
       errors: this.stats.errorCount,
       withAppAds: this.stats.withAppAdsTxtCount,
-      total: this.stats.totalBundleIds
-    });
+      total: this.stats.totalBundleIds,
+      startTime: this.stats.startTime
+    };
+    
+    // Update visual indicators with error handling
+    try {
+      VisualIndicators.updateProgress(statUpdate);
+    } catch (e) {
+      console.warn('Error updating visual indicators:', e);
+      // Update fallback indicator instead
+      this._updateFallbackIndicator(statUpdate);
+    }
     
     // Update status message periodically
     if (this.stats.processedCount % 10 === 0) {
@@ -340,10 +431,14 @@ class StreamingProcessor {
         ? Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100)
         : 0;
       
-      VisualIndicators.setStatusMessage(
-        `Processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
-        'info'
-      );
+      try {
+        VisualIndicators.setStatusMessage(
+          `Processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
+          'info'
+        );
+      } catch (e) {
+        console.warn('Error updating status message:', e);
+      }
     }
     
     // Schedule rendering if not already in progress

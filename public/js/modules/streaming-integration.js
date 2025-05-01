@@ -93,6 +93,40 @@ class StreamingIntegration {
         
         if (this.streamingEnabled) {
           showNotification('Streaming mode enabled for large datasets', 'info');
+          
+          // Force initialize the streaming processor for immediate feedback
+          try {
+            // Initialize visual indicators if they exist
+            if (typeof VisualIndicators !== 'undefined' && 
+                typeof VisualIndicators.initialize === 'function') {
+              const resultContainer = document.getElementById('result');
+              if (resultContainer) {
+                resultContainer.style.display = 'block';
+                StreamingProcessor.initialize();
+                
+                // Show a temporary indicator to confirm it's working
+                VisualIndicators.initialize({
+                  totalItems: 100,
+                  containerSelector: resultContainer,
+                  showDetails: false,
+                  animate: true
+                });
+                
+                VisualIndicators.setStatusMessage('Streaming mode activated', 'success');
+                VisualIndicators.updateProgress({processed: 100, total: 100});
+                
+                // Remove after 3 seconds
+                setTimeout(() => {
+                  VisualIndicators.clearIndicators();
+                  if (resultContainer.children.length === 0) {
+                    resultContainer.style.display = 'none'; 
+                  }
+                }, 3000);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to initialize visual indicators:', e);
+          }
         } else {
           showNotification('Streaming mode disabled', 'info');
         }

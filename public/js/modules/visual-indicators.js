@@ -28,7 +28,7 @@ class VisualIndicators {
    * Initialize visual indicators for processing
    * @param {Object} options - Configuration options
    * @param {number} options.totalItems - Total items to process
-   * @param {string} options.containerSelector - CSS selector for the container
+   * @param {string|HTMLElement} options.containerSelector - CSS selector or element for the container
    * @param {boolean} options.showDetails - Whether to show detailed stats
    * @param {boolean} options.animate - Whether to use animations
    */
@@ -51,11 +51,26 @@ class VisualIndicators {
     };
     
     // Get or create container
-    const container = typeof containerSelector === 'string' 
-      ? document.querySelector(containerSelector)
-      : containerSelector;
+    let container;
+    if (typeof containerSelector === 'string') {
+      container = document.querySelector(containerSelector);
+    } else if (containerSelector instanceof HTMLElement) {
+      container = containerSelector;
+    }
     
-    if (!container) return false;
+    // If container is still not found, try to get by ID
+    if (!container) {
+      console.warn('Container not found using selector, trying to get by ID: result');
+      container = document.getElementById('result');
+      
+      if (!container) {
+        console.error('Container not found, visual indicators will not be displayed');
+        return false;
+      }
+    }
+    
+    // Make sure container is visible
+    container.style.display = 'block';
     
     // Clear previous indicators
     this.clearIndicators();
@@ -65,6 +80,9 @@ class VisualIndicators {
       className: 'visual-indicators-container'
     });
     
+    // Add custom inline styles as fallback for CSS file
+    indicatorContainer.style.cssText = 'background: var(--bg-card, white); border: 1px solid var(--border, #e0e0e0); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: all 0.3s ease;';
+    
     // Create progress bar
     const progressBar = this._createProgressBar();
     indicatorContainer.appendChild(progressBar);
@@ -73,6 +91,10 @@ class VisualIndicators {
     const statusMessage = DOMUtils.createElement('div', {
       className: 'status-message'
     }, 'Starting...');
+    
+    // Add fallback inline styles
+    statusMessage.style.cssText = 'font-size: 14px; margin-bottom: 1rem; padding: 0.5rem; border-radius: 4px; text-align: center; font-weight: 500; background: rgba(52, 152, 219, 0.1); color: #3498db;';
+    
     indicatorContainer.appendChild(statusMessage);
     
     // Store reference to status message
@@ -93,8 +115,11 @@ class VisualIndicators {
     // Add pulsing effect if animate is true
     if (animate) {
       indicatorContainer.classList.add('animated');
+      // Add fallback animation
+      indicatorContainer.style.animation = 'pulse 1.5s infinite alternate';
     }
     
+    console.log('Visual indicators initialized successfully');
     return true;
   }
   
@@ -106,25 +131,35 @@ class VisualIndicators {
     const barContainer = DOMUtils.createElement('div', {
       className: 'progress-bar-container'
     });
+    // Add fallback inline styles
+    barContainer.style.cssText = 'display: flex; align-items: center; margin-bottom: 1rem;';
     
     const barWrapper = DOMUtils.createElement('div', {
       className: 'progress-bar-wrapper'
     });
+    // Add fallback inline styles
+    barWrapper.style.cssText = 'flex: 1; height: 12px; background-color: #f0f0f0; border-radius: 6px; overflow: hidden; margin-right: 1rem; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);';
     
     const bar = DOMUtils.createElement('div', {
       className: 'progress-bar'
     });
+    // Add fallback inline styles
+    bar.style.cssText = 'height: 100%; width: 0%; background: linear-gradient(90deg, #3498db 0%, #2980b9 100%); border-radius: 6px; transition: width 0.3s ease; position: relative; overflow: hidden;';
     
     // Create data visualizer stripes inside the bar
     const dataStripes = DOMUtils.createElement('div', {
       className: 'data-stripes'
     });
+    // Add fallback inline styles
+    dataStripes.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden;';
     
     // Add stripes to represent data chunks
     for (let i = 0; i < 4; i++) {
       const stripe = DOMUtils.createElement('div', {
         className: 'data-stripe'
       });
+      // Add fallback inline styles
+      stripe.style.cssText = 'position: absolute; height: 100%; width: 20px; background-color: rgba(255, 255, 255, 0.3); transform: skewX(-20deg);';
       dataStripes.appendChild(stripe);
     }
     
@@ -132,6 +167,8 @@ class VisualIndicators {
     const percentage = DOMUtils.createElement('span', {
       className: 'completion-percentage'
     }, '0%');
+    // Add fallback inline styles
+    percentage.style.cssText = 'font-size: 12px; font-weight: 600; color: #333; min-width: 40px; text-align: right;';
     
     bar.appendChild(dataStripes);
     barWrapper.appendChild(bar);
