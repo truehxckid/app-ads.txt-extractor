@@ -442,7 +442,7 @@ class StreamingIntegration {
             if (!actionButtons.querySelector('[data-action="stream-download-csv"]')) {
               // Add streaming-specific download button
               const streamDownloadBtn = document.createElement('button');
-              streamDownloadBtn.className = 'download-btn';
+              streamDownloadBtn.className = 'download-btn extract-btn';
               streamDownloadBtn.setAttribute('data-action', 'stream-download-csv');
               streamDownloadBtn.textContent = 'Stream Download CSV';
               

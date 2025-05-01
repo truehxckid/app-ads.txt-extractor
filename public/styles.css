@@ -849,13 +849,13 @@ button:disabled,
 }
 
 .download-btn {
-  background: var(--success);
+  background: var(--primary);
   padding: var(--space-xs) var(--space-sm);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .download-btn:hover {
-  background: var(--success-hover);
+  background: var(--primary-hover);
 }
 
 .table-copy-btn {

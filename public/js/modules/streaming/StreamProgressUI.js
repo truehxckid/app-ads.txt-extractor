@@ -246,16 +246,12 @@ class StreamProgressUI {
       className: 'completion-percentage'
     }, '0%');
     
-    // Store references in our map for easier access later
-    this.indicatorElements.set('progressBar', bar);
-    this.indicatorElements.set('progressPercentage', percentage);
-    
     bar.appendChild(dataStripes);
     barWrapper.appendChild(bar);
     barContainer.appendChild(barWrapper);
     barContainer.appendChild(percentage);
     
-    // Store references
+    // Store references in our map for easier access later
     this.indicatorElements.set('progressBar', bar);
     this.indicatorElements.set('progressPercentage', percentage);
     
@@ -272,6 +268,12 @@ class StreamProgressUI {
       className: 'stats-container'
     });
     
+    // Create a flexbox layout for the stats
+    statsContainer.style.display = 'grid';
+    statsContainer.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    statsContainer.style.gridGap = '10px';
+    statsContainer.style.margin = '15px 0';
+    
     // Create stats counters with icon indicators
     const processedCounter = this._createCounter('processed', 'Processed', 0, '📊');
     const successCounter = this._createCounter('success', 'Success', 0, '✅');
@@ -282,21 +284,34 @@ class StreamProgressUI {
     const rateIndicator = DOMUtils.createElement('div', {
       className: 'rate-indicator'
     }, 'Calculating rate...');
+    rateIndicator.style.textAlign = 'right';
     this.indicatorElements.set('rateIndicator', rateIndicator);
     
     // Add estimated time remaining
     const timeRemaining = DOMUtils.createElement('div', {
       className: 'time-remaining'
     }, 'Estimating time...');
+    timeRemaining.style.textAlign = 'right';
     this.indicatorElements.set('timeRemaining', timeRemaining);
     
-    // Add all elements to stats container
+    // Create a container for the bottom row (errors and app-ads)
+    const bottomRowContainer = DOMUtils.createElement('div', {
+      className: 'bottom-stats-row'
+    });
+    bottomRowContainer.style.gridColumn = '1 / span 2';
+    bottomRowContainer.style.display = 'flex';
+    bottomRowContainer.style.justifyContent = 'space-between';
+    
+    // Add elements to bottom row container
+    bottomRowContainer.appendChild(errorCounter);
+    bottomRowContainer.appendChild(appAdsCounter);
+    
+    // Add all elements to stats container in a grid layout
     statsContainer.appendChild(processedCounter);
-    statsContainer.appendChild(successCounter);
-    statsContainer.appendChild(errorCounter);
-    statsContainer.appendChild(appAdsCounter);
     statsContainer.appendChild(rateIndicator);
+    statsContainer.appendChild(successCounter);
     statsContainer.appendChild(timeRemaining);
+    statsContainer.appendChild(bottomRowContainer);
     
     return statsContainer;
   }
@@ -350,14 +365,22 @@ class StreamProgressUI {
     // Store stats without unnecessary logging to reduce console spam
     Object.assign(this.stats, stats);
     
-    // Calculate percentage
+    // Calculate or use provided percentage
     let percent = 0;
-    if (this.stats.total > 0) {
+    
+    // If percent is directly provided in stats, use it
+    if (typeof stats.percent === 'number') {
+      percent = stats.percent;
+      console.log('Using provided percent value:', percent);
+    } else if (this.stats.total > 0) {
+      // Calculate percentage based on processed/total
       percent = Math.min(100, Math.round((this.stats.processed / this.stats.total) * 100));
+      console.log('Calculated percent value:', percent, 'from', this.stats.processed, '/', this.stats.total);
     } else {
       // If total unknown, use a time-based estimate (max 95%)
       const elapsed = Date.now() - this.stats.startTime;
       percent = Math.min(95, Math.round((elapsed / 60000) * 100));
+      console.log('Estimated percent value from time:', percent);
     }
     
     // Update progress bar - with more robust error handling
@@ -415,6 +438,8 @@ class StreamProgressUI {
       
       // Now we should have a valid progressBar reference
       if (progressBar && progressBar.isConnected) {
+        console.log(`Setting progress bar width to ${percent}%`);
+        // Make sure width is explicitly set as pixels or percentage
         progressBar.style.width = `${percent}%`;
         
         // Add classes based on percentage for visual effects
@@ -422,6 +447,12 @@ class StreamProgressUI {
         if (percent > 50) progressBar.classList.add('half-complete');
         if (percent > 75) progressBar.classList.add('three-quarter-complete');
         if (percent >= 100) progressBar.classList.add('complete');
+        
+        // Debug help - log the computed style to verify it's being applied
+        if (window.getComputedStyle) {
+          const computed = window.getComputedStyle(progressBar);
+          console.log('Progress bar computed width:', computed.width);
+        }
       } else {
         // Silently give up and use fallback
         this._updateFallback();
@@ -616,6 +647,7 @@ class StreamProgressUI {
     // Update rate indicator
     if (rateIndicator) {
       rateIndicator.textContent = `${itemsPerSecond.toFixed(1)} items/sec`;
+      rateIndicator.style.textAlign = 'right'; // Right align for better visual alignment
     }
     
     // Update time remaining if we know the total
@@ -634,6 +666,7 @@ class StreamProgressUI {
       } else {
         timeRemaining.textContent = 'Finishing up...';
       }
+      timeRemaining.style.textAlign = 'right'; // Right align for better visual alignment
     }
   }
   
@@ -731,6 +764,7 @@ class StreamProgressUI {
     const rateIndicator = this.indicatorElements.get('rateIndicator');
     if (rateIndicator) {
       rateIndicator.textContent = `Completed in ${elapsed.toFixed(1)}s`;
+      rateIndicator.style.textAlign = 'right';
     }
     
     // Update time remaining
@@ -738,6 +772,7 @@ class StreamProgressUI {
     if (timeRemaining) {
       const rate = elapsed > 0 ? totalProcessed / elapsed : 0;
       timeRemaining.textContent = `Average: ${rate.toFixed(1)} items/sec`;
+      timeRemaining.style.textAlign = 'right';
     }
     
     // Cancel any animations

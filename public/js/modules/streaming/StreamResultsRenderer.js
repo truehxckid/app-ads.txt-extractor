@@ -377,8 +377,8 @@ class StreamResultsRenderer {
         <div class="results-header-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
           <h3>Processing Results</h3>
           <div class="action-buttons">
-            <button class="back-btn" data-action="back-to-search" style="padding: 8px 16px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; margin-right: 10px;">← Back</button>
-            <button class="download-btn" data-action="download-csv" style="padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Download CSV</button>
+            <button class="back-btn extract-btn" data-action="back-to-search">← Back</button>
+            <button class="download-btn extract-btn" data-action="download-csv">Download CSV</button>
           </div>
         </div>
         <p>Showing ${results.length} extracted results from your bundle IDs.</p>
@@ -635,7 +635,7 @@ class StreamResultsRenderer {
       <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
       <p>All ${this.allResults?.length || 0} bundle IDs have been processed.</p>
       <div class="action-buttons">
-        <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        <button class="results-btn extract-btn" data-action="show-results">
           Show Results
         </button>
       </div>
@@ -704,7 +704,7 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
     <p>All ${stats.total} bundle IDs have been processed in ${timeDisplay}.</p>
     <div class="action-buttons">
-      <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
+      <button class="results-btn extract-btn" data-action="show-results">
         Show Results
       </button>
     </div>

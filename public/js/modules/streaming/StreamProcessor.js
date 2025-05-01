@@ -774,8 +774,26 @@ class StreamProcessor {
         this.stats.errorCount = data.errorCount;
         this.stats.withAppAdsTxtCount = data.withAppAdsTxtCount;
         
+        // Log the data from worker to help with debugging
+        console.log('Worker progress data:', data);
+        
         try {
           // Update progress UI with error handling
+          // Add any percent value from the worker to our stats object
+          if (typeof data.percent === 'number') {
+            this.stats.percent = data.percent;
+          }
+          
+          // Ensure total is correctly set for percentage calculation
+          if (!this.stats.total && this.stats.totalBundleIds) {
+            this.stats.total = this.stats.totalBundleIds;
+          }
+          
+          // Ensure processed is correctly mapped
+          if (this.stats.processedCount && !this.stats.processed) {
+            this.stats.processed = this.stats.processedCount;
+          }
+          
           this.progressUI.updateProgress(this.stats);
         } catch (err) {
           console.warn('Error updating progress UI from worker message:', err);
@@ -1053,6 +1071,25 @@ class StreamProcessor {
         total: bundleIds.length
       });
       this.progressUI.setStatusMessage('CSV export complete! Download starting...', 'success');
+      
+      // Clear status message after a delay
+      setTimeout(() => {
+        // Hide the progress indicators container
+        if (this.progressUI) {
+          const container = document.querySelector('.visual-indicators-container');
+          if (container && container.parentNode) {
+            container.parentNode.removeChild(container);
+          }
+          
+          // Clear any status messages
+          const statusMessages = document.querySelectorAll('.status-message');
+          statusMessages.forEach(message => {
+            if (message.parentNode) {
+              message.parentNode.removeChild(message);
+            }
+          });
+        }
+      }, 3000);
       
       showNotification('CSV export complete', 'success');
     } catch (err) {
