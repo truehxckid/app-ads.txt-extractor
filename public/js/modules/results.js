@@ -9,6 +9,7 @@ import DOMUtils from './dom-utils.js';
 import TemplateEngine from './template.js';
 import PaginationManager from './pagination.js';
 import { showNotification } from '../utils/notification.js';
+import VisualIndicators from './visual-indicators.js';
 
 /**
  * Results Manager Class
@@ -33,13 +34,10 @@ class ResultsManager {
       }
       
       // Clear previous visual indicators before initializing new ones
-      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
-      if (VisualIndicators) {
-        VisualIndicators.clearIndicators();
-      }
+      VisualIndicators.clearIndicators();
       
       // Initialize visual indicators
-      if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
+      if (typeof VisualIndicators.initialize === 'function') {
         VisualIndicators.initialize({
           totalItems: bundleIds.length,
           containerSelector: resultElement,
@@ -175,19 +173,17 @@ class ResultsManager {
       }
       
       // Update visual indicators after receiving response
-      if (VisualIndicators) {
-        const withAppAds = Array.isArray(response.results) ? 
-          response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
-          
-        VisualIndicators.updateProgress({
-          processed: response.totalProcessed || bundleIds.length,
-          success: response.successCount || 0,
-          errors: response.errorCount || 0,
-          withAppAds: withAppAds,
-          total: bundleIds.length
-        });
-        VisualIndicators.setStatusMessage('Processing complete, rendering results...', 'success');
-      }
+      const withAppAds = Array.isArray(response.results) ? 
+        response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
+        
+      VisualIndicators.updateProgress({
+        processed: response.totalProcessed || bundleIds.length,
+        success: response.successCount || 0,
+        errors: response.errorCount || 0,
+        withAppAds: withAppAds,
+        total: bundleIds.length
+      });
+      VisualIndicators.setStatusMessage('Processing complete, rendering results...', 'success');
       
       // Store results in app state
       AppState.setResults(response.results, response.pagination);
@@ -215,19 +211,17 @@ class ResultsManager {
       this.displayResults(response);
       
       // Complete visual indicators
-      if (VisualIndicators) {
-        // Safety check for response.results (to prevent "Cannot read properties of undefined (reading 'filter')" error)
-        const withAppAds = Array.isArray(response.results) ? 
-          response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
-          
-        VisualIndicators.complete({
-          processed: response.totalProcessed || bundleIds.length,
-          success: response.successCount || 0,
-          errors: response.errorCount || 0,
-          withAppAds: withAppAds,
-          total: bundleIds.length
-        });
-      }
+      // Safety check for response.results (to prevent "Cannot read properties of undefined (reading 'filter')" error)
+      const withAppAdsComplete = Array.isArray(response.results) ? 
+        response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
+        
+      VisualIndicators.complete({
+        processed: response.totalProcessed || bundleIds.length,
+        success: response.successCount || 0,
+        errors: response.errorCount || 0,
+        withAppAds: withAppAdsComplete,
+        total: bundleIds.length
+      });
       
       // Final completion notification
       const processingTime = Date.now() - startTime;
@@ -245,14 +239,7 @@ class ResultsManager {
       DOMUtils.showError('result', errorMessage);
       
       // Show error in visual indicators
-      try {
-        const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
-        if (VisualIndicators) {
-          VisualIndicators.showError(`Error: ${errorMessage}`);
-        }
-      } catch (indicatorError) {
-        console.warn('Failed to display error in visual indicators:', indicatorError);
-      }
+      VisualIndicators.showError(`Error: ${errorMessage}`);
       
       // Update debug info if in debug mode
       const debugElement = DOMUtils.getElement('debugInfo');
@@ -287,14 +274,11 @@ class ResultsManager {
         AppState.searchTerms : DOMUtils.getSearchTerms();
       
       // Clear previous visual indicators before initializing new ones
-      const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
-      if (VisualIndicators) {
-        VisualIndicators.clearIndicators();
-      }
+      VisualIndicators.clearIndicators();
       
       // Initialize visual indicators for pagination
       const resultElement = DOMUtils.getElement('result');
-      if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
+      if (typeof VisualIndicators.initialize === 'function') {
         VisualIndicators.initialize({
           totalItems: bundleIds.length,
           containerSelector: resultElement,
@@ -313,13 +297,11 @@ class ResultsManager {
       );
       
       // Update visual indicators
-      if (VisualIndicators) {
-        VisualIndicators.updateProgress({
-          processed: AppState.pageSize, 
-          total: response.pagination?.totalItems || bundleIds.length
-        });
-        VisualIndicators.setStatusMessage(`Page ${page} loaded successfully`, 'success');
-      }
+      VisualIndicators.updateProgress({
+        processed: AppState.pageSize, 
+        total: response.pagination?.totalItems || bundleIds.length
+      });
+      VisualIndicators.setStatusMessage(`Page ${page} loaded successfully`, 'success');
       
       // Update app state with new results
       AppState.setResults(response.results, response.pagination);
@@ -328,12 +310,10 @@ class ResultsManager {
       this.displayResults(response);
       
       // Complete visual indicators
-      if (VisualIndicators) {
-        VisualIndicators.complete({
-          processed: AppState.pageSize,
-          total: response.pagination?.totalItems || bundleIds.length
-        });
-      }
+      VisualIndicators.complete({
+        processed: AppState.pageSize,
+        total: response.pagination?.totalItems || bundleIds.length
+      });
       
     } catch (err) {
       console.error('Error loading page:', err);
@@ -341,14 +321,7 @@ class ResultsManager {
       DOMUtils.showError('result', err.message);
       
       // Show error in visual indicators
-      try {
-        const VisualIndicators = await import('./visual-indicators.js').then(module => module.default);
-        if (VisualIndicators) {
-          VisualIndicators.showError(`Error loading page: ${err.message}`);
-        }
-      } catch (indicatorError) {
-        console.warn('Failed to display error in visual indicators:', indicatorError);
-      }
+      VisualIndicators.showError(`Error loading page: ${err.message}`);
     } finally {
       AppState.setProcessing(false);
     }

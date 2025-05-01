@@ -9,9 +9,20 @@
   // Track all clicks
   document.addEventListener('click', function(event) {
     const target = event.target;
+    // Safe handling of className which might be a string or DOMTokenList
+    let classStr = '';
+    if (target.className) {
+      if (typeof target.className === 'string') {
+        classStr = `.${target.className.replace(/\s+/g, '.')}`;
+      } else if (target.classList && target.classList.length) {
+        // Use classList which is safer
+        classStr = `.${Array.from(target.classList).join('.')}`;
+      }
+    }
+    
     console.log('EVENT MONITOR: Click detected on:', target.tagName, 
       target.id ? `#${target.id}` : '',
-      target.className ? `.${target.className.replace(/\s+/g, '.')}` : '',
+      classStr,
       target.textContent ? `"${target.textContent.substring(0, 20).trim()}${target.textContent.length > 20 ? '...' : ''}"` : ''
     );
     

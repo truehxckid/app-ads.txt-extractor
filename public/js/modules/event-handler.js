@@ -457,14 +457,30 @@ class EventHandlerManager {
   handleGlobalError(event) {
     console.error('Global error:', event.error || event.message);
     
-    // Show error boundary for critical errors
-    if (this.isCriticalError(event.error || event.message)) {
+    // Check if it's related to streaming or a known non-critical issue
+    const errorString = String(event.error || event.message || '').toLowerCase();
+    
+    // Ignore specific errors we know are non-critical
+    if (errorString.includes('target.classname.replace') || 
+        errorString.includes('event-monitor') ||
+        errorString.includes('iscriticalerror')) {
+      console.log('Ignoring non-critical UI error:', errorString);
+      return;
+    }
+    
+    // Check if error is related to streaming
+    const isStreamingError = errorString.includes('stream') || 
+                            errorString.includes('worker') || 
+                            errorString.includes('web worker');
+    
+    // Only show UI error for non-streaming errors that would impact user experience
+    if (!isStreamingError && errorString.includes('undefined') || errorString.includes('null')) {
       DOMUtils.showErrorBoundary(`${event.message || 'Application error'}`);
       return;
     }
     
-    // For non-critical errors, show notification
-    showNotification('An error occurred. Check console for details.', 'error');
+    // For non-critical errors, just log to console
+    // Skip showing notification to reduce UI clutter during streaming
   }
   
   /**
@@ -492,7 +508,17 @@ class EventHandlerManager {
   isCriticalError(error) {
     if (!error) return false;
     
-    // Check for initialization errors that would break the app
+    // First check for known non-critical errors
+    const errorString = String(error).toLowerCase();
+    
+    // Ignore known non-critical errors
+    if (errorString.includes('event-monitor') || 
+        errorString.includes('target.classname') ||
+        errorString.includes('iscriticalerror')) {
+      return false;
+    }
+    
+    // Then check for initialization errors that would break the app
     if ((typeof error === 'object' && error.message) || typeof error === 'string') {
       const message = typeof error === 'object' ? error.message : error;
       
@@ -505,7 +531,7 @@ class EventHandlerManager {
       );
     }
     
-    return false;
+    return true;
   }
 }
 

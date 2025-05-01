@@ -33,14 +33,14 @@ class StreamResultsRenderer {
     this.resultElement = resultElement;
     
     // Check if the result element already has our UI setup
-    if (resultElement.querySelector('#results-tbody')) {
+    if (resultElement.querySelector('#stream-progress-indicator')) {
       console.log('🔄 StreamResultsRenderer: UI already initialized, skipping');
       return;
     }
     
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
-    // Create initial structure
+    // Create initial structure - SIMPLIFIED VERSION WITHOUT RESULTS TABLE
     resultElement.innerHTML = `
       <div class="results-summary">
         <div class="summary-stats">
@@ -55,11 +55,11 @@ class StreamResultsRenderer {
       </div>
       
       <!-- Enhanced progress display -->
-      <div id="streamProgress" class="progress-indicator" style="display: flex; margin-bottom: 15px; align-items: center;">
+      <div id="stream-progress-indicator" class="progress-indicator" style="display: flex; margin: 15px 0; align-items: center;">
         <div class="progress-bar" style="flex: 1; background: #f0f0f0; border-radius: 4px; height: 20px; overflow: hidden; margin-right: 10px;">
           <div style="width: 0%; height: 100%; background: linear-gradient(90deg, #3498db, #2980b9); transition: width 0.3s ease;"></div>
         </div>
-        <span class="progress-text" style="white-space: nowrap; font-weight: bold;">0%</span>
+        <span class="progress-text" style="white-space: nowrap; font-weight: bold;">0% (0/${totalItems})</span>
       </div>
       
       <!-- Enhanced debug panel -->
@@ -68,38 +68,27 @@ class StreamResultsRenderer {
         Waiting for server connection...
       </div>
       
-      <div class="results-table-container">
-        <table class="results-table">
-          <thead>
-            <tr>
-              <th scope="col">Bundle ID</th>
-              <th scope="col">Store</th>
-              <th scope="col">Domain</th>
-              <th scope="col">App-ads.txt</th>
-              ${hasSearchTerms ? '<th scope="col">Search Matches</th>' : ''}
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="results-tbody">
-            <!-- Initial table row to ensure the table is visible -->
-            <tr class="streaming-placeholder-row">
-              <td colspan="${hasSearchTerms ? 6 : 5}" style="text-align: center; padding: 15px;">
-                <div style="display: inline-block; width: 20px; height: 20px; border: 2px solid #3498db; border-radius: 50%; border-top-color: transparent; animation: spin 1s linear infinite; margin-right: 10px;"></div>
-                Streaming results will appear here as they are processed...
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Results preview notification -->
+      <div class="streaming-info-banner" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">
+        <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
+        <p>Results will be available when processing is complete. Meanwhile, you can monitor progress above.</p>
+        <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
       </div>
-      <div class="details-container" id="details-container"></div>
+      
+      <!-- Hidden container for accumulating results -->
+      <div id="results-container" style="display: none;"></div>
     `;
     
-    // Add animation style
+    // Add animation styles
     const style = document.createElement('style');
     style.textContent = `
       @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+      }
+      @keyframes streaming-animation {
+        0% { background-position: 100% 0; }
+        100% { background-position: 0 0; }
       }
     `;
     document.head.appendChild(style);
@@ -239,14 +228,50 @@ class StreamResultsRenderer {
     if (errorElement) errorElement.textContent = stats.errors || 0;
     if (appAdsElement) appAdsElement.textContent = stats.withAppAds || 0;
     
+    // Update progress visualization
+    this.updateProgressUI(stats);
+  }
+  
+  /**
+   * Update progress visualization in the UI
+   * @param {Object} stats - Statistics object containing processed and total counts
+   */
+  updateProgressUI(stats) {
+    if (!this.resultElement) return;
+    
     // Update progress bar if available
-    const progressBar = this.resultElement.querySelector('#streamProgress .progress-bar div');
-    const progressText = this.resultElement.querySelector('#streamProgress .progress-text');
+    const progressBar = this.resultElement.querySelector('#stream-progress-indicator .progress-bar div');
+    const progressText = this.resultElement.querySelector('#stream-progress-indicator .progress-text');
     
     if (progressBar && progressText && stats.total > 0) {
       const percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
       progressBar.style.width = `${percent}%`;
       progressText.textContent = `${percent}% (${stats.processed}/${stats.total})`;
+      
+      // Update debug information
+      const debugInfo = this.resultElement.querySelector('#debug-information');
+      if (debugInfo) {
+        const currentTime = new Date().toLocaleTimeString();
+        const processingRate = stats.processed > 0 && stats.elapsedTime > 0 
+          ? (stats.processed / (stats.elapsedTime / 1000)).toFixed(2) 
+          : 'calculating...';
+          
+        debugInfo.innerHTML = `
+          <strong>Stream Processing Debug Info:</strong>
+          Time: ${currentTime}
+          Processed: ${stats.processed} / ${stats.total} (${percent}%)
+          Processing rate: ${processingRate} items/sec
+          Success: ${stats.success || 0}
+          Errors: ${stats.errors || 0}
+          Items with app-ads.txt: ${stats.withAppAds || 0}
+        `;
+      }
+      
+      // Update download button state when processing is complete
+      const downloadBtn = this.resultElement.querySelector('.download-btn');
+      if (downloadBtn && stats.processed === stats.total) {
+        downloadBtn.disabled = false;
+      }
     }
   }
 
@@ -666,4 +691,51 @@ class StreamResultsRenderer {
 
 // Create and export a singleton instance
 const streamResultsRenderer = new StreamResultsRenderer();
+/**
+ * Update UI to reflect streaming completion
+ * @param {Object} stats - Final statistics object
+ */
+streamResultsRenderer.updateCompletionStatus = function(stats) {
+  if (!this.resultElement) return;
+  
+  // Update the streaming banner
+  const banner = this.resultElement.querySelector('.streaming-info-banner');
+  if (banner) {
+    banner.innerHTML = `
+      <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
+      <p>All ${stats.total} bundle IDs have been processed successfully.</p>
+      <ul style="text-align: left; max-width: 400px; margin: 10px auto;">
+        <li><strong>Processed:</strong> ${stats.total}</li>
+        <li><strong>Success:</strong> ${stats.success}</li>
+        <li><strong>Errors:</strong> ${stats.errors}</li>
+        <li><strong>With app-ads.txt:</strong> ${stats.withAppAds}</li>
+        <li><strong>Processing Time:</strong> ${(stats.elapsedTime / 1000).toFixed(2)}s</li>
+      </ul>
+    `;
+    
+    // Change the banner color to indicate success
+    banner.style.background = '#eafaf1';
+    banner.style.border = '1px solid #2ecc71';
+  }
+  
+  // Update debug panel
+  const debugInfo = this.resultElement.querySelector('#debug-information');
+  if (debugInfo) {
+    const finishTime = new Date().toLocaleTimeString();
+    debugInfo.innerHTML = `
+      <strong>Stream Processing Complete ✅</strong>
+      Completed at: ${finishTime}
+      Total time: ${(stats.elapsedTime / 1000).toFixed(2)}s
+      Average rate: ${(stats.total / (stats.elapsedTime / 1000)).toFixed(2)} items/sec
+      Results: ${stats.success} successes, ${stats.errors} errors, ${stats.withAppAds} with app-ads.txt
+    `;
+  }
+  
+  // Ensure the download button is enabled
+  const downloadBtn = this.resultElement.querySelector('.download-btn');
+  if (downloadBtn) {
+    downloadBtn.disabled = false;
+  }
+};
+
 export default streamResultsRenderer;
