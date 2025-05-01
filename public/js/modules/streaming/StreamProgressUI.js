@@ -128,14 +128,8 @@ class StreamProgressUI {
     // Make sure container is visible
     containerElement.style.display = 'block';
     
-    // Remove any existing progress messages or visual indicators
-    const existingProgressIndicators = document.querySelectorAll('.progress-indicator, .visual-indicators-container');
-    existingProgressIndicators.forEach(element => {
-      console.log('Removing existing indicator:', element);
-      if (element.parentNode) {
-        element.parentNode.removeChild(element);
-      }
-    });
+    // Perform a thorough cleanup of all existing UI elements
+    this._cleanupAllPreviousIndicators(containerElement);
     
     // Clear previous indicators from our map
     this.clearIndicators();
@@ -816,6 +810,68 @@ class StreamProgressUI {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+  }
+  
+  /**
+   * Clean up all previous indicators and UI elements
+   * @param {HTMLElement} container - Container element
+   * @private
+   */
+  _cleanupAllPreviousIndicators(container) {
+    console.log('StreamProgressUI: Cleaning up all previous indicators');
+    
+    if (!container) return;
+    
+    // List of all selectors to clean up
+    const selectorsToRemove = [
+      '.progress-indicator',
+      '.visual-indicators-container',
+      '.streaming-info-banner',
+      '.worker-processing-indicator',
+      '.processing-indicator',
+      '.streaming-mode-indicator',
+      '.streaming-confirmation',
+      '.completion-banner',
+      '.streaming-completion-banner',
+      '#streamProgress',
+      '.completion-percentage',
+      '.progress-bar-container',
+      '.status-message',
+      '.rate-indicator',
+      '.time-remaining',
+      '.counter'
+    ];
+    
+    // First, check the container for these elements
+    selectorsToRemove.forEach(selector => {
+      const elements = container.querySelectorAll(selector);
+      elements.forEach(element => {
+        console.log(`StreamProgressUI: Removing ${selector} from container`);
+        element.remove();
+      });
+    });
+    
+    // Then, check the entire document for these elements
+    // (some might have been added outside the container)
+    selectorsToRemove.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(element => {
+        console.log(`StreamProgressUI: Removing ${selector} from document`);
+        element.remove();
+      });
+    });
+    
+    // Also clean up any elements with progress-related text content
+    const allElements = container.querySelectorAll('*');
+    allElements.forEach(element => {
+      if (element.textContent && (
+          element.textContent.includes('Processing...') || 
+          element.textContent.includes('Sending request') ||
+          element.textContent.includes('Worker Processing'))) {
+        console.log('StreamProgressUI: Removing element with progress text');
+        element.remove();
+      }
+    });
   }
 }
 

@@ -150,10 +150,28 @@ class StreamProcessor {
     }
     
     if (this.resultsRenderer) {
-      // Clear existing results table if it exists
-      const resultsTable = document.querySelector('.results-table-container');
-      if (resultsTable) {
-        resultsTable.innerHTML = '';
+      // Clear existing results elements thoroughly to prevent DOM conflicts
+      const resultContainer = document.getElementById('result');
+      if (resultContainer) {
+        // Save any progress indicators that might be active
+        const progressIndicator = resultContainer.querySelector('.visual-indicators-container');
+        if (progressIndicator) {
+          progressIndicator.remove(); // Remove it to add back fresh later
+        }
+        
+        // Clear all results tables and other streaming elements
+        const resultsTable = resultContainer.querySelector('.results-table-container');
+        if (resultsTable) {
+          resultsTable.remove();
+        }
+        
+        // Remove any worker indicators
+        const workerIndicators = document.querySelectorAll('.worker-processing-indicator, .worker-indicator');
+        workerIndicators.forEach(indicator => indicator.remove());
+        
+        // Remove any streaming banners
+        const streamingBanners = document.querySelectorAll('.streaming-mode-indicator, .streaming-info-banner');
+        streamingBanners.forEach(banner => banner.remove());
       }
     }
     
@@ -173,6 +191,10 @@ class StreamProcessor {
    */
   async processBundleIds(bundleIds, searchTerms = []) {
     console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
+    console.log('🚀 Search terms:', searchTerms);
+    
+    // Clear any existing processing indicators from previous runs
+    this._clearAllProcessingIndicators();
     
     // Initialize if not already
     if (!this.initialized) {
@@ -180,6 +202,16 @@ class StreamProcessor {
         showNotification('Streaming not supported in this browser, using regular processing instead', 'warning');
         return false;
       }
+    }
+    
+    // Ensure worker is terminated if it exists from a previous run
+    if (this.worker) {
+      console.log('🚀 StreamProcessor: Terminating existing worker before starting new job');
+      this.worker.terminate();
+      this.worker = null;
+      
+      // Small delay to ensure cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
     
     // Reset state
@@ -795,6 +827,17 @@ class StreamProcessor {
           }
         }, 5000);
         
+        // Terminate the worker since we're completely done with it
+        if (this.worker) {
+          console.log('⚡ StreamProcessor: Processing complete - terminating worker');
+          try {
+            this.worker.terminate();
+            this.worker = null;
+          } catch (err) {
+            console.error('⚡ Error terminating worker:', err);
+          }
+        }
+        
         break;
         
       case 'error':
@@ -814,6 +857,66 @@ class StreamProcessor {
       default:
         console.warn('⚡ StreamProcessor: Unknown worker message type:', type);
     }
+  }
+  
+  /**
+   * Clear all processing indicators and related DOM elements from previous runs
+   * @private
+   */
+  _clearAllProcessingIndicators() {
+    console.log('🚀 StreamProcessor: Clearing all processing indicators');
+    
+    // Get the result container
+    const resultElement = document.getElementById('result');
+    if (!resultElement) return;
+    
+    // Clear progress indicators
+    if (this.progressUI) {
+      this.progressUI.clearIndicators();
+    }
+    
+    // Remove all visual indicators and processing elements
+    const elementsToRemove = [
+      '.progress-indicator', 
+      '.visual-indicators-container',
+      '.streaming-info-banner',
+      '.worker-processing-indicator',
+      '.processing-indicator',
+      '.streaming-mode-indicator',
+      '.streaming-confirmation',
+      '.completion-banner',
+      '.streaming-completion-banner',
+      '#streamProgress'
+    ];
+    
+    // Find and remove all elements
+    elementsToRemove.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(element => {
+        console.log(`🚀 StreamProcessor: Removing ${selector} element`);
+        if (element.parentNode) {
+          element.parentNode.removeChild(element);
+        }
+      });
+    });
+    
+    // Reset the result element's content
+    // But keep any results display that might be there
+    const resultsDisplay = resultElement.querySelector('.stream-results-display');
+    if (resultsDisplay) {
+      resultsDisplay.style.display = 'none';
+    }
+    
+    // Clear any processing messages
+    const staticIndicators = resultElement.querySelectorAll(':not(.stream-results-display)');
+    staticIndicators.forEach(element => {
+      if (element.textContent && (
+          element.textContent.includes('Processing') || 
+          element.textContent.includes('Sending request') ||
+          element.textContent.includes('Worker'))) {
+        element.remove();
+      }
+    });
   }
   
   /**

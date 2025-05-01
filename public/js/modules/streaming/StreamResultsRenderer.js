@@ -42,28 +42,33 @@ class StreamResultsRenderer {
     
     this.resultElement = resultElement;
     
-    // Check if the result element already has our UI setup
-    if (resultElement.querySelector('#stream-progress-indicator')) {
-      console.log('🔄 StreamResultsRenderer: UI already initialized, skipping');
-      return;
-    }
+    // Perform thorough cleanup of all existing elements
+    this._cleanupPreviousElements();
     
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
-    // Create minimal structure with just the worker info banner - 
-    // Progress bars and stats are handled by the StreamProgressUI module
-    resultElement.innerHTML = `
-      <!-- Results preview notification -->
-      <div class="streaming-info-banner worker-processing-indicator" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">
-        <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
-        <p>Results will be available when processing is complete.</p>
-        <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
-        <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
-      </div>
-      
-      <!-- Hidden container for accumulating results -->
-      <div id="results-container" style="display: none;"></div>
+    // Create worker processing indicator div
+    const workerIndicator = document.createElement('div');
+    workerIndicator.className = 'streaming-info-banner worker-processing-indicator';
+    workerIndicator.style.cssText = 'margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;';
+    workerIndicator.innerHTML = `
+      <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
+      <p>Results will be available when processing is complete.</p>
+      <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
+      <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
     `;
+    
+    // Create results container
+    const resultsContainer = document.createElement('div');
+    resultsContainer.id = 'results-container';
+    resultsContainer.style.display = 'none';
+    
+    // Clear the result element's existing content
+    resultElement.innerHTML = '';
+    
+    // Add our new elements
+    resultElement.appendChild(workerIndicator);
+    resultElement.appendChild(resultsContainer);
     
     // Add animation styles
     const style = document.createElement('style');
@@ -84,6 +89,55 @@ class StreamResultsRenderer {
     
     // Add event listeners for toggles
     this._setupEventListeners();
+  }
+  
+  /**
+   * Clean up all existing elements from previous searches
+   * @private
+   */
+  _cleanupPreviousElements() {
+    console.log('🔄 StreamResultsRenderer: Cleaning up previous elements');
+    
+    // Remove all indicators and processing elements
+    const elementsToRemove = [
+      '.worker-processing-indicator', 
+      '.streaming-info-banner',
+      '.stream-results-display',
+      '.results-table-container',
+      '.streaming-completion-banner',
+      '.visual-indicators-container',
+      '.progress-indicator',
+      '.processing-indicator',
+      '#results-container',
+      '#streamProgress'
+    ];
+    
+    // Find and remove all these elements
+    elementsToRemove.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(element => {
+        if (element && element.parentNode) {
+          console.log(`🔄 StreamResultsRenderer: Removing ${selector} element`);
+          element.parentNode.removeChild(element);
+        }
+      });
+    });
+    
+    // Clear any progress messages or indicators without specific classes
+    if (this.resultElement) {
+      // Find any elements that might contain progress-related text
+      const allElements = this.resultElement.querySelectorAll('*');
+      allElements.forEach(element => {
+        if (element.textContent && (
+          element.textContent.includes('Processing') || 
+          element.textContent.includes('Sending request') ||
+          element.textContent.includes('Worker')) &&
+          !element.classList.contains('stream-results-display')) {
+          console.log('🔄 StreamResultsRenderer: Removing text-matched element');
+          element.remove();
+        }
+      });
+    }
   }
   
   /**
@@ -305,13 +359,29 @@ class StreamResultsRenderer {
   _renderResults(results) {
     console.log('🔄 StreamResultsRenderer: Rendering', results.length, 'results');
     
+    // Store the full results for pagination
+    this.allResults = results;
+    
+    // Set up pagination variables
+    this.pageSize = 50;
+    this.currentPage = 1;
+    this.totalPages = Math.ceil(results.length / this.pageSize);
+    
     // Create a results display element
     const resultsDisplay = document.createElement('div');
     resultsDisplay.className = 'stream-results-display';
+    
+    // Add back button and action buttons
     resultsDisplay.innerHTML = `
       <div class="stream-results-header">
-        <h3>Processing Results</h3>
-        <p>These are the extracted results from your bundle IDs.</p>
+        <div class="results-header-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h3>Processing Results</h3>
+          <div class="action-buttons">
+            <button class="back-btn" data-action="back-to-search" style="padding: 8px 16px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; margin-right: 10px;">← Back</button>
+            <button class="download-btn" data-action="download-csv" style="padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer;">Download CSV</button>
+          </div>
+        </div>
+        <p>Showing ${results.length} extracted results from your bundle IDs.</p>
       </div>
       
       <div class="stream-results-table-container" style="margin-top: 20px; overflow-x: auto;">
@@ -330,6 +400,11 @@ class StreamResultsRenderer {
           </tbody>
         </table>
       </div>
+      
+      <!-- Pagination Controls -->
+      <div id="pagination-controls" style="margin-top: 20px; text-align: center;">
+        ${this._generatePaginationControls(results.length, this.pageSize, 1)}
+      </div>
     `;
     
     // Replace any existing results section or add to the page
@@ -340,51 +415,242 @@ class StreamResultsRenderer {
       this.resultElement.appendChild(resultsDisplay);
     }
     
-    // Get the tbody element
-    const tbody = resultsDisplay.querySelector('#results-final-tbody');
-    if (!tbody) return;
+    // Set up event listeners for pagination and back button
+    this._setupEventListeners(resultsDisplay);
     
-    // Add each result
-    if (results && results.length > 0) {
-      results.forEach(result => {
-        if (!result) return; // Skip null/undefined results
-        
-        const row = document.createElement('tr');
-        row.className = result.success ? 'success-row' : 'error-row';
-        
-        if (result.success) {
-          const hasAppAds = result.appAdsTxt?.exists;
-          
-          row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
-            <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
-            <td class="app-ads-cell">
-              ${hasAppAds 
-                ? '<span class="app-ads-found">Found</span>' 
-                : '<span class="app-ads-missing">Not found</span>'}
-            </td>
-            <td>
-              <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
-                type="button" title="Copy domain to clipboard">Copy</button>
-            </td>
-          `;
-        } else {
-          row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-            <td colspan="3" class="error-message">
-              Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
-            </td>
-            <td></td>
-          `;
-        }
-        
-        tbody.appendChild(row);
-      });
-    }
+    // Render the first page of results
+    this._renderPage(results, 1);
     
     // Scroll to the results
     resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  
+  /**
+   * Render a specific page of results
+   * @param {Array} results - All results
+   * @param {number} page - Page number to render
+   * @private
+   */
+  _renderPage(results, page) {
+    if (!results || !results.length) return;
+    
+    // Update current page
+    this.currentPage = page;
+    
+    // Calculate slice indices
+    const startIndex = (page - 1) * this.pageSize;
+    const endIndex = Math.min(startIndex + this.pageSize, results.length);
+    
+    // Get results for this page
+    const pageResults = results.slice(startIndex, endIndex);
+    
+    // Get the tbody element
+    const tbody = document.getElementById('results-final-tbody');
+    if (!tbody) return;
+    
+    // Clear existing rows
+    tbody.innerHTML = '';
+    
+    // Add results for this page
+    pageResults.forEach(result => {
+      if (!result) return; // Skip null/undefined results
+      
+      const row = document.createElement('tr');
+      row.className = result.success ? 'success-row' : 'error-row';
+      
+      if (result.success) {
+        const hasAppAds = result.appAdsTxt?.exists;
+        
+        row.innerHTML = `
+          <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
+          <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
+          <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
+          <td class="app-ads-cell">
+            ${hasAppAds 
+              ? '<span class="app-ads-found">Found</span>' 
+              : '<span class="app-ads-missing">Not found</span>'}
+          </td>
+          <td>
+            <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
+              type="button" title="Copy domain to clipboard">Copy</button>
+          </td>
+        `;
+      } else {
+        row.innerHTML = `
+          <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
+          <td colspan="3" class="error-message">
+            Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
+          </td>
+          <td></td>
+        `;
+      }
+      
+      tbody.appendChild(row);
+    });
+    
+    // Update pagination controls
+    const paginationControls = document.getElementById('pagination-controls');
+    if (paginationControls) {
+      paginationControls.innerHTML = this._generatePaginationControls(
+        results.length, 
+        this.pageSize, 
+        page
+      );
+    }
+  }
+  
+  /**
+   * Generate pagination controls HTML
+   * @param {number} totalItems - Total items count
+   * @param {number} pageSize - Items per page
+   * @param {number} currentPage - Current page number
+   * @returns {string} - Pagination HTML
+   * @private
+   */
+  _generatePaginationControls(totalItems, pageSize, currentPage) {
+    if (totalItems <= pageSize) {
+      return ''; // No pagination needed
+    }
+    
+    const totalPages = Math.ceil(totalItems / pageSize);
+    let paginationHTML = '<div class="pagination" style="display: flex; justify-content: center; gap: 5px; align-items: center;">';
+    
+    // Previous button
+    if (currentPage > 1) {
+      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${currentPage - 1}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">← Previous</button>`;
+    } else {
+      paginationHTML += `<button class="pagination-btn disabled" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; opacity: 0.5; cursor: not-allowed;">← Previous</button>`;
+    }
+    
+    // Page numbers
+    paginationHTML += '<div class="page-numbers" style="display: flex; gap: 5px;">';
+    
+    // First page
+    if (currentPage > 3) {
+      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="1" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">1</button>`;
+      
+      if (currentPage > 4) {
+        paginationHTML += '<span class="pagination-ellipsis" style="align-self: center;">...</span>';
+      }
+    }
+    
+    // Pages around current
+    const startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(totalPages, currentPage + 2);
+    
+    for (let i = startPage; i <= endPage; i++) {
+      if (i === currentPage) {
+        paginationHTML += `<button class="pagination-btn active" data-page="${i}" style="padding: 5px 10px; border: 1px solid #3498db; background: #3498db; color: white; border-radius: 4px;">${i}</button>`;
+      } else {
+        paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${i}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">${i}</button>`;
+      }
+    }
+    
+    // Last page
+    if (currentPage < totalPages - 2) {
+      if (currentPage < totalPages - 3) {
+        paginationHTML += '<span class="pagination-ellipsis" style="align-self: center;">...</span>';
+      }
+      
+      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${totalPages}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">${totalPages}</button>`;
+    }
+    
+    paginationHTML += '</div>';
+    
+    // Next button
+    if (currentPage < totalPages) {
+      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${currentPage + 1}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Next →</button>`;
+    } else {
+      paginationHTML += `<button class="pagination-btn disabled" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; opacity: 0.5; cursor: not-allowed;">Next →</button>`;
+    }
+    
+    paginationHTML += '</div>';
+    
+    // Add page info
+    paginationHTML += `
+      <div class="pagination-info" style="margin-top: 10px; font-size: 14px; color: #666;">
+        Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalItems)} of ${totalItems} results
+      </div>
+    `;
+    
+    return paginationHTML;
+  }
+  
+  /**
+   * Set up event listeners for pagination and back button
+   * @param {HTMLElement} container - Container element
+   * @private
+   */
+  _setupEventListeners(container) {
+    // Back button
+    const backButton = container.querySelector('[data-action="back-to-search"]');
+    if (backButton) {
+      backButton.addEventListener('click', () => {
+        // Hide results and show completion banner
+        container.style.display = 'none';
+        
+        // Show completion banner
+        const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
+        if (completionBanner) {
+          completionBanner.style.display = 'block';
+        } else {
+          // If banner doesn't exist, recreate it
+          this._createCompletionBanner();
+        }
+      });
+    }
+    
+    // Pagination buttons
+    container.addEventListener('click', (event) => {
+      const target = event.target;
+      if (target.dataset.action === 'paginate') {
+        const page = parseInt(target.dataset.page, 10);
+        if (!isNaN(page) && page > 0) {
+          this._renderPage(this.allResults, page);
+        }
+      }
+    });
+  }
+  
+  /**
+   * Create a completion banner
+   * @private
+   */
+  _createCompletionBanner() {
+    const completionBanner = document.createElement('div');
+    completionBanner.className = 'streaming-completion-banner';
+    completionBanner.style.cssText = 'margin: 20px 0; padding: 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
+    
+    completionBanner.innerHTML = `
+      <h3 style="margin-top: 0; color: #2ecc71;">✅ Processing Complete</h3>
+      <p>All ${this.allResults?.length || 0} bundle IDs have been processed.</p>
+      <div class="action-buttons">
+        <button class="results-btn primary" data-action="show-results" style="margin-top: 10px; padding: 8px 16px; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer;">
+          Show Results
+        </button>
+      </div>
+    `;
+    
+    // Add to the result element
+    this.resultElement.prepend(completionBanner);
+    
+    // Add event listener to show results button
+    const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+    if (showResultsBtn) {
+      showResultsBtn.addEventListener('click', () => {
+        completionBanner.style.display = 'none';
+        
+        // Show the existing results display if it exists
+        const resultsDisplay = this.resultElement.querySelector('.stream-results-display');
+        if (resultsDisplay) {
+          resultsDisplay.style.display = 'block';
+          resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          // If results don't exist yet, render them
+          this._renderResults(this.allResults || []);
+        }
+      });
+    }
   }
   
   /**

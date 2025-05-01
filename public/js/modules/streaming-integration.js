@@ -17,16 +17,10 @@ class StreamingIntegration {
     this.initialized = false;
     this.isStreamingSupported = !!window.ReadableStream;
     
-    // Force streaming enabled for debugging - remove in production
-    const forceStreaming = true; // Set to true to force streaming mode for testing
-    
-    if (forceStreaming) {
-      console.log('🚨 StreamingIntegration: FORCING streaming mode ON for debugging');
-      localStorage.setItem('streamingEnabled', 'true');
-      this.streamingEnabled = true;
-    } else {
-      this.streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
-    }
+    // Always use streaming mode for all requests
+    console.log('StreamingIntegration: Streaming mode is always ON');
+    localStorage.setItem('streamingEnabled', 'true');
+    this.streamingEnabled = true;
     
     // Log current state to console
     console.log('StreamingIntegration constructed with streaming ' + 
@@ -83,63 +77,55 @@ class StreamingIntegration {
     const toggleContainer = document.createElement('div');
     toggleContainer.className = 'streaming-toggle-container';
     toggleContainer.innerHTML = `
-      <label class="streaming-toggle">
-        <input type="checkbox" id="streamingToggle" ${this.streamingEnabled ? 'checked' : ''}>
-        <span class="toggle-switch"></span>
-        <span class="toggle-label">Enable Streaming</span>
-      </label>
+      <div class="streaming-status" style="display: flex; align-items: center; color: #27ae60; font-weight: bold;">
+        <span class="status-icon" style="margin-right: 5px;">✓</span>
+        <span class="status-label">Streaming Mode Active</span>
+      </div>
       <div class="streaming-tooltip">
         <span class="tooltip-icon">?</span>
         <span class="tooltip-text">
-          Streaming mode processes results progressively as they arrive, showing real-time updates and preventing timeouts with large datasets (10+ bundle IDs). Enable this to avoid 524 errors.
+          Streaming mode processes results as they arrive, showing real-time updates and preventing timeouts with large datasets. This helps avoid server errors and improves performance.
         </span>
       </div>
     `;
     
     actionBar.insertAdjacentElement('afterbegin', toggleContainer);
     
-    // Add toggle handler
-    const toggle = document.getElementById('streamingToggle');
-    if (toggle) {
-      toggle.addEventListener('change', () => {
-        this.streamingEnabled = toggle.checked;
-        localStorage.setItem('streamingEnabled', this.streamingEnabled.toString());
-        
-        if (this.streamingEnabled) {
-          showNotification('Streaming mode enabled for large datasets', 'info');
+    // Initialize the streaming processor
+    try {
+      // Force initialize the streaming processor
+      StreamingProcessor.initialize();
+      
+      // Create a one-time confirmation (shown only when the app first loads)
+      if (!localStorage.getItem('streaming_notification_shown')) {
+        const resultContainer = document.getElementById('result');
+        if (resultContainer) {
+          resultContainer.style.display = 'block';
           
-          // Force initialize the streaming processor for immediate feedback
-          try {
-            const resultContainer = document.getElementById('result');
-            if (resultContainer) {
-              resultContainer.style.display = 'block';
-              StreamingProcessor.initialize();
-              
-              // Create a simple confirmation feedback
-              const confirmDiv = document.createElement('div');
-              confirmDiv.className = 'streaming-confirmation';
-              confirmDiv.style.cssText = 'padding: 15px; background: #e8f7f3; border: 1px solid #27ae60; border-radius: 4px; margin-bottom: 15px; text-align: center;';
-              confirmDiv.innerHTML = '<strong>Streaming mode activated!</strong> Ready for processing large datasets.';
-              
-              resultContainer.prepend(confirmDiv);
-              
-              // Remove after 3 seconds
-              setTimeout(() => {
-                if (confirmDiv.parentNode) {
-                  confirmDiv.parentNode.removeChild(confirmDiv);
-                }
-                if (resultContainer.children.length === 0) {
-                  resultContainer.style.display = 'none'; 
-                }
-              }, 3000);
+          // Create a simple confirmation feedback
+          const confirmDiv = document.createElement('div');
+          confirmDiv.className = 'streaming-confirmation';
+          confirmDiv.style.cssText = 'padding: 15px; background: #e8f7f3; border: 1px solid #27ae60; border-radius: 4px; margin-bottom: 15px; text-align: center;';
+          confirmDiv.innerHTML = '<strong>Streaming mode active!</strong> Results will be processed efficiently with real-time updates.';
+          
+          resultContainer.prepend(confirmDiv);
+          
+          // Remove after 5 seconds
+          setTimeout(() => {
+            if (confirmDiv.parentNode) {
+              confirmDiv.parentNode.removeChild(confirmDiv);
             }
-          } catch (e) {
-            console.warn('Failed to initialize streaming processor:', e);
-          }
-        } else {
-          showNotification('Streaming mode disabled', 'info');
+            if (resultContainer.children.length === 0) {
+              resultContainer.style.display = 'none'; 
+            }
+          }, 5000);
+          
+          // Mark as shown
+          localStorage.setItem('streaming_notification_shown', 'true');
         }
-      });
+      }
+    } catch (e) {
+      console.warn('Failed to initialize streaming processor:', e);
     }
     
     // Add some basic CSS for the toggle
@@ -265,11 +251,11 @@ class StreamingIntegration {
       // Show processing indicator and disable extract button
       AppState.setProcessing(true);
       
-      // Determine if we should use streaming
-      const useStreaming = this.streamingEnabled && bundleIds.length >= 10;
+      // Always use streaming for all requests, regardless of size
+      const useStreaming = true;
       
       if (useStreaming) {
-        console.log('⚡⚡⚡ ENTRY POINT: Using streaming for large dataset:', bundleIds.length);
+        console.log('⚡⚡⚡ ENTRY POINT: Using streaming for dataset:', bundleIds.length);
         console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
         console.log('⚡⚡⚡ ENTRY POINT: COMPLETELY BYPASSING ORIGINAL HANDLER');
         
@@ -403,23 +389,20 @@ class StreamingIntegration {
         // IMPORTANT: Do not continue execution and call the original handler!
         return; // Return early to prevent execution continuing
       } else {
-        // Use original handler for smaller datasets
-        console.log('⚡⚡⚡ ENTRY POINT: Using regular (non-streaming) processing for smaller dataset:', bundleIds.length);
+        // This should never happen since useStreaming is always true,
+        // but we'll keep this code as a fallback just in case
+        console.log('⚡⚡⚡ ENTRY POINT: Fallback to streaming processing for dataset:', bundleIds.length);
         
-        // Create direct DOM manipulation to show what's happening
-        const regularDebugHelper = document.createElement('div');
-        regularDebugHelper.style.cssText = 'position: fixed; bottom: 40px; left: 10px; background: #fff8f1; border: 1px solid #e36209; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
-        regularDebugHelper.innerHTML = 'Using <strong>REGULAR</strong> endpoint (/api/extract-multiple)';
-        document.body.appendChild(regularDebugHelper);
-        
-        // Remove after 5 seconds
-        setTimeout(() => {
-          if (regularDebugHelper.parentNode) {
-            regularDebugHelper.parentNode.removeChild(regularDebugHelper);
+        // Try to use streaming anyway
+        try {
+          if (StreamingProcessor && typeof StreamingProcessor.processBundleIds === 'function') {
+            return StreamingProcessor.processBundleIds(bundleIds, searchTerms);
           }
-        }, 5000);
+        } catch (err) {
+          console.error('Error using streaming processor:', err);
+        }
         
-        // Call original handler through our stored reference
+        // If all else fails, use original handler as a final fallback
         return this._originalExtractHandler.call(EventHandler, event);
       }
     };
