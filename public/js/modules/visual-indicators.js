@@ -287,6 +287,9 @@ class VisualIndicators {
    * @param {Object} stats - Current processing statistics
    */
   updateProgress(stats = {}) {
+    // Debug logging
+    console.log(`updateProgress called with: processed=${stats.processed}, total=${stats.total}`);
+    
     // Update local stats with provided values
     Object.assign(this.processingStats, stats);
     
@@ -300,32 +303,90 @@ class VisualIndicators {
       percent = Math.min(95, Math.round((elapsed / 60000) * 100));
     }
     
-    // Update progress bar
-    const progressBar = this.indicatorElements.get('progressBar');
-    const progressPercentage = this.indicatorElements.get('progressPercentage');
+    console.log(`Progress calculated: ${percent}% (${this.processingStats.processed}/${this.processingStats.total})`);
     
-    if (progressBar) {
-      progressBar.style.width = `${percent}%`;
+    // Update progress bar - with more robust error handling
+    try {
+      const progressBar = this.indicatorElements.get('progressBar');
+      const progressPercentage = this.indicatorElements.get('progressPercentage');
       
-      // Add classes based on percentage for visual effects
-      if (percent > 25) progressBar.classList.add('quarter-complete');
-      if (percent > 50) progressBar.classList.add('half-complete');
-      if (percent > 75) progressBar.classList.add('three-quarter-complete');
-      if (percent >= 100) progressBar.classList.add('complete');
+      if (progressBar) {
+        // Ensure the element is still in the DOM
+        if (progressBar.isConnected) {
+          progressBar.style.width = `${percent}%`;
+          
+          // Add classes based on percentage for visual effects
+          if (percent > 25) progressBar.classList.add('quarter-complete');
+          if (percent > 50) progressBar.classList.add('half-complete');
+          if (percent > 75) progressBar.classList.add('three-quarter-complete');
+          if (percent >= 100) progressBar.classList.add('complete');
+        } else {
+          console.warn('Progress bar element is no longer in the DOM');
+          // Try to re-find the element
+          const newProgressBar = document.querySelector('.progress-bar');
+          if (newProgressBar) {
+            this.indicatorElements.set('progressBar', newProgressBar);
+            newProgressBar.style.width = `${percent}%`;
+          }
+        }
+      } else {
+        console.warn('Progress bar element not found in Map');
+        // Try to find it directly in the DOM
+        const domProgressBar = document.querySelector('.progress-bar');
+        if (domProgressBar) {
+          this.indicatorElements.set('progressBar', domProgressBar);
+          domProgressBar.style.width = `${percent}%`;
+        }
+      }
+      
+      if (progressPercentage) {
+        if (progressPercentage.isConnected) {
+          progressPercentage.textContent = `${percent}%`;
+        } else {
+          console.warn('Progress percentage element is no longer in the DOM');
+          // Try to re-find the element
+          const newPercentage = document.querySelector('.completion-percentage');
+          if (newPercentage) {
+            this.indicatorElements.set('progressPercentage', newPercentage);
+            newPercentage.textContent = `${percent}%`;
+          }
+        }
+      } else {
+        console.warn('Progress percentage element not found in Map');
+        // Try to find it directly in the DOM
+        const domPercentage = document.querySelector('.completion-percentage');
+        if (domPercentage) {
+          this.indicatorElements.set('progressPercentage', domPercentage);
+          domPercentage.textContent = `${percent}%`;
+        }
+      }
+      
+      // Update counters
+      this._updateCounters();
+      
+      // Update rate and time
+      this._updateRateAndTime();
+      
+      // Animate data flow in the progress bar
+      this._animateDataFlow();
+    } catch (error) {
+      console.error('Error updating visual indicators:', error);
+      
+      // Try direct DOM manipulation as fallback
+      try {
+        const directProgressBar = document.querySelector('.progress-bar');
+        if (directProgressBar) {
+          directProgressBar.style.width = `${percent}%`;
+        }
+        
+        const directPercentage = document.querySelector('.completion-percentage');
+        if (directPercentage) {
+          directPercentage.textContent = `${percent}%`;
+        }
+      } catch (fallbackError) {
+        console.error('Even direct DOM update failed:', fallbackError);
+      }
     }
-    
-    if (progressPercentage) {
-      progressPercentage.textContent = `${percent}%`;
-    }
-    
-    // Update counters
-    this._updateCounters();
-    
-    // Update rate and time
-    this._updateRateAndTime();
-    
-    // Animate data flow in the progress bar
-    this._animateDataFlow();
   }
   
   /**

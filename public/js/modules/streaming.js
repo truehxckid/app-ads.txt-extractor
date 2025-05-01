@@ -418,6 +418,29 @@ class StreamingProcessor {
     
     // Update visual indicators with error handling
     try {
+      // Force UI update on each result during low progress
+      const forceUpdate = this.stats.processedCount <= 10 || this.stats.processedCount % 5 === 0;
+      
+      if (forceUpdate) {
+        console.log(`Updating visual indicator: ${this.stats.processedCount}/${this.stats.totalBundleIds}`);
+        // Directly access DOM elements to ensure updates
+        const progressBar = document.querySelector('.progress-bar');
+        if (progressBar) {
+          const percent = this.stats.totalBundleIds > 0 
+            ? Math.min(100, Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100))
+            : 0;
+          const progressElem = progressBar.querySelector('div');
+          if (progressElem) {
+            progressElem.style.width = `${percent}%`;
+          }
+          
+          const percentText = document.querySelector('.completion-percentage');
+          if (percentText) {
+            percentText.textContent = `${percent}%`;
+          }
+        }
+      }
+      
       VisualIndicators.updateProgress(statUpdate);
     } catch (e) {
       console.warn('Error updating visual indicators:', e);
@@ -426,7 +449,7 @@ class StreamingProcessor {
     }
     
     // Update status message periodically
-    if (this.stats.processedCount % 10 === 0) {
+    if (this.stats.processedCount % 5 === 0) {
       const percent = this.stats.totalBundleIds > 0 
         ? Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100)
         : 0;
