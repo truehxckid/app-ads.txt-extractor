@@ -9,7 +9,7 @@ import DOMUtils from './dom-utils.js';
 import TemplateEngine from './template.js';
 import PaginationManager from './pagination.js';
 import { showNotification } from '../utils/notification.js';
-import VisualIndicators from './visual-indicators.js';
+import StreamProgressUI from './streaming/StreamProgressUI.js';
 
 /**
  * Results Manager Class
@@ -34,18 +34,16 @@ class ResultsManager {
       }
       
       // Clear previous visual indicators before initializing new ones
-      VisualIndicators.clearIndicators();
+      StreamProgressUI.clearIndicators();
       
       // Initialize visual indicators
-      if (typeof VisualIndicators.initialize === 'function') {
-        VisualIndicators.initialize({
-          totalItems: bundleIds.length,
-          containerSelector: resultElement,
-          showDetails: true,
-          animate: true
-        });
-        VisualIndicators.setStatusMessage('Starting extraction process...', 'info');
-      }
+      StreamProgressUI.initialize({
+        totalItems: bundleIds.length,
+        container: resultElement,
+        showDetails: true,
+        animate: true
+      });
+      StreamProgressUI.setStatusMessage('Starting extraction process...', 'info');
       
       // Show debug info if in debug mode
       if (debugElement && AppState.debugMode) {
@@ -57,10 +55,8 @@ class ResultsManager {
       AppState.setSearchTerms(searchTerms);
       
       // Update visual indicators before API call
-      if (VisualIndicators) {
-        VisualIndicators.updateProgress({processed: 0, total: bundleIds.length});
-        VisualIndicators.setStatusMessage('Sending request to server...', 'info');
-      }
+      StreamProgressUI.updateProgress({processed: 0, total: bundleIds.length});
+      StreamProgressUI.setStatusMessage('Sending request to server...', 'info');
       
       // Call API with pagination parameters
       const response = await Api.extractDomains(
@@ -176,14 +172,14 @@ class ResultsManager {
       const withAppAds = Array.isArray(response.results) ? 
         response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
         
-      VisualIndicators.updateProgress({
+      StreamProgressUI.updateProgress({
         processed: response.totalProcessed || bundleIds.length,
         success: response.successCount || 0,
         errors: response.errorCount || 0,
         withAppAds: withAppAds,
         total: bundleIds.length
       });
-      VisualIndicators.setStatusMessage('Processing complete, rendering results...', 'success');
+      StreamProgressUI.setStatusMessage('Processing complete, rendering results...', 'success');
       
       // Store results in app state
       AppState.setResults(response.results, response.pagination);
@@ -215,7 +211,7 @@ class ResultsManager {
       const withAppAdsComplete = Array.isArray(response.results) ? 
         response.results.filter(r => r.success && r.appAdsTxt?.exists).length : 0;
         
-      VisualIndicators.complete({
+      StreamProgressUI.complete({
         processed: response.totalProcessed || bundleIds.length,
         success: response.successCount || 0,
         errors: response.errorCount || 0,
@@ -239,7 +235,7 @@ class ResultsManager {
       DOMUtils.showError('result', errorMessage);
       
       // Show error in visual indicators
-      VisualIndicators.showError(`Error: ${errorMessage}`);
+      StreamProgressUI.showError(`Error: ${errorMessage}`);
       
       // Update debug info if in debug mode
       const debugElement = DOMUtils.getElement('debugInfo');
@@ -274,19 +270,17 @@ class ResultsManager {
         AppState.searchTerms : DOMUtils.getSearchTerms();
       
       // Clear previous visual indicators before initializing new ones
-      VisualIndicators.clearIndicators();
+      StreamProgressUI.clearIndicators();
       
       // Initialize visual indicators for pagination
       const resultElement = DOMUtils.getElement('result');
-      if (typeof VisualIndicators.initialize === 'function') {
-        VisualIndicators.initialize({
-          totalItems: bundleIds.length,
-          containerSelector: resultElement,
-          showDetails: false,
-          animate: true
-        });
-        VisualIndicators.setStatusMessage(`Loading page ${page}...`, 'info');
-      }
+      StreamProgressUI.initialize({
+        totalItems: bundleIds.length,
+        container: resultElement,
+        showDetails: false,
+        animate: true
+      });
+      StreamProgressUI.setStatusMessage(`Loading page ${page}...`, 'info');
       
       // Fetch the specific page
       const response = await Api.extractDomains(
@@ -297,11 +291,11 @@ class ResultsManager {
       );
       
       // Update visual indicators
-      VisualIndicators.updateProgress({
+      StreamProgressUI.updateProgress({
         processed: AppState.pageSize, 
         total: response.pagination?.totalItems || bundleIds.length
       });
-      VisualIndicators.setStatusMessage(`Page ${page} loaded successfully`, 'success');
+      StreamProgressUI.setStatusMessage(`Page ${page} loaded successfully`, 'success');
       
       // Update app state with new results
       AppState.setResults(response.results, response.pagination);
@@ -310,7 +304,7 @@ class ResultsManager {
       this.displayResults(response);
       
       // Complete visual indicators
-      VisualIndicators.complete({
+      StreamProgressUI.complete({
         processed: AppState.pageSize,
         total: response.pagination?.totalItems || bundleIds.length
       });
@@ -321,7 +315,7 @@ class ResultsManager {
       DOMUtils.showError('result', err.message);
       
       // Show error in visual indicators
-      VisualIndicators.showError(`Error loading page: ${err.message}`);
+      StreamProgressUI.showError(`Error loading page: ${err.message}`);
     } finally {
       AppState.setProcessing(false);
     }

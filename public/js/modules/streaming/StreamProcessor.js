@@ -143,6 +143,26 @@ class StreamProcessor {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    
+    // Reset UI components
+    if (this.progressUI) {
+      this.progressUI.clearIndicators();
+    }
+    
+    if (this.resultsRenderer) {
+      // Clear existing results table if it exists
+      const resultsTable = document.querySelector('.results-table-container');
+      if (resultsTable) {
+        resultsTable.innerHTML = '';
+      }
+    }
+    
+    // Terminate worker if active
+    if (this.worker) {
+      console.log('🚀 StreamProcessor: Terminating existing worker for new job');
+      this.worker.terminate();
+      this.worker = null;
+    }
   }
   
   /**

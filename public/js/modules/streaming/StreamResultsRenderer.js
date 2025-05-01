@@ -51,7 +51,7 @@ class StreamResultsRenderer {
     console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
     
     // Create minimal structure with just the worker info banner - 
-    // Progress bars and stats are handled by the VisualIndicators module
+    // Progress bars and stats are handled by the StreamProgressUI module
     resultElement.innerHTML = `
       <!-- Results preview notification -->
       <div class="streaming-info-banner worker-processing-indicator" style="margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;">

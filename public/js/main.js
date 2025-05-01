@@ -9,7 +9,7 @@ import ThemeManager from './utils/theme.js';
 import { checkBrowserSupport } from './utils/browser-compat.js';
 import DOMUtils from './modules/dom-utils.js';
 import StreamingIntegration from './modules/streaming-integration.js';
-import VisualIndicators from './modules/visual-indicators.js';
+import StreamProgressUI from './modules/streaming/StreamProgressUI.js';
 
 /**
  * Initialize the application
@@ -34,15 +34,11 @@ function initApp() {
     // Initialize streaming integration
     StreamingIntegration.initialize();
     
-    // Initialize visual indicators (explicitly)
-    if (VisualIndicators && typeof VisualIndicators.initialize === 'function') {
-      console.info('Initializing visual indicators module...');
-      
-      // Expose globally for debugging and direct access
-      window.VisualIndicatorsAPI = VisualIndicators;
-      
-      // CSS loading is now handled internally by VisualIndicators._ensureCssIsLoaded()
-    }
+    // Initialize progress UI (explicitly)
+    console.info('Initializing StreamProgressUI module...');
+    
+    // Expose globally for debugging and direct access
+    window.ProgressUI = StreamProgressUI;
     
     // Add global error handling
     window.addEventListener('error', EventHandler.handleGlobalError);

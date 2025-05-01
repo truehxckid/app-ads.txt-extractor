@@ -408,6 +408,9 @@ class StreamProgressUI {
           if (newPercentage) {
             this.indicatorElements.set('progressPercentage', newPercentage);
             newPercentage.textContent = `${percent}%`;
+          } else {
+            // Don't attempt to use DOM elements that don't exist
+            return;
           }
         }
       } else {
