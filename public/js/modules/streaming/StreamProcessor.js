@@ -720,6 +720,26 @@ class StreamProcessor {
     const message = `Completed processing ${this.stats.processedCount} bundle IDs (${this.stats.errorCount} errors) in ${timeDisplay}`;
     showNotification(message, 'success');
     
+    // Reset processing state in AppState
+    if (window.AppState && typeof window.AppState.setProcessing === 'function') {
+      window.AppState.setProcessing(false);
+    }
+    
+    // Hide any remaining "Processing..." indicators
+    const processingIndicators = document.querySelectorAll('.processing-indicator, [data-status="processing"]');
+    processingIndicators.forEach(indicator => {
+      if (indicator.style) {
+        indicator.style.display = 'none';
+      }
+    });
+    
+    // Enable extract button
+    const extractBtn = document.getElementById('extractBtn');
+    if (extractBtn) {
+      extractBtn.disabled = false;
+      extractBtn.textContent = 'Extract All Developer Domains';
+    }
+    
     // Dispatch a "complete" event for other parts of the application to respond to
     window.dispatchEvent(new CustomEvent('streaming-processing-complete', {
       detail: { stats, timestamp: Date.now() }
@@ -754,12 +774,22 @@ class StreamProcessor {
         this.stats.errorCount = data.errorCount;
         this.stats.withAppAdsTxtCount = data.withAppAdsTxtCount;
         
-        // Update progress UI
-        this.progressUI.updateProgress(this.stats);
+        try {
+          // Update progress UI with error handling
+          this.progressUI.updateProgress(this.stats);
+        } catch (err) {
+          console.warn('Error updating progress UI from worker message:', err);
+          // Don't let progress UI errors stop processing
+        }
         
-        // Also update the results summary in StreamResultsRenderer
-        if (this.resultsRenderer && typeof this.resultsRenderer.updateSummaryStats === 'function') {
-          this.resultsRenderer.updateSummaryStats(this.stats);
+        try {
+          // Also update the results summary in StreamResultsRenderer
+          if (this.resultsRenderer && typeof this.resultsRenderer.updateSummaryStats === 'function') {
+            this.resultsRenderer.updateSummaryStats(this.stats);
+          }
+        } catch (err) {
+          console.warn('Error updating results summary from worker message:', err);
+          // Continue processing even if summary update fails
         }
         
         // Update status message periodically
@@ -768,10 +798,15 @@ class StreamProcessor {
             ? Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100)
             : 0;
           
-          this.progressUI.setStatusMessage(
-            `⚙️ Worker processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
-            'info'
-          );
+          try {
+            this.progressUI.setStatusMessage(
+              `⚙️ Worker processing... ${percent}% complete (${this.stats.processedCount} of ${this.stats.totalBundleIds})`,
+              'info'
+            );
+          } catch (err) {
+            console.warn('Error updating status message from worker:', err);
+            // Continue processing even if status update fails
+          }
         }
         break;
         

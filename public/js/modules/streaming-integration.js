@@ -381,9 +381,9 @@ class StreamingIntegration {
           // Fall back to original handler
           return originalHandler.call(EventHandler, event);
         } finally {
-          AppState.setProcessing(false);
-          
-          console.log('⚡⚡⚡ ENTRY POINT: Processing completed, AppState.isProcessing set to false');
+          // Don't set processing to false here - let StreamProcessor handle it
+          // when processing is truly complete
+          console.log('⚡⚡⚡ ENTRY POINT: Processing in progress, AppState.isProcessing will be set to false when truly complete');
         }
         
         // IMPORTANT: Do not continue execution and call the original handler!

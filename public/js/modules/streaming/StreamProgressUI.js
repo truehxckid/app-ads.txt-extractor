@@ -246,6 +246,10 @@ class StreamProgressUI {
       className: 'completion-percentage'
     }, '0%');
     
+    // Store references in our map for easier access later
+    this.indicatorElements.set('progressBar', bar);
+    this.indicatorElements.set('progressPercentage', percentage);
+    
     bar.appendChild(dataStripes);
     barWrapper.appendChild(bar);
     barContainer.appendChild(barWrapper);
@@ -343,9 +347,7 @@ class StreamProgressUI {
    * @param {Object} stats - Processing statistics
    */
   updateProgress(stats = {}) {
-    console.log('🔄 StreamProgressUI.updateProgress called with:', stats);
-    
-    // Update local stats with provided values
+    // Store stats without unnecessary logging to reduce console spam
     Object.assign(this.stats, stats);
     
     // Calculate percentage
@@ -360,61 +362,81 @@ class StreamProgressUI {
     
     // Update progress bar - with more robust error handling
     try {
-      const progressBar = this.indicatorElements.get('progressBar');
-      const progressPercentage = this.indicatorElements.get('progressPercentage');
-      
-      if (progressBar) {
-        // Ensure the element is still in the DOM
-        if (progressBar.isConnected) {
-          progressBar.style.width = `${percent}%`;
-          
-          // Add classes based on percentage for visual effects
-          if (percent > 25) progressBar.classList.add('quarter-complete');
-          if (percent > 50) progressBar.classList.add('half-complete');
-          if (percent > 75) progressBar.classList.add('three-quarter-complete');
-          if (percent >= 100) progressBar.classList.add('complete');
+      // Check if we need to re-initialize the indicators
+      const container = this.indicatorElements.get('container');
+      if (!container || !container.isConnected) {
+        // Container is gone, try to recreate on the result element if it exists
+        const resultElement = document.getElementById('result');
+        if (resultElement) {
+          console.log('Attempting to re-initialize progress indicators');
+          this.initialize({
+            totalItems: this.stats.total,
+            container: resultElement,
+            showDetails: true,
+            animate: true
+          });
         } else {
-          console.warn('Progress bar element is no longer in the DOM');
-          // Try to re-find the element
-          const newProgressBar = document.querySelector('.progress-bar');
-          if (newProgressBar) {
-            this.indicatorElements.set('progressBar', newProgressBar);
-            newProgressBar.style.width = `${percent}%`;
-          }
-        }
-      } else {
-        console.warn('Progress bar element not found in Map');
-        // Try to find it directly in the DOM
-        const domProgressBar = document.querySelector('.progress-bar');
-        if (domProgressBar) {
-          this.indicatorElements.set('progressBar', domProgressBar);
-          domProgressBar.style.width = `${percent}%`;
+          // If we can't recreate, move to fallback
+          this._updateFallback();
+          return;
         }
       }
       
-      if (progressPercentage) {
-        if (progressPercentage.isConnected) {
-          progressPercentage.textContent = `${percent}%`;
+      // Get references to progress elements
+      let progressBar = this.indicatorElements.get('progressBar');
+      let progressPercentage = this.indicatorElements.get('progressPercentage');
+      
+      // If progressBar doesn't exist or is not in DOM, try to find or recreate it
+      if (!progressBar || !progressBar.isConnected) {
+        // First try to find it in the DOM
+        progressBar = document.querySelector('.progress-bar');
+        if (progressBar) {
+          // Found it, update our reference
+          this.indicatorElements.set('progressBar', progressBar);
         } else {
-          console.warn('Progress percentage element is no longer in the DOM');
-          // Try to re-find the element
-          const newPercentage = document.querySelector('.completion-percentage');
-          if (newPercentage) {
-            this.indicatorElements.set('progressPercentage', newPercentage);
-            newPercentage.textContent = `${percent}%`;
+          // Try to find the container to recreate within
+          const container = this.indicatorElements.get('container');
+          if (container && container.isConnected) {
+            const newProgressContainer = this._createProgressBar();
+            if (container.firstChild) {
+              container.insertBefore(newProgressContainer, container.firstChild);
+            } else {
+              container.appendChild(newProgressContainer);
+            }
+            // Get the fresh reference
+            progressBar = this.indicatorElements.get('progressBar');
           } else {
-            // Don't attempt to use DOM elements that don't exist
+            // Can't recover, use fallback
+            this._updateFallback();
             return;
           }
         }
+      }
+      
+      // Now we should have a valid progressBar reference
+      if (progressBar && progressBar.isConnected) {
+        progressBar.style.width = `${percent}%`;
+        
+        // Add classes based on percentage for visual effects
+        if (percent > 25) progressBar.classList.add('quarter-complete');
+        if (percent > 50) progressBar.classList.add('half-complete');
+        if (percent > 75) progressBar.classList.add('three-quarter-complete');
+        if (percent >= 100) progressBar.classList.add('complete');
       } else {
-        console.warn('Progress percentage element not found in Map');
-        // Try to find it directly in the DOM
-        const domPercentage = document.querySelector('.completion-percentage');
-        if (domPercentage) {
-          this.indicatorElements.set('progressPercentage', domPercentage);
-          domPercentage.textContent = `${percent}%`;
+        // Silently give up and use fallback
+        this._updateFallback();
+      }
+      
+      // Update the percentage display
+      if (!progressPercentage || !progressPercentage.isConnected) {
+        progressPercentage = document.querySelector('.completion-percentage');
+        if (progressPercentage) {
+          this.indicatorElements.set('progressPercentage', progressPercentage);
         }
+      }
+      
+      if (progressPercentage && progressPercentage.isConnected) {
+        progressPercentage.textContent = `${percent}%`;
       }
       
       // Update counters
