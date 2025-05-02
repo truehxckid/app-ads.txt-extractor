@@ -99,8 +99,8 @@ const config = {
   
   // Memory management settings
   memory: {
-    gcIntervalMs: 60000, // 1 minute between GC attempts
-    heapUsageThreshold: 0.85, // 85% heap usage threshold for forced GC
+    gcIntervalMs: 120000, // 2 minute between GC attempts
+    heapUsageThreshold: 0.80, // 80% heap usage threshold for forced GC
     enableForcedGc: process.env.ENABLE_FORCED_GC === 'true' || false // Whether to enable forced GC
   },
   

@@ -263,29 +263,36 @@ class StreamResultsRenderer {
    * @private
    */
   updateSummaryStats(stats) {
-    if (!this.resultElement) return;
+  if (!this.resultElement) return;
+  
+  // Update worker processing indicator
+  const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator h3');
+  if (workerIndicator) {
+    // Fix for NaN% issue - ensure both values are valid numbers
+    let percent = 0;
+    const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
+    const totalCount = typeof stats.total === 'number' && stats.total > 0 ? stats.total : this.stats?.totalBundleIds || 0;
     
-    // Update worker processing indicator
-    const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator h3');
-    if (workerIndicator) {
-      // Fix for NaN% issue - ensure both values are valid numbers
-      let percent = 0;
-      if (stats.total > 0 && typeof stats.processed === 'number') {
-        percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
-      }
-      const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
-      const totalCount = typeof stats.total === 'number' ? stats.total : 0;
-      
-      // Update text with verified numbers
+    // Only calculate percent if total is valid
+    if (totalCount > 0) {
+      percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
+    }
+    
+    // Update text only with valid values - never show "X of 0"
+    if (totalCount > 0) {
       workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
-      
-      // Also update the progress bar if it exists
-      const progressBar = this.resultElement.querySelector('.worker-processing-indicator div');
-      if (progressBar) {
-        progressBar.style.width = `${percent}%`;
-      }
+    } else {
+      // Keep the initial text or show a proper initializing message
+      workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
+    }
+    
+    // Also update the progress bar if it exists
+    const progressBar = this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
+    if (progressBar) {
+      progressBar.style.width = `${percent}%`;
     }
   }
+}
 
   /**
    * Render a batch of results
