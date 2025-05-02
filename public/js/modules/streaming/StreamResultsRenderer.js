@@ -276,19 +276,22 @@ class StreamResultsRenderer {
     // Only calculate percent if total is valid
     if (totalCount > 0) {
       percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
+      
+      // Only update the text if we have valid data
+      // Check if we're not going backwards from a previous valid state
+      if (!workerIndicator.textContent.includes('initializing')) {
+        workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+      }
     }
-    
-    // Update text only with valid values - never show "X of 0"
-    if (totalCount > 0) {
-      workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
-    } else {
-      // Keep the initial text or show a proper initializing message
+    // Don't revert to "initializing" once we've started showing progress
+    else if (!workerIndicator.textContent.includes('%')) {
+      // Only show initializing if we haven't started showing percentages yet
       workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
     }
     
-    // Also update the progress bar if it exists
+    // Always update the progress bar if it exists
     const progressBar = this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
-    if (progressBar) {
+    if (progressBar && percent > 0) {
       progressBar.style.width = `${percent}%`;
     }
   }
