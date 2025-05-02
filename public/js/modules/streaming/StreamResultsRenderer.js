@@ -61,10 +61,12 @@ class StreamResultsRenderer {
     workerIndicator.className = 'streaming-info-banner worker-processing-indicator';
     workerIndicator.style.cssText = 'margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;';
     workerIndicator.innerHTML = `
-      <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... ${totalItems} bundle IDs</h3>
+      <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... 0% complete (0 of ${totalItems})</h3>
       <p>Results will be available when processing is complete.</p>
       <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
-      <div style="margin-top: 15px; height: 4px; background: linear-gradient(90deg, #0366d6 0%, transparent 50%, #0366d6 100%); background-size: 200% 100%; animation: streaming-animation 1.5s infinite linear; border-radius: 2px;"></div>
+      <div class="progress-bar-wrapper" style="margin-top: 15px; height: 4px; background: #e0e0e0; border-radius: 2px; overflow: hidden;">
+        <div class="progress-bar" style="height: 100%; width: 0%; background: #0366d6; transition: width 0.3s ease;"></div>
+      </div>
     `;
     
     // Create results container
@@ -265,9 +267,23 @@ class StreamResultsRenderer {
     
     // Update worker processing indicator
     const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator h3');
-    if (workerIndicator && stats.total > 0) {
-      const percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
-      workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${stats.processed} of ${stats.total})`;
+    if (workerIndicator) {
+      // Fix for NaN% issue - ensure both values are valid numbers
+      let percent = 0;
+      if (stats.total > 0 && typeof stats.processed === 'number') {
+        percent = Math.min(100, Math.round((stats.processed / stats.total) * 100));
+      }
+      const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
+      const totalCount = typeof stats.total === 'number' ? stats.total : 0;
+      
+      // Update text with verified numbers
+      workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+      
+      // Also update the progress bar if it exists
+      const progressBar = this.resultElement.querySelector('.worker-processing-indicator div');
+      if (progressBar) {
+        progressBar.style.width = `${percent}%`;
+      }
     }
   }
 

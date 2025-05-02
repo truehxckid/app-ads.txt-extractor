@@ -26,11 +26,14 @@ self.onmessage = function(e) {
     searchTerms = terms || [];
     processingStartTime = Date.now();
     
-    // Initialize UI in main thread
+    // Initialize UI in main thread with total count
     self.postMessage({
       type: 'initialize',
       data: {
-        hasSearchTerms: searchTerms.length > 0
+        hasSearchTerms: searchTerms.length > 0,
+        totalBundleIds: bundleIds.length,
+        processedCount: 0,
+        percent: 0
       }
     });
     
@@ -130,7 +133,8 @@ async function processStreamedBundleIds(bundleIds, searchTerms) {
               successCount,
               errorCount,
               withAppAdsTxtCount,
-              percent
+              percent,
+              totalBundleIds: bundleIds.length // Always include total bundle IDs count
             }
           });
         }
@@ -140,7 +144,7 @@ async function processStreamedBundleIds(bundleIds, searchTerms) {
     // Process any remaining buffer
     processBuffer();
     
-    // Final update
+    // Final update with total count
     self.postMessage({
       type: 'complete',
       data: {
@@ -149,7 +153,9 @@ async function processStreamedBundleIds(bundleIds, searchTerms) {
         successCount,
         errorCount,
         withAppAdsTxtCount,
-        processingTime: Date.now() - processingStartTime
+        totalBundleIds: bundleIds.length,
+        processingTime: Date.now() - processingStartTime,
+        percent: 100 // Always 100% on completion
       }
     });
     

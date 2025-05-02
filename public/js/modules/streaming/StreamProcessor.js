@@ -254,20 +254,18 @@ class StreamProcessor {
     // Initialize UI components
     this.resultsRenderer.initializeUI(resultElement, bundleIds.length, searchTerms.length > 0);
     
-    // Initialize progress UI
-    const progressInitSuccess = this.progressUI.initialize({
-      totalItems: bundleIds.length,
-      container: resultElement,
-      showDetails: true,
-      animate: true
-    });
+    // We'll just use the worker indicator now, so no need for separate progress UI
+    console.log('Not initializing detailed progress UI, will use worker indicator only');
     
-    if (!progressInitSuccess) {
-      console.error('Failed to initialize progress UI, creating fallback');
-      this.progressUI.createFallback(resultElement, bundleIds.length);
-    } else {
-      this.progressUI.setStatusMessage('Starting streaming process...', 'info');
-    }
+    // Just initialize the stats tracking without UI
+    this.progressUI.stats = {
+      total: bundleIds.length,
+      processed: 0,
+      success: 0,
+      errors: 0,
+      withAppAds: 0,
+      startTime: Date.now()
+    };
     
     try {
       // Force attempt to create a worker if not already initialized
@@ -297,7 +295,7 @@ class StreamProcessor {
       // If worker is available and initialized, use it
       if (this.worker) {
         console.log('⚡ StreamProcessor: Using Web Worker for streaming processing');
-        this.progressUI.setStatusMessage('Processing with Web Worker (faster)...', 'info');
+        // We no longer use progress UI for status messages
         
         // Create visual indicator that worker is being used
         const workerIndicator = document.createElement('div');
@@ -697,12 +695,11 @@ class StreamProcessor {
       elapsedTime: processingTime
     };
     
-    // First, remove only the detailed progress UI elements (the boxes with statistics)
-    // but keep the simple completion message
-    const detailedProgressElements = document.querySelectorAll(
-      '.visual-indicators-container, .stats-container, .progress-bar-container'
+    // Remove ALL progress UI elements completely 
+    const allProgressElements = document.querySelectorAll(
+      '.visual-indicators-container, .stats-container, .progress-bar-container, .counter, .rate-indicator, .time-remaining, .progress-indicator, #streamProgress'
     );
-    detailedProgressElements.forEach(element => {
+    allProgressElements.forEach(element => {
       if (element && element.parentNode) {
         element.parentNode.removeChild(element);
       }
@@ -784,14 +781,21 @@ class StreamProcessor {
         break;
         
       case 'progress':
-        // Update stats from worker
-        this.stats.processedCount = data.processedCount;
-        this.stats.successCount = data.successCount;
-        this.stats.errorCount = data.errorCount;
-        this.stats.withAppAdsTxtCount = data.withAppAdsTxtCount;
+        // Update stats from worker with safeguards for undefined values
+        this.stats.processedCount = typeof data.processedCount === 'number' ? data.processedCount : 0;
+        this.stats.successCount = typeof data.successCount === 'number' ? data.successCount : 0;
+        this.stats.errorCount = typeof data.errorCount === 'number' ? data.errorCount : 0;
+        this.stats.withAppAdsTxtCount = typeof data.withAppAdsTxtCount === 'number' ? data.withAppAdsTxtCount : 0;
+        
+        // Calculate percentage to ensure we always have a valid number, not NaN
+        if (typeof this.stats.totalBundleIds === 'number' && this.stats.totalBundleIds > 0) {
+          data.percent = Math.min(100, Math.round((this.stats.processedCount / this.stats.totalBundleIds) * 100));
+        } else {
+          data.percent = 0; // Default to 0% if we can't calculate
+        }
         
         // Log the data from worker to help with debugging
-        console.log('Worker progress data:', data);
+        console.log('Worker progress data:', data, 'Calculated percent:', data.percent);
         
         try {
           // Update progress UI with error handling
@@ -800,14 +804,17 @@ class StreamProcessor {
             this.stats.percent = data.percent;
           }
           
-          // Ensure total is correctly set for percentage calculation
-          if (!this.stats.total && this.stats.totalBundleIds) {
-            this.stats.total = this.stats.totalBundleIds;
+          // Always set both total and processed for consistent reporting
+          this.stats.total = this.stats.totalBundleIds;
+          this.stats.processed = this.stats.processedCount;
+          
+          // Double-check that we have valid numbers to avoid NaN
+          if (typeof this.stats.total !== 'number' || isNaN(this.stats.total)) {
+            this.stats.total = 0;
           }
           
-          // Ensure processed is correctly mapped
-          if (this.stats.processedCount && !this.stats.processed) {
-            this.stats.processed = this.stats.processedCount;
+          if (typeof this.stats.processed !== 'number' || isNaN(this.stats.processed)) {
+            this.stats.processed = 0;
           }
           
           this.progressUI.updateProgress(this.stats);

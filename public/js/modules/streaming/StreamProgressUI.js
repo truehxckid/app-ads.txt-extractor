@@ -26,55 +26,6 @@ class StreamProgressUI {
       withAppAds: 0,
       startTime: 0
     };
-    
-    this.cssLoaded = false;
-  }
-  
-  /**
-   * Ensure CSS for visual indicators is loaded
-   * @private
-   */
-  _ensureCssIsLoaded() {
-    if (this.cssLoaded) return;
-    
-    // Check if CSS is already loaded
-    const cssLinkExists = document.querySelector('link[href*="visual-indicators.css"]');
-    if (!cssLinkExists) {
-      console.info('Loading visual indicators CSS');
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = '/js/utils/visual-indicators.css';
-      link.onload = () => {
-        console.log('Visual indicators CSS loaded successfully');
-        this.cssLoaded = true;
-      };
-      link.onerror = (err) => {
-        console.error('Failed to load visual indicators CSS:', err);
-        // Try an alternate path
-        link.href = './js/utils/visual-indicators.css';
-      };
-      document.head.appendChild(link);
-    }
-    
-    // Create keyframes if not already defined
-    const keyframesExists = document.querySelector('style[data-visual-indicators="keyframes"]');
-    if (!keyframesExists) {
-      const keyframes = document.createElement('style');
-      keyframes.setAttribute('data-visual-indicators', 'keyframes');
-      keyframes.textContent = `
-        @keyframes pulse {
-          0% { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-          100% { box-shadow: 0 0 12px rgba(52, 152, 219, 0.5); }
-        }
-        @keyframes dataFlow {
-          0% { left: -30px; }
-          100% { left: 100%; }
-        }
-      `;
-      document.head.appendChild(keyframes);
-    }
-    
-    this.cssLoaded = true;
   }
   
   /**
@@ -153,44 +104,21 @@ class StreamProgressUI {
     // Clear previous indicators from our map
     this.clearIndicators();
     
-    // Ensure CSS is loaded
-    this._ensureCssIsLoaded();
+    // We're no longer creating visual indicators at all
+    // Just log that we're starting
+    console.log('Starting processing without UI indicators');
     
-    // Create indicator container
-    const indicatorContainer = DOMUtils.createElement('div', {
-      className: 'visual-indicators-container'
+    // Create a hidden container to store references if needed, but don't display it
+    const dummyContainer = DOMUtils.createElement('div', {
+      className: 'hidden-progress-reference'
     });
+    dummyContainer.style.display = 'none';
     
-    // Create progress bar
-    const progressBar = this._createProgressBar();
-    indicatorContainer.appendChild(progressBar);
+    // Store dummy container reference
+    this.indicatorElements.set('container', dummyContainer);
     
-    // Create status message
-    const statusMessage = DOMUtils.createElement('div', {
-      className: 'status-message info'
-    }, 'Starting...');
-    
-    indicatorContainer.appendChild(statusMessage);
-    
-    // Store reference to status message
-    this.indicatorElements.set('statusMessage', statusMessage);
-    
-    // Add detailed stats if needed
-    if (showDetails) {
-      const statsContainer = this._createStatsContainer();
-      indicatorContainer.appendChild(statsContainer);
-    }
-    
-    // Store references
-    this.indicatorElements.set('container', indicatorContainer);
-    
-    // Add to DOM
-    containerElement.prepend(indicatorContainer);
-    
-    // Add pulsing effect if animate is true
-    if (animate) {
-      indicatorContainer.classList.add('animated');
-    }
+    // Add to DOM but keep hidden
+    containerElement.appendChild(dummyContainer);
     
     console.log('Visual indicators initialized successfully');
     return true;
@@ -384,140 +312,30 @@ class StreamProgressUI {
     // Store stats without unnecessary logging to reduce console spam
     Object.assign(this.stats, stats);
     
-    // Calculate or use provided percentage
+    // Calculate percentage for logging purposes only
     let percent = 0;
     
     // If percent is directly provided in stats, use it
     if (typeof stats.percent === 'number') {
       percent = stats.percent;
-      console.log('Using provided percent value:', percent);
     } else if (this.stats.total > 0) {
       // Calculate percentage based on processed/total
       percent = Math.min(100, Math.round((this.stats.processed / this.stats.total) * 100));
-      console.log('Calculated percent value:', percent, 'from', this.stats.processed, '/', this.stats.total);
-    } else {
-      // If total unknown, use a time-based estimate (max 95%)
-      const elapsed = Date.now() - this.stats.startTime;
-      percent = Math.min(95, Math.round((elapsed / 60000) * 100));
-      console.log('Estimated percent value from time:', percent);
     }
     
-    // Update progress bar - with more robust error handling
-    try {
-      // Remove the top progress indicator if there's a duplicate
-      const progressIndicators = document.querySelectorAll('.progress-indicator');
-      if (progressIndicators.length > 1) {
-        console.log('Found multiple progress indicators, removing extras');
-        // Keep only the most recently added one
-        for (let i = 0; i < progressIndicators.length - 1; i++) {
-          if (progressIndicators[i].parentNode) {
-            progressIndicators[i].parentNode.removeChild(progressIndicators[i]);
-          }
-        }
+    // Just log progress - no UI updates
+    console.log(`Processing progress: ${percent}% (${this.stats.processed || 0} of ${this.stats.total || 0})`);
+    
+    // Update the worker indicator directly instead of using our own indicators
+    const workerIndicator = document.querySelector('.worker-processing-indicator h3');
+    if (workerIndicator) {
+      workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${this.stats.processed || 0} of ${this.stats.total || 0})`;
+      
+      // Also update the progress bar if it exists
+      const workerProgressBar = document.querySelector('.worker-processing-indicator .progress-bar');
+      if (workerProgressBar) {
+        workerProgressBar.style.width = `${percent}%`;
       }
-      
-      // Check if we need to re-initialize the indicators
-      const container = this.indicatorElements.get('container');
-      if (!container || !container.isConnected) {
-        // Container is gone, try to recreate on the result element if it exists
-        const resultElement = document.getElementById('result');
-        if (resultElement) {
-          console.log('Attempting to re-initialize progress indicators');
-          this.initialize({
-            totalItems: this.stats.total,
-            container: resultElement,
-            showDetails: true,
-            animate: true
-          });
-        } else {
-          // If we can't recreate, move to fallback
-          this._updateFallback();
-          return;
-        }
-      }
-      
-      // Get references to progress elements
-      let progressBar = this.indicatorElements.get('progressBar');
-      let progressPercentage = this.indicatorElements.get('progressPercentage');
-      
-      // If progressBar doesn't exist or is not in DOM, try to find or recreate it
-      if (!progressBar || !progressBar.isConnected) {
-        // First try to find it in the DOM
-        progressBar = document.querySelector('.progress-bar');
-        if (progressBar) {
-          // Found it, update our reference
-          this.indicatorElements.set('progressBar', progressBar);
-        } else {
-          // Try to find the container to recreate within
-          const container = this.indicatorElements.get('container');
-          if (container && container.isConnected) {
-            const newProgressContainer = this._createProgressBar();
-            if (container.firstChild) {
-              container.insertBefore(newProgressContainer, container.firstChild);
-            } else {
-              container.appendChild(newProgressContainer);
-            }
-            // Get the fresh reference
-            progressBar = this.indicatorElements.get('progressBar');
-          } else {
-            // Can't recover, use fallback
-            this._updateFallback();
-            return;
-          }
-        }
-      }
-      
-      // Now we should have a valid progressBar reference
-      if (progressBar && progressBar.isConnected) {
-        console.log(`Setting progress bar width to ${percent}%`);
-        // Make sure width is explicitly set as pixels or percentage
-        progressBar.style.width = `${percent}%`;
-        
-        // Add classes based on percentage for visual effects
-        if (percent > 25) progressBar.classList.add('quarter-complete');
-        if (percent > 50) progressBar.classList.add('half-complete');
-        if (percent > 75) progressBar.classList.add('three-quarter-complete');
-        if (percent >= 100) progressBar.classList.add('complete');
-        
-        // Debug help - log the computed style to verify it's being applied
-        if (window.getComputedStyle) {
-          const computed = window.getComputedStyle(progressBar);
-          console.log('Progress bar computed width:', computed.width);
-        }
-      } else {
-        // Silently give up and use fallback
-        this._updateFallback();
-      }
-      
-      // Update the percentage display
-      if (!progressPercentage || !progressPercentage.isConnected) {
-        progressPercentage = document.querySelector('.completion-percentage');
-        if (progressPercentage) {
-          this.indicatorElements.set('progressPercentage', progressPercentage);
-        }
-      }
-      
-      if (progressPercentage && progressPercentage.isConnected) {
-        progressPercentage.textContent = `${percent}%`;
-      }
-      
-      // Update counters
-      this._updateCounters();
-      
-      // Update rate and time
-      this._updateRateAndTime();
-      
-      // Animate data flow in the progress bar
-      this._animateDataFlow();
-      
-      // Update fallback indicator if main one failed
-      this._updateFallback();
-      
-    } catch (error) {
-      console.error('Error updating visual indicators:', error);
-      
-      // Update fallback as last resort
-      this._updateFallback();
     }
   }
   
@@ -768,72 +586,22 @@ class StreamProgressUI {
     // Update stats with final values
     Object.assign(this.stats, finalStats);
     
-    // Set progress to 100%
-    const progressBar = this.indicatorElements.get('progressBar');
-    const progressPercentage = this.indicatorElements.get('progressPercentage');
-    
-    if (progressBar) {
-      progressBar.style.width = '100%';
-      progressBar.classList.add('complete');
+    // Final update to worker indicator
+    const workerIndicator = document.querySelector('.worker-processing-indicator h3');
+    if (workerIndicator) {
+      workerIndicator.textContent = `✅ Processing Complete (${this.stats.processed || 0} of ${this.stats.total || 0})`;
+      
+      // Update the progress bar to 100%
+      const workerProgressBar = document.querySelector('.worker-processing-indicator .progress-bar');
+      if (workerProgressBar) {
+        workerProgressBar.style.width = '100%';
+        workerProgressBar.style.background = '#2ecc71'; // Change to green for completion
+      }
     }
     
-    if (progressPercentage) {
-      progressPercentage.textContent = '100%';
-    }
-    
-    // Update counters one last time
-    this._updateCounters();
-    
-    // Update status message
-    this.setStatusMessage('Processing complete!', 'success');
-    
-    // Calculate final stats
+    // Calculate elapsed time for logging
     const elapsed = (Date.now() - this.stats.startTime) / 1000; // in seconds
-    const totalProcessed = this.stats.processed;
-    
-    // Update rate indicator with total time
-    const rateIndicator = this.indicatorElements.get('rateIndicator');
-    if (rateIndicator) {
-      rateIndicator.textContent = `Completed in ${elapsed.toFixed(1)}s`;
-      rateIndicator.style.textAlign = 'right';
-    }
-    
-    // Update time remaining
-    const timeRemaining = this.indicatorElements.get('timeRemaining');
-    if (timeRemaining) {
-      const rate = elapsed > 0 ? totalProcessed / elapsed : 0;
-      timeRemaining.textContent = `Average: ${rate.toFixed(1)} items/sec`;
-      timeRemaining.style.textAlign = 'right';
-    }
-    
-    // Cancel any animations
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-    
-    // Stop data flow animations
-    const dataStripes = document.querySelectorAll('.data-stripe');
-    dataStripes.forEach(stripe => {
-      stripe.style.animation = 'none';
-    });
-    
-    // Stop pulsing animation
-    const container = this.indicatorElements.get('container');
-    if (container) {
-      container.classList.remove('animated');
-    }
-    
-    // Update fallback if it exists
-    if (this.fallbackIndicator) {
-      this.fallbackIndicator.style.borderColor = '#27ae60';
-      if (this.fallbackStatusText) {
-        this.fallbackStatusText.textContent = 'Processing complete!';
-      }
-      if (this.fallbackProgressBar) {
-        this.fallbackProgressBar.style.width = '100%';
-      }
-    }
+    console.log(`Processing complete! Processed ${this.stats.processed} items in ${elapsed.toFixed(1)} seconds`);
   }
   
   /**
