@@ -252,10 +252,10 @@ class EventHandlerManager {
         // Set debounce flag
         this._isExporting = true;
         
-        // Reset the flag after a short delay
+        // Reset the flag after a longer delay to prevent double clicks
         setTimeout(() => {
           this._isExporting = false;
-        }, 1000);
+        }, 5000); // Increased from 1000ms to 5000ms
         
         // Handle all CSV download actions with the streaming method
         import('./streaming/StreamProcessor.js').then(module => {
@@ -301,7 +301,6 @@ class EventHandlerManager {
         break;
       case 'hide-results':
       case 'show-results':
-        // These are now handled directly in StreamResultsRenderer
         break;
     }
   }
@@ -449,7 +448,6 @@ class EventHandlerManager {
     tabContentElement.setAttribute('aria-hidden', 'false');
   }
   
-  // CSV download handling has been moved directly to the switch statement in handleDocumentClick
   
   /**
    * Handle download all CSV button click
@@ -482,13 +480,11 @@ class EventHandlerManager {
   }
   
   /**
-   * Handle pagination button click - now handled directly in StreamResultsRenderer
+   * Handle pagination button click
    * @param {HTMLElement} button - Pagination button
    */
   handlePaginationClick(button) {
-    // Pagination is now handled within StreamResultsRenderer 
-    // through event delegation on pagination buttons
-    console.log('Pagination is now handled internally by StreamResultsRenderer');
+    // Implemented in StreamResultsRenderer
   }
   
   /**
@@ -567,17 +563,15 @@ class EventHandlerManager {
       return false;
     }
     
-    // Then check for initialization errors that would break the app
+    // Check for initialization errors that would break the app
     if ((typeof error === 'object' && error.message) || typeof error === 'string') {
       const message = typeof error === 'object' ? error.message : error;
       
-      return (
-        message.includes('undefined is not a function') ||
-        message.includes('null is not an object') ||
-        message.includes('cannot read property') ||
-        message.includes('is not defined') ||
-        message.includes('is not a function')
-      );
+      return message.includes('undefined is not a function') ||
+             message.includes('null is not an object') ||
+             message.includes('cannot read property') ||
+             message.includes('is not defined') ||
+             message.includes('is not a function');
     }
     
     return true;

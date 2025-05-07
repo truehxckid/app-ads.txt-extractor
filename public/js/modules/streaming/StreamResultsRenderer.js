@@ -674,24 +674,7 @@ class StreamResultsRenderer {
           }
         }
         
-        // Handle CSV export buttons (both in results view and completion banner)
-        if (target && target.dataset && (target.dataset.action === 'download-csv' || target.dataset.action === 'stream-download-csv')) {
-          // Import streaming processor
-          import('./StreamProcessor.js').then(module => {
-            const StreamProcessor = module.default;
-            // Get bundle IDs and search terms
-            const AppState = window.AppState || {};
-            const bundleIds = AppState.bundleIds || [];
-            const searchTerms = AppState.searchTerms || [];
-            
-            // Call export CSV function
-            if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-              StreamProcessor.exportCsv(bundleIds, searchTerms);
-            }
-          }).catch(error => {
-            console.error('Error importing StreamProcessor for CSV export:', error);
-          });
-        }
+        // CSV export is now handled by the main EventHandler
       });
     }
   }
@@ -869,8 +852,7 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     });
   }
   
-  // We don't need to add the event listener here anymore
-  // The event is now handled globally in the EventHandler via data-action="stream-download-csv"
+  // CSV export event handling is centralized in EventHandler
 };
 
 export default streamResultsRenderer;
