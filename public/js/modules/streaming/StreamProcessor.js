@@ -1053,8 +1053,8 @@ class StreamProcessor {
       });
       
       // Set initial status message
-      this.progressUI.setStatusMessage('Preparing CSV export stream...', 'info');
-      showNotification('Starting CSV export stream...', 'info');
+      this.progressUI.setStatusMessage('Preparing CSV export...', 'info');
+      showNotification('Starting CSV export...', 'info');
       
       // Create a download link
       const downloadLink = document.createElement('a');

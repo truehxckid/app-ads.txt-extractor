@@ -351,6 +351,18 @@ class StreamResultsRenderer {
   showResults(results) {
     if (!this.resultElement) return;
     
+    // Make sure completion banner stays visible when showing results
+    const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
+    if (completionBanner) {
+      completionBanner.style.display = 'block';
+      
+      // Update Show Results button text
+      const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+      if (showResultsBtn) {
+        showResultsBtn.textContent = 'Hide Results';
+      }
+    }
+    
     // Try to get results from AppState if none provided
     if (!results || !results.length) {
       console.log('🔄 StreamResultsRenderer: No results provided, trying to get from AppState');
@@ -406,14 +418,14 @@ class StreamResultsRenderer {
     const resultsDisplay = document.createElement('div');
     resultsDisplay.className = 'stream-results-display';
     
-    // Add back button and action buttons
+    // Add hide results button with streamlined actions
     resultsDisplay.innerHTML = `
       <div class="stream-results-header">
         <div class="results-header-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
           <h3>Processing Results</h3>
           <div class="action-buttons" style="display: flex; gap: 10px;">
-            <button class="extract-btn" data-action="back-to-search">← Back</button>
-            <button class="extract-btn" data-action="download-csv">Download CSV</button>
+            <button class="extract-btn" data-action="hide-results">Hide Results</button>
+            <button class="extract-btn" data-action="stream-download-csv">Download CSV</button>
           </div>
         </div>
         <p>Showing ${results.length} extracted results from your bundle IDs.</p>
@@ -612,7 +624,7 @@ class StreamResultsRenderer {
   }
   
   /**
-   * Set up event listeners for pagination and back button
+   * Set up event listeners for pagination and hide results button
    * @param {HTMLElement} container - Container element
    * @private
    */
@@ -623,18 +635,27 @@ class StreamResultsRenderer {
       return;
     }
     
-    // Back button
+    // Change Back button to Hide Results
     const backButton = container.querySelector('[data-action="back-to-search"]');
     if (backButton) {
+      backButton.textContent = 'Hide Results';
+      backButton.setAttribute('data-action', 'hide-results');
+      
       backButton.addEventListener('click', () => {
-        // Hide results and show completion banner
+        // Hide results but keep completion banner visible
         container.style.display = 'none';
         
-        // Show completion banner
+        // Make sure completion banner is visible
         if (this.resultElement) {
           const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
           if (completionBanner) {
             completionBanner.style.display = 'block';
+            
+            // Update the Show Results button text
+            const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+            if (showResultsBtn) {
+              showResultsBtn.textContent = 'Show Results';
+            }
           } else {
             // If banner doesn't exist, recreate it
             this._createCompletionBanner();
@@ -655,8 +676,8 @@ class StreamResultsRenderer {
           }
         }
         
-        // Handle download CSV button
-        if (target && target.dataset && target.dataset.action === 'download-csv') {
+        // Handle CSV export buttons (both in results view and completion banner)
+        if (target && target.dataset && (target.dataset.action === 'download-csv' || target.dataset.action === 'stream-download-csv')) {
           // Import streaming processor
           import('./StreamProcessor.js').then(module => {
             const StreamProcessor = module.default;
@@ -683,7 +704,7 @@ class StreamResultsRenderer {
    */
   _createCompletionBanner() {
     const completionBanner = document.createElement('div');
-    completionBanner.className = 'streaming-completion-message';
+    completionBanner.className = 'streaming-completion-message streaming-completion-banner';
     completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
     
     completionBanner.innerHTML = `
@@ -693,7 +714,7 @@ class StreamResultsRenderer {
         </div>
         <div class="action-buttons" style="display: flex; gap: 10px;">
           <button class="extract-btn" data-action="stream-download-csv">
-            Stream Download CSV
+            Download CSV
           </button>
           <button class="extract-btn" data-action="show-results">
             Show Results
@@ -716,43 +737,35 @@ class StreamResultsRenderer {
       button.style.marginRight = '5px';
     });
     
-    // Show results button event listener
+    // Show/Hide results button event listener
     if (showResultsBtn) {
       showResultsBtn.addEventListener('click', () => {
-        completionBanner.style.display = 'none';
-        
-        // Show the existing results display if it exists
+        // Check if results are already displayed
         const resultsDisplay = this.resultElement.querySelector('.stream-results-display');
-        if (resultsDisplay) {
-          resultsDisplay.style.display = 'block';
-          resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const isResultsDisplayVisible = resultsDisplay && resultsDisplay.style.display !== 'none';
+        
+        // Toggle the display state
+        if (isResultsDisplayVisible) {
+          // Hide results
+          resultsDisplay.style.display = 'none';
+          showResultsBtn.textContent = 'Show Results';
         } else {
-          // If results don't exist yet, render them
-          this._renderResults(this.allResults || []);
+          // Show results - keep completion banner visible
+          if (resultsDisplay) {
+            resultsDisplay.style.display = 'block';
+            resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showResultsBtn.textContent = 'Hide Results';
+          } else {
+            // If results don't exist yet, render them
+            this._renderResults(this.allResults || []);
+            showResultsBtn.textContent = 'Hide Results';
+          }
         }
       });
     }
     
-    // Stream download button event listener
-    if (downloadBtn) {
-      downloadBtn.addEventListener('click', () => {
-        // Import streaming processor
-        import('./StreamProcessor.js').then(module => {
-          const StreamProcessor = module.default;
-          // Get bundle IDs and search terms
-          const AppState = window.AppState || {};
-          const bundleIds = AppState.bundleIds || [];
-          const searchTerms = AppState.searchTerms || [];
-          
-          // Call export CSV function
-          if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-            StreamProcessor.exportCsv(bundleIds, searchTerms);
-          }
-        }).catch(error => {
-          console.error('Error importing StreamProcessor for CSV export:', error);
-        });
-      });
-    }
+    // We don't need to add the event listener here anymore
+    // The event is now handled globally in the EventHandler via data-action="stream-download-csv"
   }
   
   /**
@@ -783,7 +796,7 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   
   // Create a simple green success message instead of a full banner
   const completionBanner = document.createElement('div');
-  completionBanner.className = 'streaming-completion-message';
+  completionBanner.className = 'streaming-completion-message streaming-completion-banner';
   completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
   
   // Format time in a readable way
@@ -799,7 +812,7 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
       </div>
       <div class="action-buttons" style="display: flex; gap: 10px;">
         <button class="extract-btn" data-action="stream-download-csv">
-          Stream Download CSV
+          Download CSV
         </button>
         <button class="extract-btn" data-action="show-results">
           Show Results
@@ -829,46 +842,39 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     button.style.marginRight = '5px';
   });
   
-  // Show results button event listener
+  // Show/Hide results button event listener
   if (showResultsBtn) {
     showResultsBtn.addEventListener('click', () => {
-      // Import AppState directly to ensure we get the latest results
-      import('../app-state.js').then(module => {
-        const appState = module.default;
-        // Show the results immediately
-        this.showResults(appState?.results || []);
-        
-        // Remove the banner after showing results
-        completionBanner.style.display = 'none';
-      }).catch(error => {
-        console.error('Error importing AppState for showing results:', error);
-        // Fallback to window.AppState
-        this.showResults(window.AppState?.results || []);
-        completionBanner.style.display = 'none';
-      });
+      // Check if results are already displayed
+      const resultsDisplay = this.resultElement.querySelector('.stream-results-display');
+      const isResultsDisplayVisible = resultsDisplay && resultsDisplay.style.display !== 'none';
+      
+      if (isResultsDisplayVisible) {
+        // Hide results
+        resultsDisplay.style.display = 'none';
+        showResultsBtn.textContent = 'Show Results';
+      } else {
+        // Import AppState directly to ensure we get the latest results
+        import('../app-state.js').then(module => {
+          const appState = module.default;
+          
+          // Show the results immediately - keep banner visible
+          this.showResults(appState?.results || []);
+          
+          // Update button text
+          showResultsBtn.textContent = 'Hide Results';
+        }).catch(error => {
+          console.error('Error importing AppState for showing results:', error);
+          // Fallback to window.AppState
+          this.showResults(window.AppState?.results || []);
+          showResultsBtn.textContent = 'Hide Results';
+        });
+      }
     });
   }
   
-  // Stream download button event listener
-  if (downloadBtn) {
-    downloadBtn.addEventListener('click', () => {
-      // Import streaming processor
-      import('./StreamProcessor.js').then(module => {
-        const StreamProcessor = module.default;
-        // Get bundle IDs and search terms
-        const AppState = window.AppState || {};
-        const bundleIds = AppState.bundleIds || [];
-        const searchTerms = AppState.searchTerms || [];
-        
-        // Call export CSV function
-        if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-          StreamProcessor.exportCsv(bundleIds, searchTerms);
-        }
-      }).catch(error => {
-        console.error('Error importing StreamProcessor for CSV export:', error);
-      });
-    });
-  }
+  // We don't need to add the event listener here anymore
+  // The event is now handled globally in the EventHandler via data-action="stream-download-csv"
 };
 
 export default streamResultsRenderer;

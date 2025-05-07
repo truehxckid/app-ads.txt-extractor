@@ -444,7 +444,7 @@ class StreamingIntegration {
               const streamDownloadBtn = document.createElement('button');
               streamDownloadBtn.className = 'download-btn extract-btn';
               streamDownloadBtn.setAttribute('data-action', 'stream-download-csv');
-              streamDownloadBtn.textContent = 'Stream Download CSV';
+              streamDownloadBtn.textContent = 'Download CSV';
               
               // Add to action buttons
               actionButtons.prepend(streamDownloadBtn);

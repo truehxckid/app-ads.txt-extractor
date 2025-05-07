@@ -242,7 +242,25 @@ class EventHandlerManager {
         this.handleTabSwitch(target);
         break;
       case 'download-csv':
-        this.handleDownloadCSV();
+      case 'stream-download-csv':
+        // Handle all CSV download actions with the streaming method
+        import('./streaming/StreamProcessor.js').then(module => {
+          const StreamProcessor = module.default;
+          // Get bundle IDs and search terms
+          const bundleIds = DOMUtils.getTextareaLines('bundleIds');
+          const searchTerms = AppState.searchTerms.length > 0 ? 
+            AppState.searchTerms : DOMUtils.getSearchTerms();
+          
+          // Call export CSV function with streaming capability
+          if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
+            StreamProcessor.exportCsv(bundleIds, searchTerms);
+          }
+        }).catch(error => {
+          console.error('Error importing StreamProcessor for CSV export:', error);
+          
+          // Fall back to regular download if streaming fails
+          CSVExporter.downloadResults(AppState.results);
+        });
         break;
       case 'download-all-csv':
         this.handleDownloadAllCSV();
@@ -258,6 +276,10 @@ class EventHandlerManager {
         break;
       case 'switch-search-mode':
         this.handleSwitchSearchMode(target);
+        break;
+      case 'hide-results':
+      case 'show-results':
+        // These are now handled directly in StreamResultsRenderer
         break;
     }
   }
@@ -405,13 +427,7 @@ class EventHandlerManager {
     tabContentElement.setAttribute('aria-hidden', 'false');
   }
   
-  /**
-   * Handle download CSV button click
-   */
-  handleDownloadCSV() {
-    // Download currently visible results
-    CSVExporter.downloadResults(AppState.results);
-  }
+  // CSV download handling has been moved directly to the switch statement in handleDocumentClick
   
   /**
    * Handle download all CSV button click
