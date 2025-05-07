@@ -1,0 +1,42 @@
+/* ==========================================
+   Main CSS Entry Point
+   ========================================== */
+
+/* Import design system variables first */
+@import './_variables.css';
+
+/* Reset and base styles */
+@import './_base.css';
+
+/* Typography */
+@import './_typography.css';
+
+/* Layout components */
+@import './_layout.css';
+
+/* Form elements */
+@import './_forms.css';
+
+/* Buttons */
+@import './_buttons.css';
+
+/* Search functionality */
+@import './_search.css';
+
+/* Results display */
+@import './_results.css';
+
+/* Loading and progress indicators */
+@import './_loading.css';
+
+/* Notifications */
+@import './_notifications.css';
+
+/* Utility classes and accessibility helpers */
+@import './_accessibility.css';
+
+/* Animations */
+@import './_animations.css';
+
+/* Responsive design - import last to override previous styles */
+@import './_responsive.css';

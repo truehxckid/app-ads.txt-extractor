@@ -1,0 +1,140 @@
+/* ==========================================
+   Responsive Design
+   ========================================== */
+@media (max-width: 1200px) {
+  :root {
+    --container-max-width: 95%;
+  }
+}
+
+@media (max-width: 992px) {
+  :root {
+    --space-xl: 1.75rem;
+    --space-xxl: 2.5rem;
+  }
+
+  .container {
+    padding: var(--space-md);
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    font-size: 15px;
+  }
+  
+  body {
+    padding: var(--space-sm);
+  }
+  
+  .container {
+    padding: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+  
+  .results-summary {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .extract-btn {
+    width: 100%;
+  }
+  
+  .download-btn {
+    margin-top: var(--space-sm);
+    width: 100%;
+  }
+  
+  .theme-toggle-container {
+    top: var(--space-sm);
+    right: var(--space-sm);
+  }
+  
+  .search-matches-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: var(--space-xs);
+  }
+  
+  .results-table-container {
+    max-height: 400px;
+  }
+  
+  /* Adjust table for mobile */
+  .results-table {
+    table-layout: auto;
+  }
+  
+  .results-table th:nth-child(2),
+  .results-table td:nth-child(2) {
+    display: none;
+  }
+  
+  .file-input-container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .file-input-label {
+    width: 100%;
+  }
+  
+  .file-name {
+    margin-left: 0;
+    margin-top: var(--space-xs);
+  }
+  
+  .structured-search-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    font-size: 14px;
+  }
+  
+  .search-tab {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: var(--font-size-xs);
+  }
+  
+  .input-group {
+    margin-bottom: var(--space-md);
+  }
+  
+  .theme-toggle {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .theme-icon {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .container {
+    padding: var(--space-sm);
+  }
+  
+  h1 {
+    font-size: var(--font-size-lg);
+  }
+  
+  .error-boundary {
+    width: 95%;
+    padding: var(--space-md);
+  }
+  
+  .notification {
+    width: 90%;
+    left: 5%;
+    right: 5%;
+  }
+}

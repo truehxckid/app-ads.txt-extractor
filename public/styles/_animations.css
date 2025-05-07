@@ -1,0 +1,45 @@
+/* ==========================================
+   Animations
+   ========================================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideDown {
+  from { 
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin { 
+  to { transform: rotate(360deg); } 
+}
+
+/* Animation Optimizations */
+/* Use will-change only for complex animations */
+.search-tab-content.active {
+  will-change: opacity, transform;
+}
+
+/* Set perspective for smoother animations */
+.container {
+  transform-style: flat;
+  backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,50 @@
+/* ==========================================
+   Accessibility Enhancements
+   ========================================== */
+/* Accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Focus visible styles */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Improve button focus states */
+button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Add styles for aria-pressed state */
+.theme-toggle[aria-pressed="true"] {
+  background: var(--primary);
+  color: white;
+}
+
+/* Improve table accessibility */
+.results-table th[scope="col"] {
+  position: relative;
+  padding-right: var(--space-md);
+}
+
+.results-table th[scope="col"]::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 1em;
+  background: var(--border);
+}

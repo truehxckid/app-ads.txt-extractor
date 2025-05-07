@@ -1,0 +1,317 @@
+/* ==========================================
+   Results Section
+   ========================================== */
+.results-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-accent);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-md);
+  font-size: var(--font-size-sm);
+}
+
+.summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.success-count { 
+  color: var(--success); 
+  font-weight: var(--font-weight-medium);
+}
+
+.error-count { 
+  color: var(--error); 
+  font-weight: var(--font-weight-medium);
+}
+
+.app-ads-count { 
+  color: var(--primary); 
+}
+
+.search-results-count { 
+  color: var(--highlight); 
+}
+
+/* Results table container */
+.results-table-container {
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-md);
+  position: relative;
+}
+
+/* Scrollbar styling */
+.results-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.results-table-container::-webkit-scrollbar-track {
+  background: var(--bg-main);
+  border-radius: var(--radius-sm);
+}
+
+.results-table-container::-webkit-scrollbar-thumb {
+  background: var(--neutral);
+  border-radius: var(--radius-sm);
+}
+
+.results-table-container::-webkit-scrollbar-thumb:hover {
+  background: var(--neutral-hover);
+}
+
+/* Results table */
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  table-layout: fixed;
+}
+
+.results-table th {
+  background: var(--neutral-light);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-above);
+  transition: background-color var(--transition-normal);
+  font-weight: var(--font-weight-semibold);
+  text-align: left;
+}
+
+.results-table th, 
+.results-table td {
+  padding: var(--space-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Define column widths */
+.results-table th:nth-child(1),
+.results-table td:nth-child(1) {
+  width: 25%;
+}
+
+.results-table th:nth-child(2),
+.results-table td:nth-child(2) {
+  width: 12%;
+}
+
+.results-table th:nth-child(3),
+.results-table td:nth-child(3) {
+  width: 25%;
+}
+
+.results-table th:nth-child(4),
+.results-table td:nth-child(4) {
+  width: 20%;
+}
+
+.results-table th:nth-child(5),
+.results-table td:nth-child(5) {
+  width: 12%;
+}
+
+.success-row { 
+  background: var(--success-light);
+  transition: background-color var(--transition-fast);
+}
+
+.success-row:hover {
+  background: var(--success-light);
+  opacity: 0.9;
+}
+
+.error-row { 
+  background: var(--error-light);
+  transition: background-color var(--transition-fast);
+}
+
+.error-row:hover {
+  background: var(--error-light);
+  opacity: 0.9;
+}
+
+/* Table cell types */
+.error-message { 
+  color: var(--error); 
+  font-style: italic;
+}
+
+.domain-cell { 
+  font-family: var(--font-mono); 
+  color: var(--success);
+}
+
+[data-theme="dark"] .domain-cell { 
+  color: var(--success); 
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  text-align: center;
+  background: var(--bg-accent);
+  border-radius: var(--radius-lg);
+  margin: var(--space-md) 0;
+  min-height: 180px;
+}
+
+/* App-ads.txt Elements */
+.app-ads-found, 
+.search-matches-found {
+  display: inline-flex;
+  align-items: center;
+  color: white;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+}
+
+.app-ads-found { 
+  background: var(--success); 
+}
+
+.search-matches-found { 
+  background: var(--highlight); 
+}
+
+.app-ads-missing, 
+.search-matches-missing {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--font-size-xs);
+}
+
+.toggle-app-ads, 
+.toggle-search-matches {
+  margin-left: var(--space-xs);
+  padding: 1px 4px;
+  font-size: var(--font-size-xs);
+  height: auto;
+}
+
+.toggle-app-ads { 
+  background: var(--primary); 
+}
+
+.toggle-search-matches { 
+  background: var(--highlight); 
+}
+
+/* Term match indicators */
+.term-match-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  margin-right: 2px;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+}
+
+/* Details sections */
+.app-ads-details, 
+.search-matches-details {
+  margin: var(--space-md) 0;
+  padding: var(--space-md);
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  animation: slideDown var(--transition-normal);
+}
+
+.app-ads-details { 
+  border-left: 3px solid var(--primary); 
+}
+
+.search-matches-details { 
+  border-left: 3px solid var(--highlight); 
+}
+
+.app-ads-details h4, 
+.search-matches-details h4 {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.app-ads-url {
+  margin-bottom: var(--space-sm);
+  word-break: break-all;
+}
+
+.app-ads-stats {
+  margin-bottom: var(--space-sm);
+  color: var(--text-secondary);
+}
+
+.app-ads-content {
+  max-height: 250px;
+  overflow-y: auto;
+  background: var(--bg-main);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border);
+}
+
+.app-ads-content pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* Scrollbar styling for content */
+.app-ads-content::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.app-ads-content::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+
+.app-ads-content::-webkit-scrollbar-thumb {
+  background: var(--neutral);
+  border-radius: var(--radius-sm);
+}
+
+.chart-container {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  margin-bottom: var(--space-md);
+  height: 250px;
+}
+
+/* Pagination */
+.pagination-btn.active[disabled] {
+  opacity: 1; /* Keep it fully visible unlike normal disabled buttons */
+  cursor: default;
+  pointer-events: none; /* Prevents hover effects */
+}

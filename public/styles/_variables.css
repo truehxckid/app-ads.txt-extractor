@@ -1,0 +1,210 @@
+/* ==========================================
+   CSS Variables - Design System
+   ========================================== */
+:root {
+  /* Color palette */
+  /* Primary Colors - Blue */
+  --primary-100: #e3f2fd;
+  --primary-200: #bbdefb;
+  --primary-300: #90caf9;
+  --primary-400: #64b5f6;
+  --primary-500: #42a5f5;
+  --primary-600: #2196f3;
+  --primary-700: #1e88e5;
+  --primary-800: #1976d2;
+  --primary-900: #1565c0;
+
+  /* Secondary Colors - Green */
+  --secondary-100: #e8f5e9;
+  --secondary-200: #c8e6c9;
+  --secondary-300: #a5d6a7;
+  --secondary-400: #81c784;
+  --secondary-500: #66bb6a;
+  --secondary-600: #4caf50;
+  --secondary-700: #43a047;
+  --secondary-800: #388e3c;
+  --secondary-900: #2e7d32;
+
+  /* Accent Colors - Amber */
+  --accent-100: #fff8e1;
+  --accent-200: #ffecb3;
+  --accent-300: #ffe082;
+  --accent-400: #ffd54f;
+  --accent-500: #ffca28;
+  --accent-600: #ffc107;
+  --accent-700: #ffb300;
+  --accent-800: #ffa000;
+  --accent-900: #ff8f00;
+  
+  /* Error Colors - Red */
+  --error-100: #ffebee;
+  --error-200: #ffcdd2;
+  --error-300: #ef9a9a;
+  --error-400: #e57373;
+  --error-500: #f44336;
+  --error-600: #e53935;
+  --error-700: #d32f2f;
+  --error-800: #c62828;
+  --error-900: #b71c1c;
+  
+  /* Highlight Colors - Purple */
+  --highlight-100: #f3e5f5;
+  --highlight-200: #e1bee7;
+  --highlight-300: #ce93d8;
+  --highlight-400: #ba68c8;
+  --highlight-500: #9c27b0;
+  --highlight-600: #8e24aa;
+  --highlight-700: #7b1fa2;
+  --highlight-800: #6a1b9a;
+  --highlight-900: #4a148c;
+  
+  /* Warning Colors - Orange */
+  --warning-100: #fff3e0;
+  --warning-200: #ffe0b2;
+  --warning-300: #ffcc80;
+  --warning-400: #ffb74d;
+  --warning-500: #ff9800;
+  --warning-600: #fb8c00;
+  --warning-700: #f57c00;
+  --warning-800: #ef6c00;
+  --warning-900: #e65100;
+  
+  /* Neutral Colors - Gray */
+  --gray-100: #f8f9fa;
+  --gray-200: #e9ecef;
+  --gray-300: #dee2e6;
+  --gray-400: #ced4da;
+  --gray-500: #adb5bd;
+  --gray-600: #6c757d;
+  --gray-700: #495057;
+  --gray-800: #343a40;
+  --gray-900: #212529;
+
+  /* Spacing */
+  --space-xxs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-xxl: 3rem;
+
+  /* Typography */
+  --font-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --font-heading: var(--font-base); /* Use system fonts for headings too */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.5rem;
+  
+  --line-height-normal: 1.5;
+  
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Border Radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-full: 9999px;
+
+  /* Form elements */
+  --input-height: 2.5rem;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 300ms ease;
+
+  /* Z-index layers */
+  --z-below: -1;
+  --z-normal: 1;
+  --z-above: 10;
+  --z-toast: 100;
+  --z-modal: 1000;
+
+  /* Layout */
+  --container-max-width: 1200px;
+  
+  /* Semantic colors (used throughout the app) */
+  --primary: var(--primary-600);
+  --primary-hover: var(--primary-700);
+  --primary-active: var(--primary-800);
+  --primary-light: var(--primary-100);
+  
+  --success: var(--secondary-600);
+  --success-hover: var(--secondary-700);
+  --success-light: var(--secondary-100);
+  
+  --error: var(--error-500);
+  --error-hover: var(--error-600);
+  --error-light: var(--error-100);
+  
+  --highlight: var(--highlight-500);
+  --highlight-hover: var(--highlight-600);
+  --highlight-light: var(--highlight-100);
+  
+  --warning: var(--warning-500);
+  --warning-hover: var(--warning-600);
+  --warning-light: var(--warning-100);
+  
+  --neutral: var(--gray-500);
+  --neutral-hover: var(--gray-600);
+  --neutral-light: var(--gray-200);
+  
+  /* Theme colors - light mode (default) */
+  --bg-main: var(--gray-100);
+  --bg-card: #fff;
+  --bg-accent: var(--primary-100);
+  --text-primary: var(--gray-900);
+  --text-secondary: var(--gray-700);
+  --text-muted: var(--gray-600);
+  --border: var(--gray-300);
+  --border-focus: var(--primary-400);
+  --shadow: rgba(0, 0, 0, 0.1);
+  --shadow-strong: rgba(0, 0, 0, 0.15);
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg-main: #121826;
+  --bg-card: #1a2234;
+  --bg-accent: rgba(52, 152, 219, 0.1);
+  --text-primary: #e6e6e6;
+  --text-secondary: #b0b0b0;
+  --text-muted: #90909a;
+  --border: #2d3748;
+  --border-focus: var(--primary-400);
+  --shadow: rgba(0, 0, 0, 0.25);
+  --shadow-strong: rgba(0, 0, 0, 0.35);
+  
+  /* Adjusted colors for dark mode */
+  --primary: #4299e1;
+  --primary-hover: #3182ce;
+  --primary-active: #2b6cb0;
+  --primary-light: rgba(66, 153, 225, 0.15);
+  
+  --success: #48bb78;
+  --success-hover: #38a169;
+  --success-light: rgba(72, 187, 120, 0.15);
+  
+  --error: #f56565;
+  --error-hover: #e53e3e;
+  --error-light: rgba(245, 101, 101, 0.15);
+  
+  --highlight: #b794f4;
+  --highlight-hover: #9f7aea;
+  --highlight-light: rgba(183, 148, 244, 0.15);
+  
+  --warning: #ed8936;
+  --warning-hover: #dd6b20;
+  --warning-light: rgba(237, 137, 54, 0.15);
+  
+  --neutral: #a0aec0;
+  --neutral-hover: #8896ad;
+  --neutral-light: rgba(160, 174, 192, 0.15);
+}

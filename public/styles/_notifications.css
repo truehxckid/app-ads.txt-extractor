@@ -1,0 +1,181 @@
+/* ==========================================
+   Notifications
+   ========================================== */
+.notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px var(--shadow);
+  font-size: var(--font-size-sm);
+  z-index: var(--z-toast);
+  transform: translateY(20px);
+  opacity: 0;
+  transition: 
+    transform var(--transition-normal),
+    opacity var(--transition-normal);
+  max-width: 300px;
+}
+
+.notification.show {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.notification-success {
+  border-left-color: var(--success);
+}
+
+.notification-error {
+  border-left-color: var(--error);
+}
+
+.notification-info {
+  border-left-color: var(--primary);
+}
+
+.notification-warning {
+  border-left-color: var(--warning);
+}
+
+/* Theme Toggle */
+.theme-toggle-container {
+  position: fixed;
+  top: var(--space-md);
+  right: var(--space-md);
+  z-index: var(--z-above);
+}
+
+.theme-toggle {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 5px var(--shadow);
+  color: var(--text-primary);
+  padding: 0;
+  transition: 
+    background-color var(--transition-normal),
+    color var(--transition-normal);
+}
+
+.theme-toggle:hover {
+  background: var(--bg-main);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.theme-icon {
+  width: 24px;
+  height: 24px;
+  transition: 
+    opacity var(--transition-normal),
+    transform 0.5s ease;
+  will-change: transform, opacity;
+}
+
+/* Show/hide appropriate icon based on theme */
+[data-theme="light"] .moon { 
+  opacity: 0;
+  transform: translateY(10px);
+  position: absolute;
+}
+[data-theme="light"] .sun { 
+  opacity: 1;
+  transform: translateY(0);
+}
+[data-theme="dark"] .sun { 
+  opacity: 0;
+  transform: translateY(10px);
+  position: absolute;
+}
+[data-theme="dark"] .moon { 
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Error boundary with visible close button */
+.error-boundary {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-card);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 12px var(--shadow-strong);
+  max-width: 90%;
+  width: 400px;
+  z-index: var(--z-modal);
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.error-boundary h3 {
+  color: var(--error);
+  margin-bottom: var(--space-md);
+}
+
+.error-boundary p {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-md);
+}
+
+.error-close-btn {
+  background: var(--error);
+  padding: var(--space-xs) var(--space-md);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-top: var(--space-md);
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: var(--z-modal);
+}
+
+/* Debug Panel */
+.debug-info {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-accent);
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.debug-info h3 {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+}
+
+.debug-info p {
+  margin: var(--space-xs) 0;
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--border);
+}

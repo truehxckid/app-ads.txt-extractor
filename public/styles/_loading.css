@@ -1,0 +1,53 @@
+/* ==========================================
+   Loading & Progress Indicators
+   ========================================== */
+.loading-indicator {
+  display: none;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  will-change: transform;
+}
+
+.progress-indicator {
+  display: none;
+  align-items: center;
+  gap: var(--space-md);
+  flex: 1;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--success);
+  border-radius: var(--radius-full);
+  transition: width var(--transition-normal);
+  will-change: width;
+}
+
+.progress-text {
+  min-width: 40px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
