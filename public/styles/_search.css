@@ -43,6 +43,8 @@
   cursor: pointer;
   transition: all 0.2s ease;
   font-weight: var(--font-weight-medium);
+  min-width: 105px; /* Fixed width to prevent layout shifts */
+  text-align: center;
 }
 
 .search-mode-btn.active {
@@ -50,6 +52,16 @@
   color: white;
   font-weight: var(--font-weight-semibold);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Prevent text width changes when buttons activate */
+.search-mode-btn:before {
+  display: block;
+  content: attr(data-text);
+  font-weight: var(--font-weight-semibold);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
 }
 
 .search-mode-btn:hover:not(.active) {

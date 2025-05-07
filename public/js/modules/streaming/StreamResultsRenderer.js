@@ -418,39 +418,37 @@ class StreamResultsRenderer {
     const resultsDisplay = document.createElement('div');
     resultsDisplay.className = 'stream-results-display';
     
-    // Add hide results button with streamlined actions
+    // Add results header with search-styled UI
     resultsDisplay.innerHTML = `
-      <div class="stream-results-header">
-        <div class="results-header-top" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-          <h3>Processing Results</h3>
-          <div class="action-buttons" style="display: flex; gap: 10px;">
-            <button class="extract-btn" data-action="hide-results">Hide Results</button>
-            <button class="extract-btn" data-action="stream-download-csv">Download CSV</button>
+      <div class="stream-results-header search-container">
+        <div class="results-summary">
+          <div class="summary-text">
+            <h3>Processing Results</h3>
+            <p>Showing ${results.length} extracted results from your bundle IDs.</p>
           </div>
         </div>
-        <p>Showing ${results.length} extracted results from your bundle IDs.</p>
-      </div>
-      
-      <div class="stream-results-table-container" style="margin-top: 20px; overflow-x: auto;">
-        <table class="results-table" style="width: 100%; border-collapse: collapse; border: 1px solid #e0e0e0;">
-          <thead>
-            <tr>
-              <th>Bundle ID</th>
-              <th>Store</th>
-              <th>Domain</th>
-              <th>app-ads.txt</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="results-final-tbody">
-            ${results.length === 0 ? '<tr><td colspan="5" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
-          </tbody>
-        </table>
-      </div>
-      
-      <!-- Pagination Controls -->
-      <div id="pagination-controls" style="margin-top: 20px; text-align: center;">
-        ${this._generatePaginationControls(results.length, this.pageSize, 1)}
+        
+        <div class="stream-results-table-container results-table-container">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Bundle ID</th>
+                <th>Store</th>
+                <th>Domain</th>
+                <th>app-ads.txt</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="results-final-tbody">
+              ${results.length === 0 ? '<tr><td colspan="5" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+        
+        <!-- Pagination Controls -->
+        <div id="pagination-controls" class="pagination-wrapper">
+          ${this._generatePaginationControls(results.length, this.pageSize, 1)}
+        </div>
       </div>
     `;
     
@@ -560,24 +558,24 @@ class StreamResultsRenderer {
     }
     
     const totalPages = Math.ceil(totalItems / pageSize);
-    let paginationHTML = '<div class="pagination" style="display: flex; justify-content: center; gap: 5px; align-items: center;">';
+    let paginationHTML = '<div class="pagination">';
     
     // Previous button
     if (currentPage > 1) {
-      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${currentPage - 1}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">← Previous</button>`;
+      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${currentPage - 1}">← Previous</button>`;
     } else {
-      paginationHTML += `<button class="pagination-btn disabled" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; opacity: 0.5; cursor: not-allowed;">← Previous</button>`;
+      paginationHTML += `<button class="pagination-btn button-small disabled" disabled>← Previous</button>`;
     }
     
     // Page numbers
-    paginationHTML += '<div class="page-numbers" style="display: flex; gap: 5px;">';
+    paginationHTML += '<div class="page-numbers">';
     
     // First page
     if (currentPage > 3) {
-      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="1" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">1</button>`;
+      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="1">1</button>`;
       
       if (currentPage > 4) {
-        paginationHTML += '<span class="pagination-ellipsis" style="align-self: center;">...</span>';
+        paginationHTML += '<span class="pagination-ellipsis">...</span>';
       }
     }
     
@@ -587,35 +585,35 @@ class StreamResultsRenderer {
     
     for (let i = startPage; i <= endPage; i++) {
       if (i === currentPage) {
-        paginationHTML += `<button class="pagination-btn active" data-page="${i}" style="padding: 5px 10px; border: 1px solid #3498db; background: #3498db; color: white; border-radius: 4px;">${i}</button>`;
+        paginationHTML += `<button class="pagination-btn button-small active" data-page="${i}" disabled>${i}</button>`;
       } else {
-        paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${i}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">${i}</button>`;
+        paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${i}">${i}</button>`;
       }
     }
     
     // Last page
     if (currentPage < totalPages - 2) {
       if (currentPage < totalPages - 3) {
-        paginationHTML += '<span class="pagination-ellipsis" style="align-self: center;">...</span>';
+        paginationHTML += '<span class="pagination-ellipsis">...</span>';
       }
       
-      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${totalPages}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">${totalPages}</button>`;
+      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${totalPages}">${totalPages}</button>`;
     }
     
     paginationHTML += '</div>';
     
     // Next button
     if (currentPage < totalPages) {
-      paginationHTML += `<button class="pagination-btn" data-action="paginate" data-page="${currentPage + 1}" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">Next →</button>`;
+      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${currentPage + 1}">Next →</button>`;
     } else {
-      paginationHTML += `<button class="pagination-btn disabled" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px; opacity: 0.5; cursor: not-allowed;">Next →</button>`;
+      paginationHTML += `<button class="pagination-btn button-small disabled" disabled>Next →</button>`;
     }
     
     paginationHTML += '</div>';
     
     // Add page info
     paginationHTML += `
-      <div class="pagination-info" style="margin-top: 10px; font-size: 14px; color: #666;">
+      <div class="pagination-info">
         Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalItems)} of ${totalItems} results
       </div>
     `;
@@ -705,14 +703,13 @@ class StreamResultsRenderer {
   _createCompletionBanner() {
     const completionBanner = document.createElement('div');
     completionBanner.className = 'streaming-completion-message streaming-completion-banner';
-    completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
     
     completionBanner.innerHTML = `
-      <div style="display: flex; align-items: center; justify-content: space-between;">
-        <div>
-          <p style="margin: 0; color: #2ecc71; font-weight: 500;">Completed processing ${this.allResults?.length || 0} bundle IDs</p>
+      <div class="completion-banner-content">
+        <div class="completion-message">
+          <p>Completed processing ${this.allResults?.length || 0} bundle IDs</p>
         </div>
-        <div class="action-buttons" style="display: flex; gap: 10px;">
+        <div class="action-buttons">
           <button class="extract-btn" data-action="stream-download-csv">
             Download CSV
           </button>
@@ -794,10 +791,9 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   
   console.log('🔄 StreamResultsRenderer: Processing complete, updating UI with stats:', stats);
   
-  // Create a simple green success message instead of a full banner
+  // Create a streaming completion banner
   const completionBanner = document.createElement('div');
   completionBanner.className = 'streaming-completion-message streaming-completion-banner';
-  completionBanner.style.cssText = 'margin: 20px 0; padding: 10px 15px; background: #eafaf1; border: 1px solid #2ecc71; border-radius: 4px; text-align: center;';
   
   // Format time in a readable way
   const timeInSeconds = stats.elapsedTime / 1000;
@@ -806,11 +802,11 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     : `${timeInSeconds.toFixed(1)} seconds`;
     
   completionBanner.innerHTML = `
-    <div style="display: flex; align-items: center; justify-content: space-between;">
-      <div>
-        <p style="margin: 0; color: #2ecc71; font-weight: 500;">Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
+    <div class="completion-banner-content">
+      <div class="completion-message">
+        <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
       </div>
-      <div class="action-buttons" style="display: flex; gap: 10px;">
+      <div class="action-buttons">
         <button class="extract-btn" data-action="stream-download-csv">
           Download CSV
         </button>

@@ -26,6 +26,9 @@
 /* Results display */
 @import './_results.css';
 
+/* Streaming functionality */
+@import './_streaming.css';
+
 /* Loading and progress indicators */
 @import './_loading.css';
 

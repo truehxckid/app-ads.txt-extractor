@@ -1,0 +1,106 @@
+/* ==========================================
+   Streaming Results Styles
+   ========================================== */
+
+/* Streaming container */
+.stream-results-display {
+  margin-top: var(--space-md);
+  animation: fadeIn var(--transition-normal);
+}
+
+.stream-results-header {
+  margin-bottom: var(--space-md);
+}
+
+.streaming-info-banner {
+  margin: var(--space-md) 0;
+  padding: var(--space-md);
+  background: var(--bg-accent);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--primary);
+}
+
+.worker-processing-indicator h3 {
+  color: var(--primary);
+  margin-top: 0;
+}
+
+.streaming-completion-banner {
+  background: var(--success-light);
+  border-left: 3px solid var(--success);
+  border-radius: var(--radius-md);
+  margin: var(--space-md) 0;
+  padding: var(--space-md);
+}
+
+.completion-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.completion-message {
+  flex-grow: 1;
+}
+
+.streaming-completion-banner p {
+  color: var(--success);
+  font-weight: var(--font-weight-medium);
+  margin: 0;
+}
+
+.action-buttons {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.stream-results-table-container {
+  margin: var(--space-md) 0;
+}
+
+/* Pagination styling */
+.pagination-wrapper {
+  margin-top: var(--space-md);
+  text-align: center;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-sm);
+}
+
+.page-numbers {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.pagination-ellipsis {
+  align-self: center;
+}
+
+.pagination-info {
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+/* Progress bar styling */
+.progress-bar-wrapper {
+  margin-top: var(--space-md);
+  height: 4px;
+  background: var(--neutral-light);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
