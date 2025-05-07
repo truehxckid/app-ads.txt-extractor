@@ -33,13 +33,13 @@ class ApiService {
       // Get the current search mode if it exists
       const currentSearchMode = window.currentSearchMode || 'simple';
       
-      // STRICT SEPARATION: Only use appropriate parameters based on search mode
+      // Process parameters based on search mode
       let finalSearchTerms = searchTerms;
       let finalStructuredParams = null;
       
       if (currentSearchMode === 'advanced') {
-        // For advanced mode: Use structured params, clear search terms
-        finalSearchTerms = []; // No simple search terms in advanced mode
+        // For advanced mode: Use both structured params AND search terms
+        finalSearchTerms = searchTerms; // Keep search terms in advanced mode
         
         // Get advanced params either directly or from AppState
         const advancedSearchParams = 
@@ -50,6 +50,7 @@ class ApiService {
           
         finalStructuredParams = advancedSearchParams;
         console.log('🔍 API: Using ADVANCED search mode with structured params:', finalStructuredParams);
+        console.log('🔍 API: Also including search terms in advanced mode:', finalSearchTerms);
       } else {
         // For simple mode: Use search terms, clear structured params
         finalSearchTerms = searchTerms;
@@ -184,9 +185,9 @@ class ApiService {
       // Determine search mode based on parameters
       const isAdvancedMode = structuredParams !== null;
       
-      // For advanced mode, use empty search terms and structured params
-      // For simple mode, use search terms and no structured params
-      const finalSearchTerms = isAdvancedMode ? [] : searchTerms;
+      // For both modes, include search terms if provided
+      // For advanced mode, also include structured params
+      const finalSearchTerms = searchTerms;
       const finalStructuredParams = isAdvancedMode ? structuredParams : null;
       
       console.log('🔍 API.exportCsv: Using ' + (isAdvancedMode ? 'ADVANCED' : 'SIMPLE') + ' mode', {

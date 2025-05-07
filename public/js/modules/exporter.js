@@ -128,11 +128,12 @@ class CSVExporter {
       }).filter(term => term.hasMatch);
       
       // Only add columns for terms that were found
-      foundTerms.forEach(term => {
-        csvHeader += `,Term: ${term.termDisplay},Matching Lines`;
+      foundTerms.forEach((term, idx) => {
+        const termNum = idx + 1;
+        csvHeader += `,Term ${termNum}: ${term.termDisplay},Matches ${termNum}`;
       });
       
-      csvHeader += `,Total Matches`;
+      csvHeader += `,Total Matches,Matching Lines`;
     }
     
     // Complete the header
@@ -165,8 +166,8 @@ class CSVExporter {
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // Add term matches and matching lines only for terms that were found
-          foundTerms.forEach(term => {
+          // Add term matches only for terms that were found
+          foundTerms.forEach((term, idx) => {
             if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
               // Get the specific term result if available
               const termResult = result.appAdsTxt.searchResults.termResults[term.index];
@@ -175,30 +176,45 @@ class CSVExporter {
               // Add term match status
               searchCols += `,${hasTermMatches ? "Yes" : "No"}`;
               
-              // Add matching lines column
-              if (hasTermMatches && termResult.matchingLines && termResult.matchingLines.length > 0) {
-                // Limit to first 5 matches per term
-                const termLines = termResult.matchingLines
-                  .slice(0, 5)
-                  .map(line => `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`)
-                  .join(' | ');
-                
-                const termLinesSummary = termResult.matchingLines.length > 5 ?
-                  `${termLines} (+ ${termResult.matchingLines.length - 5} more)` :
-                  termLines;
-                
-                searchCols += `,${`"${termLinesSummary}"`}`;
-              } else {
-                searchCols += `,""`;
-              }
+              // Add match count for this term
+              const termMatchCount = hasTermMatches ? termResult.count : 0;
+              searchCols += `,${termMatchCount}`;
             } else {
               // No match for this term
-              searchCols += `,No,""`;
+              searchCols += `,No,0`;
             }
           });
           
           // Add total match count
           searchCols += `,${matchCount}`;
+          
+          // Add all matching lines in one column (summarized)
+          if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
+            // Collect all matching lines from all terms
+            const allMatchingLines = [];
+            foundTerms.forEach(term => {
+              const termResult = result.appAdsTxt.searchResults.termResults[term.index];
+              if (termResult && termResult.matchingLines && termResult.matchingLines.length > 0) {
+                termResult.matchingLines.forEach(line => {
+                  allMatchingLines.push(`Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`);
+                });
+              }
+            });
+            
+            // Display up to 5 matching lines
+            if (allMatchingLines.length > 0) {
+              const limitedLines = allMatchingLines.slice(0, 5).join(' | ');
+              const linesSummary = allMatchingLines.length > 5 ?
+                `${limitedLines} (+ ${allMatchingLines.length - 5} more)` :
+                limitedLines;
+              
+              searchCols += `,${`"${linesSummary}"`}`;
+            } else {
+              searchCols += `,""`;
+            }
+          } else {
+            searchCols += `,""`;
+          }
         }
         
         // Status columns

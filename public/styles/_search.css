@@ -107,8 +107,8 @@
 .structured-search-form {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-md);
-  padding: var(--space-md);
+  gap: var(--space-sm);
+  padding: var(--space-sm);
   border-radius: var(--radius-md);
   background-color: var(--bg-card);
   border: 1px solid var(--border);
@@ -125,17 +125,17 @@
   margin-bottom: var(--space-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
 }
 
 .structured-search-field input,
 .structured-search-field select {
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 2px solid var(--highlight-200);
   background-color: var(--bg-main);
   color: var(--text-primary);
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-sm);
   transition: all 0.2s ease;
 }
 
@@ -238,13 +238,14 @@
 
 .add-structured-search-btn {
   display: block;
-  padding: var(--space-sm) var(--space-md);
+  padding: var(--space-xs) var(--space-sm);
   background: var(--highlight);
   color: white;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
   transition: background var(--transition-fast);
 }
 
