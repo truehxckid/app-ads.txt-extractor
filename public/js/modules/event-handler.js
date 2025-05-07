@@ -299,7 +299,13 @@ class EventHandlerManager {
           
           if (currentSearchMode === 'advanced') {
             // For advanced mode, create params object with structured params
-            const structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+            let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+            
+            // Ensure structuredParams is always an array
+            if (structuredParams && !Array.isArray(structuredParams)) {
+              structuredParams = [structuredParams];
+            }
+            
             console.log('📊 CSV Export: Using ADVANCED search mode:', structuredParams);
             searchParams = {
               mode: 'advanced',
@@ -514,7 +520,13 @@ class EventHandlerManager {
     
     if (currentSearchMode === 'advanced') {
       // For advanced mode, use structured params
-      const structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+      let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+      
+      // Ensure structuredParams is always an array
+      if (structuredParams && !Array.isArray(structuredParams)) {
+        structuredParams = [structuredParams];
+      }
+      
       console.log('📊 CSV Export All: Using ADVANCED search mode:', structuredParams);
       
       // Download with structured params and empty search terms

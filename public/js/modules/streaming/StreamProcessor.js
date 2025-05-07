@@ -231,7 +231,15 @@ class StreamProcessor {
       } else if (searchParams.mode === 'advanced' && searchParams.structuredParams) {
         // ONLY use structured params from advanced mode, explicitly clear search terms
         searchTerms = []; // Clear simple search terms when using advanced mode
-        structuredParams = searchParams.structuredParams;
+        
+        // Ensure structuredParams is always an array for consistency
+        if (Array.isArray(searchParams.structuredParams)) {
+          structuredParams = searchParams.structuredParams;
+        } else {
+          // Convert single object to array with one item
+          structuredParams = [searchParams.structuredParams];
+        }
+        
         console.log('🚀 Advanced search mode with params:', structuredParams);
         
         // Store the advanced search params in AppState so they're available throughout

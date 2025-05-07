@@ -102,38 +102,24 @@ class CSVExporter {
     // Create CSV header
     let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
     
-    // Add search columns if needed, but only for terms that actually have matches
+    // Detect if we're dealing with advanced search parameters
+    const isAdvancedSearch = results.some(r => 
+      r.success && 
+      r.appAdsTxt?.searchResults?.mode === 'advanced' &&
+      r.appAdsTxt?.searchResults?.advancedParams
+    );
+    
+    // Add search columns based on search mode
     let foundTerms = [];
-    if (searchTerms && searchTerms.length > 0) {
-      // Identify which terms have at least one match across all results
-      foundTerms = searchTerms.map((term, index) => {
-        const termDisplay = typeof term === 'object' ? term.exactMatch : term;
-        // Check if any result has a match for this term
-        const hasMatch = results.some(result => {
-          const hasAppAds = result.success && result.appAdsTxt?.exists;
-          const hasSearchResults = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
-          
-          if (hasSearchResults && result.appAdsTxt.searchResults?.termResults) {
-            const termResult = result.appAdsTxt.searchResults.termResults[index];
-            return termResult && termResult.count > 0;
-          }
-          return false;
-        });
-        
-        return {
-          index,
-          termDisplay,
-          hasMatch
-        };
-      }).filter(term => term.hasMatch);
-      
-      // Only add columns for terms that were found
-      foundTerms.forEach((term, idx) => {
-        const termNum = idx + 1;
-        csvHeader += `,Term ${termNum}: ${term.termDisplay},Matches ${termNum}`;
-      });
-      
-      csvHeader += `,Total Matches,Matching Lines`;
+    
+    if (isAdvancedSearch) {
+      // For advanced search, use a simplified header structure
+      csvHeader += ",Advanced Search Results,Match Count,Matching Lines";
+    } 
+    else if (searchTerms && searchTerms.length > 0) {
+      // For simple search, use a consolidated format
+      // Instead of separate term columns, just add search-related columns
+      csvHeader += ",Matches,Details";
     }
     
     // Complete the header
@@ -162,59 +148,121 @@ class CSVExporter {
         
         // Search columns
         let searchCols = '';
-        if (foundTerms && foundTerms.length > 0) {
+        
+        // Detect if this result contains advanced search data
+        const isAdvancedResult = hasAppAds && 
+          result.appAdsTxt.searchResults?.mode === 'advanced' &&
+          result.appAdsTxt.searchResults?.advancedParams;
+        
+        if (isAdvancedResult) {
+          // Handle advanced search format
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // Add term matches only for terms that were found
-          foundTerms.forEach((term, idx) => {
-            if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
-              // Get the specific term result if available
-              const termResult = result.appAdsTxt.searchResults.termResults[term.index];
-              const hasTermMatches = termResult && termResult.count > 0;
-              
-              // Add term match status
-              searchCols += `,${hasTermMatches ? "Yes" : "No"}`;
-              
-              // Add match count for this term
-              const termMatchCount = hasTermMatches ? termResult.count : 0;
-              searchCols += `,${termMatchCount}`;
+          // Format advanced search results
+          let advancedSearchInfo = '';
+          if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
+            const params = result.appAdsTxt.searchResults.advancedParams;
+            
+            // Format each parameter as a readable string
+            if (Array.isArray(params)) {
+              const paramStrings = params.map(param => {
+                const parts = [];
+                if (param.domain) parts.push(`domain: ${param.domain}`);
+                if (param.publisherId) parts.push(`publisherId: ${param.publisherId}`);
+                if (param.relationship) parts.push(`relationship: ${param.relationship}`);
+                if (param.tagId) parts.push(`tagId: ${param.tagId}`);
+                return parts.join(', ');
+              });
+              advancedSearchInfo = paramStrings.join(' | ');
             } else {
-              // No match for this term
-              searchCols += `,No,0`;
+              // Single parameter object
+              const parts = [];
+              if (params.domain) parts.push(`domain: ${params.domain}`);
+              if (params.publisherId) parts.push(`publisherId: ${params.publisherId}`);
+              if (params.relationship) parts.push(`relationship: ${params.relationship}`);
+              if (params.tagId) parts.push(`tagId: ${params.tagId}`);
+              advancedSearchInfo = parts.join(', ');
             }
-          });
+          }
           
-          // Add total match count
+          // Add advanced search info
+          searchCols += `,${`"${advancedSearchInfo}"`}`;
+          
+          // Add match count
           searchCols += `,${matchCount}`;
           
-          // Add all matching lines in one column (summarized)
-          if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
-            // Collect all matching lines from all terms
-            const allMatchingLines = [];
-            foundTerms.forEach(term => {
-              const termResult = result.appAdsTxt.searchResults.termResults[term.index];
-              if (termResult && termResult.matchingLines && termResult.matchingLines.length > 0) {
-                termResult.matchingLines.forEach(line => {
-                  allMatchingLines.push(`Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`);
-                });
-              }
-            });
-            
-            // Display up to 5 matching lines
-            if (allMatchingLines.length > 0) {
-              const limitedLines = allMatchingLines.slice(0, 5).join(' | ');
-              const linesSummary = allMatchingLines.length > 5 ?
-                `${limitedLines} (+ ${allMatchingLines.length - 5} more)` :
-                limitedLines;
+          // Get matching lines
+          let matchingLinesText = '';
+          if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
+            const matchingLines = result.appAdsTxt.searchResults.matchingLines;
+            if (matchingLines.length > 0) {
+              const formattedLines = matchingLines.map(line => 
+                `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`
+              );
               
-              searchCols += `,${`"${linesSummary}"`}`;
-            } else {
-              searchCols += `,""`;
+              // Limit to 5 lines
+              const limitedLines = formattedLines.slice(0, 5).join(' | ');
+              matchingLinesText = formattedLines.length > 5 ?
+                `${limitedLines} (+ ${formattedLines.length - 5} more)` :
+                limitedLines;
             }
-          } else {
-            searchCols += `,""`;
           }
+          
+          // Add matching lines
+          searchCols += `,${`"${matchingLinesText}"`}`;
+        }
+        else if (searchTerms && searchTerms.length > 0) {
+          // Simplified logic for simple search
+          const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
+          const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
+          
+          // Add match count
+          searchCols += `,${matchCount}`;
+          
+          // Add matching details in one column
+          let matchDetails = '';
+          if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
+            // Collect matches for each term into a summary string
+            const termMatches = [];
+            
+            if (Array.isArray(result.appAdsTxt.searchResults.termResults)) {
+              result.appAdsTxt.searchResults.termResults.forEach((termResult, index) => {
+                if (termResult && termResult.count > 0 && searchTerms[index]) {
+                  // Get the term display name
+                  const term = typeof searchTerms[index] === 'object' ? 
+                    searchTerms[index].exactMatch : searchTerms[index];
+                    
+                  termMatches.push(`"${term}": ${termResult.count} matches`);
+                }
+              });
+            }
+            
+            // Create summary text of term matches
+            if (termMatches.length > 0) {
+              matchDetails = termMatches.join(' | ');
+            }
+            
+            // Add sample matching lines if available
+            if (matchDetails && result.appAdsTxt.searchResults.matchingLines?.length > 0) {
+              const lines = result.appAdsTxt.searchResults.matchingLines;
+              const lineSamples = lines.slice(0, 3).map(line => 
+                `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`
+              ).join(' | ');
+              
+              if (lineSamples) {
+                matchDetails += ` | ${lineSamples}`;
+                
+                // Add indication if there are more lines
+                if (lines.length > 3) {
+                  matchDetails += ` (+ ${lines.length - 3} more lines)`;
+                }
+              }
+            }
+          }
+          
+          // Add matching details
+          searchCols += `,${`"${matchDetails}"`}`;
         }
         
         // Status columns

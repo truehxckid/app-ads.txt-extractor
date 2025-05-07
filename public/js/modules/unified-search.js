@@ -200,7 +200,7 @@ class UnifiedSearchManager {
     
     return {
       mode: 'advanced',
-      structuredParams: structuredParamsArray.length === 1 ? structuredParamsArray[0] : structuredParamsArray,
+      structuredParams: structuredParamsArray, // Always return array even with one item
       isMultiple: structuredParamsArray.length > 1
     };
   }

@@ -167,12 +167,31 @@ class AppStateManager {
     } else if (params && params.structuredParams) {
       // Convert structured params to legacy format
       const structuredParams = params.structuredParams;
-      if (structuredParams.domain) {
-        this.searchTerms = [structuredParams.domain];
-      } else if (structuredParams.publisherId) {
-        this.searchTerms = [structuredParams.publisherId];
+      
+      // Handle both array and single object cases
+      if (Array.isArray(structuredParams)) {
+        // For array, use the first item's domain or publisherId if available
+        if (structuredParams.length > 0) {
+          const firstParam = structuredParams[0];
+          if (firstParam.domain) {
+            this.searchTerms = [firstParam.domain];
+          } else if (firstParam.publisherId) {
+            this.searchTerms = [firstParam.publisherId];
+          } else {
+            this.searchTerms = [];
+          }
+        } else {
+          this.searchTerms = [];
+        }
       } else {
-        this.searchTerms = [];
+        // Handle single object (legacy case)
+        if (structuredParams.domain) {
+          this.searchTerms = [structuredParams.domain];
+        } else if (structuredParams.publisherId) {
+          this.searchTerms = [structuredParams.publisherId];
+        } else {
+          this.searchTerms = [];
+        }
       }
     } else {
       this.searchTerms = [];
@@ -184,8 +203,19 @@ class AppStateManager {
    * @param {Object|Array} structuredParams - Advanced search parameters
    */
   setAdvancedSearchParams(structuredParams) {
-    this.advancedSearchParams = structuredParams;
-    console.log('Advanced search parameters set in AppState:', structuredParams);
+    // Ensure structured parameters are always an array for consistency
+    if (structuredParams) {
+      if (!Array.isArray(structuredParams)) {
+        // Convert single object to array with one item
+        this.advancedSearchParams = [structuredParams];
+      } else {
+        this.advancedSearchParams = structuredParams;
+      }
+    } else {
+      this.advancedSearchParams = null;
+    }
+    
+    console.log('Advanced search parameters set in AppState:', this.advancedSearchParams);
     
     // Notify listeners if needed
     this.notifyListeners('stateChange', { 
