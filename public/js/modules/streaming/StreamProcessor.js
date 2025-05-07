@@ -9,7 +9,6 @@ import { showNotification } from '../../utils/notification.js';
 import StreamProgressUI from './StreamProgressUI.js';
 import StreamDataParser from './StreamDataParser.js';
 import StreamResultsRenderer from './StreamResultsRenderer.js';
-import StreamDebugger from './StreamDebugger.js';
 
 /**
  * Stream Processor Class
@@ -26,7 +25,17 @@ class StreamProcessor {
     this.progressUI = StreamProgressUI;
     this.dataParser = StreamDataParser;
     this.resultsRenderer = StreamResultsRenderer;
-    this.debugger = StreamDebugger;
+    // Create a minimal debug replacement
+    this.debugger = {
+      initialize: () => true,
+      logStatus: (msg) => console.log('Stream Debug:', msg),
+      logChunk: (chunk, length) => console.log(`Stream Debug: Chunk ${length} bytes`),
+      logError: (err) => console.error('Stream Debug Error:', err),
+      logConnectionInfo: (response) => console.log('Stream Debug Connection:', response.status),
+      logSummary: (msg, stats) => console.log('Stream Debug Summary:', msg, stats),
+      clear: () => {},
+      close: () => {}
+    };
     
     // Initialize stats
     this.stats = {

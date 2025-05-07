@@ -7,8 +7,9 @@ Extract developer domains and analyze app-ads.txt files from app bundle IDs acro
 - **Multi-Store Support**: Extract domains from Google Play, App Store, Amazon, Roku, and Samsung
 - **Batch Processing**: Process multiple app bundle IDs simultaneously
 - **app-ads.txt Analysis**: Check for and analyze app-ads.txt files automatically
-- **Multi-Term Search**: Search for multiple terms within app-ads.txt files with highlighted results
+- **Advanced Search**: Search within app-ads.txt files with both simple and structured search options
 - **Performance Optimized**: Caching system with Redis support for faster results
+- **Streaming Mode**: Real-time processing and display of results as they arrive
 - **Rate Limiting**: Intelligent rate limiting to prevent IP blocking
 - **Dark Mode**: Toggle between light and dark themes
 - **CSV Export**: Download results as CSV for further analysis
@@ -77,16 +78,20 @@ The tool automatically detects the app store based on the bundle ID format:
 
 ### Searching app-ads.txt Files
 
-- Add one or more search terms to find specific content in app-ads.txt files
+- Choose between simple and advanced search modes
+- **Simple Search**: Enter a single search term to find in app-ads.txt files
+- **Advanced Search**: Structured search with fields for domain, publisher ID, relationship type, and tag ID
 - Search is case-insensitive and matches partial strings
-- Results show color-coded highlights for each search term
-- View individual matches for each term in the detailed results
+- Results show color-coded highlights for search matches
+- View individual matches in the detailed results
 
 ## Performance Considerations
 
 - The tool implements a sophisticated caching system for both stores and app-ads.txt files
 - Rate limiting is applied to prevent IP blocking by app stores
 - Processing is done in batches to manage memory usage and improve performance
+- Streaming mode processes results as they arrive, showing real-time updates
+- Web Workers are used for parallel processing when supported by the browser
 - Large app-ads.txt files are truncated in the UI for better display performance
 - Memory management is optimized with Node.js garbage collection
 
@@ -102,11 +107,13 @@ The application is optimized for:
 
 ### Common Issues
 
-- **Multiple Search Terms Appearing**: If you experience issues with multiple search term inputs appearing when clicking "Add Search Term", please update to the latest version which fixes this issue.
+- **Search Mode Toggle**: If the search mode toggle between Simple and Advanced doesn't respond, refresh the page and try again.
 
 - **Nginx Configuration**: When setting up Nginx, ensure you use the correct path `/etc/nginx/` (not "ngnix") in your configuration commands.
 
 - **Search or Extract Not Working**: Make sure to check the console for any errors. The application includes debug mode which you can activate by pressing Ctrl+D.
+
+- **Streaming Performance**: If performance is sluggish when processing large datasets, your browser may not support Web Workers. Try using Chrome or Firefox for best results.
 
 ## Development
 
@@ -134,6 +141,8 @@ app-ads.txt-extractor/
 │   ├── core/                  # Core business logic
 │   ├── middleware/            # Express middleware
 │   ├── routes/                # API routes
+│   │   ├── api.js             # Regular API endpoints
+│   │   └── streaming-api.js   # Streaming API endpoints
 │   ├── services/              # Services and utilities
 │   ├── utils/                 # Utility functions
 │   └── workers/               # Worker thread implementations
@@ -142,10 +151,16 @@ app-ads.txt-extractor/
 │   ├── js/                    # JavaScript modules
 │   │   ├── main.js            # Main client entry point
 │   │   ├── modules/           # Feature modules
+│   │   │   ├── app-state.js   # Application state management
+│   │   │   ├── unified-search.js # Unified search functionality
+│   │   │   └── streaming/     # Streaming functionality modules
 │   │   ├── utils/             # Client utilities
 │   │   └── workers/           # Client-side workers
-│   ├── styles.css             # CSS styles
-│   └── validation.js          # Form validation
+│   ├── styles/                # Modular CSS styles
+│   │   ├── _variables.css     # CSS variables
+│   │   ├── _search.css        # Search-specific styles
+│   │   ├── _streaming.css     # Streaming functionality styles
+│   │   └── main.css           # Main CSS entry point
 ├── cache/                     # Cache directory
 └── logs/                      # Application logs
 ```
@@ -168,4 +183,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Thanks to all the app stores for providing developer information
 - Built with Express.js, Axios, and Cheerio
-- Optimized with modern JavaScript features
+- Optimized with modern JavaScript features (ES modules, Web Workers, Streaming API)
+- Uses modular CSS architecture for improved maintainability
+- Updated May 2025

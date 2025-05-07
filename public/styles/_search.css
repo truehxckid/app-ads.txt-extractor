@@ -34,7 +34,7 @@
 }
 
 .search-mode-btn {
-  padding: 8px 20px;
+  padding: 8px 16px;
   background-color: transparent;
   color: var(--text-secondary);
   border: none;
@@ -42,27 +42,18 @@
   font-size: var(--font-size-sm);
   cursor: pointer;
   transition: all 0.2s ease;
-  font-weight: var(--font-weight-medium);
-  min-width: 105px; /* Fixed width to prevent layout shifts */
+  font-weight: var(--font-weight-semibold); /* Always bold */
+  min-width: 80px; /* Reduced width */
   text-align: center;
 }
 
 .search-mode-btn.active {
   background: linear-gradient(to bottom, var(--highlight-500), var(--highlight-600));
   color: white;
-  font-weight: var(--font-weight-semibold);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Prevent text width changes when buttons activate */
-.search-mode-btn:before {
-  display: block;
-  content: attr(data-text);
-  font-weight: var(--font-weight-semibold);
-  height: 0;
-  overflow: hidden;
-  visibility: hidden;
-}
+/* Remove the before pseudo-element since we don't need it anymore */
 
 .search-mode-btn:hover:not(.active) {
   background-color: var(--bg-accent);

@@ -5,7 +5,7 @@
 
 import AppState from './app-state.js';
 import EventHandler from './event-handler.js';
-import StreamingProcessor from './streaming.js'; // Updated to use new modular version
+import StreamingProcessor from './streaming/StreamProcessor.js'; // Direct import instead of bridge module
 import { showNotification } from '../utils/notification.js';
 import DOMUtils from './dom-utils.js';
 
