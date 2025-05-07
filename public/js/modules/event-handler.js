@@ -243,6 +243,20 @@ class EventHandlerManager {
         break;
       case 'download-csv':
       case 'stream-download-csv':
+        // Prevent multiple execution by using a debounce flag
+        if (this._isExporting) {
+          console.log('CSV export already in progress, ignoring duplicate request');
+          return;
+        }
+        
+        // Set debounce flag
+        this._isExporting = true;
+        
+        // Reset the flag after a short delay
+        setTimeout(() => {
+          this._isExporting = false;
+        }, 1000);
+        
         // Handle all CSV download actions with the streaming method
         import('./streaming/StreamProcessor.js').then(module => {
           const StreamProcessor = module.default;
@@ -254,12 +268,20 @@ class EventHandlerManager {
           // Call export CSV function with streaming capability
           if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
             StreamProcessor.exportCsv(bundleIds, searchTerms);
+            return; // Early return to prevent fallback
           }
+          
+          // If StreamProcessor exists but exportCsv method doesn't exist, fall back
+          console.warn('StreamProcessor exists but exportCsv method not found, falling back to regular download');
+          CSVExporter.downloadResults(AppState.results);
         }).catch(error => {
           console.error('Error importing StreamProcessor for CSV export:', error);
           
           // Fall back to regular download if streaming fails
           CSVExporter.downloadResults(AppState.results);
+          
+          // Reset the flag in case of error
+          this._isExporting = false;
         });
         break;
       case 'download-all-csv':
