@@ -330,6 +330,22 @@ async function getDeveloperInfo(bundleId, searchTerms = null) {
       hasSearchTerms: !!searchTerms 
     }, 'Getting developer info');
     
+    // Skip numeric Roku Bundle IDs
+    if (storeType === 'roku-numeric') {
+      logger.info({ 
+        bundleId: validId,
+        storeType: 'roku-numeric'
+      }, 'Skipping numeric Roku bundle ID');
+      
+      return {
+        bundleId: validId,
+        success: false,
+        storeType: 'roku-numeric',
+        error: 'Numeric Roku bundle IDs are temporarily not supported',
+        timestamp: Date.now()
+      };
+    }
+    
     // If store type is unknown, return error immediately without trying all stores
     if (storeType === 'unknown') {
       logger.info({ 

@@ -9,6 +9,16 @@ const { getLogger } = require('./logger');
 const logger = getLogger('validation');
 
 /**
+ * Check if string is a numeric Roku Bundle ID
+ * @param {string} id - Bundle ID to check
+ * @returns {boolean} - Whether ID is a numeric Roku ID
+ */
+function isNumericRokuId(id) {
+  if (!id || typeof id !== 'string') return false;
+  return /^\d{4,6}$/.test(id.trim());
+}
+
+/**
  * Validate bundle ID
  * @param {string} id - Bundle ID to validate
  * @returns {string} - Validated and trimmed bundle ID
@@ -155,5 +165,6 @@ module.exports = {
   validateSearchTerms,
   isValidDomain,
   isValidUrl,
-  validateBundleIds
+  validateBundleIds,
+  isNumericRokuId
 };

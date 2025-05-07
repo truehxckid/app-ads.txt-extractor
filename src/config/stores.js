@@ -93,8 +93,13 @@ function detectStoreType(id) {
     return 'googleplay';
   }
   
-  // Roku - shorter numeric IDs or specific format
-  if (/^\d{4,6}$/.test(trimmedId) || /^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) {
+  // Roku - numeric IDs identification (to be skipped later) or specific format
+  if (/^\d{4,6}$/.test(trimmedId)) {
+    return 'roku-numeric';
+  }
+  
+  // Roku - other valid formats
+  if (/^[a-f0-9]{32}:[a-f0-9]{32}$/i.test(trimmedId)) {
     return 'roku';
   }
   
