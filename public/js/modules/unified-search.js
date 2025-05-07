@@ -33,7 +33,23 @@ class UnifiedSearchManager {
       // Initialize search terms container if empty
       const searchTermsContainer = document.getElementById('searchTermsContainer');
       if (searchTermsContainer && searchTermsContainer.children.length === 0) {
+        // Add one search term to start (limit will be enforced in addSearchTerm)
         this.addSearchTerm();
+      }
+      
+      // Ensure existing search terms don't exceed the limit of 5
+      if (searchTermsContainer && searchTermsContainer.children.length > 5) {
+        // Remove excess terms
+        while (searchTermsContainer.children.length > 5) {
+          searchTermsContainer.removeChild(searchTermsContainer.lastChild);
+        }
+        // Show notification
+        showNotification('Limited to 5 search terms', 'info');
+      }
+      
+      // Update the Add Term button state
+      if (searchTermsContainer) {
+        this._updateAddTermButtonState(searchTermsContainer);
       }
       
       // Initialize structured search container if empty
@@ -207,10 +223,18 @@ class UnifiedSearchManager {
         if (container) {
           container.innerHTML = '';
           
-          // Add each search term
-          params.queries.forEach(query => {
+          // Add each search term (up to 5)
+          params.queries.slice(0, 5).forEach(query => {
             this._addSearchTermToUI(container, query);
           });
+          
+          // Show notification if we limited the number of terms
+          if (params.queries.length > 5) {
+            showNotification('Limited to 5 search terms', 'info');
+          }
+          
+          // Update the Add Term button state
+          this._updateAddTermButtonState(container);
         }
       } 
       // Handle backward compatibility with single query
@@ -475,11 +499,50 @@ class UnifiedSearchManager {
   
   /**
    * Add a new empty search term
+   * Maximum of 5 search terms allowed
    */
   addSearchTerm() {
     const container = document.getElementById('searchTermsContainer');
     if (container) {
+      // Limit to maximum 5 search terms
+      if (container.children.length >= 5) {
+        // Show notification if available
+        if (window.showNotification) {
+          window.showNotification('Maximum of 5 search terms allowed', 'info');
+        } else {
+          console.info('Maximum of 5 search terms allowed');
+        }
+        return;
+      }
       this._addSearchTermToUI(container);
+      
+      // Update the Add Term button state
+      this._updateAddTermButtonState(container);
+    }
+  }
+  
+  /**
+   * Update the Add Term button state based on the number of search terms
+   * @param {HTMLElement} container - Search terms container
+   * @private
+   */
+  _updateAddTermButtonState(container) {
+    if (!container) return;
+    
+    const addTermButton = document.querySelector('[data-action="add-term"]');
+    if (addTermButton) {
+      // Disable button if 5 terms are reached
+      const isDisabled = container.children.length >= 5;
+      addTermButton.disabled = isDisabled;
+      
+      // Add/remove a visual class to indicate disabled state
+      if (isDisabled) {
+        addTermButton.classList.add('disabled');
+        addTermButton.setAttribute('title', 'Maximum of 5 search terms allowed');
+      } else {
+        addTermButton.classList.remove('disabled');
+        addTermButton.setAttribute('title', 'Add another search term');
+      }
     }
   }
   
@@ -496,6 +559,9 @@ class UnifiedSearchManager {
       const container = document.getElementById('searchTermsContainer');
       if (container && container.children.length === 0) {
         this.addSearchTerm();
+      } else if (container) {
+        // Update the Add Term button state
+        this._updateAddTermButtonState(container);
       }
     }
   }

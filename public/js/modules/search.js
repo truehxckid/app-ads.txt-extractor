@@ -33,18 +33,50 @@ class SearchManager {
           this.addSearchTerm();
         });
         this.handlersAdded = true;
+        
+        // Check if we need to disable the button (if 5 terms are already present)
+        if (searchContainer && searchContainer.children.length >= 5) {
+          addTermButton.disabled = true;
+          addTermButton.classList.add('disabled');
+          addTermButton.setAttribute('title', 'Maximum of 5 search terms allowed');
+        }
       }
     }
   }
   
   /**
    * Add a new search term input
+   * Maximum of 5 search terms allowed
    */
   addSearchTerm() {
     try {
       const container = DOMUtils.getElement('searchTermsContainer');
       if (!container) {
         console.error('Search terms container not found');
+        return;
+      }
+      
+      // Limit to maximum 5 search terms
+      if (container.children.length >= 5) {
+        // Import notification utils dynamically
+        import('../utils/notification.js').then(module => {
+          if (module && module.showNotification) {
+            module.showNotification('Maximum of 5 search terms allowed', 'info');
+          } else {
+            console.info('Maximum of 5 search terms allowed');
+          }
+        }).catch(() => {
+          console.info('Maximum of 5 search terms allowed');
+        });
+        
+        // Disable the Add Term button
+        const addTermButton = document.querySelector('[data-action="add-term"]');
+        if (addTermButton) {
+          addTermButton.disabled = true;
+          addTermButton.classList.add('disabled');
+          addTermButton.setAttribute('title', 'Maximum of 5 search terms allowed');
+        }
+        
         return;
       }
       
@@ -97,6 +129,14 @@ class SearchManager {
       const container = DOMUtils.getElement('searchTermsContainer');
       if (container && container.children.length === 0) {
         this.addSearchTerm();
+      } else {
+        // Enable the Add Term button if we're below the limit
+        const addTermButton = document.querySelector('[data-action="add-term"]');
+        if (addTermButton && container && container.children.length < 5) {
+          addTermButton.disabled = false;
+          addTermButton.classList.remove('disabled');
+          addTermButton.setAttribute('title', 'Add another search term');
+        }
       }
     }
   }
@@ -121,7 +161,7 @@ class SearchManager {
   
   /**
    * Set search terms in inputs
-   * @param {string[]} terms - Array of search terms
+   * @param {string[]} terms - Array of search terms (limited to 5)
    */
   setSearchTerms(terms) {
     if (!Array.isArray(terms) || terms.length === 0) {
@@ -134,8 +174,9 @@ class SearchManager {
     // Clear existing terms
     container.innerHTML = '';
     
-    // Add new terms
-    terms.forEach(term => {
+    // Add new terms (up to 5)
+    const limitedTerms = terms.slice(0, 5);
+    limitedTerms.forEach(term => {
       const row = DOMUtils.createElement('div', { className: 'search-term-row' });
       
       const input = DOMUtils.createElement('input', {
@@ -157,6 +198,34 @@ class SearchManager {
       row.appendChild(button);
       container.appendChild(row);
     });
+    
+    // Show notification if terms were limited
+    if (terms.length > 5) {
+      // Import notification utils dynamically
+      import('../utils/notification.js').then(module => {
+        if (module && module.showNotification) {
+          module.showNotification('Limited to 5 search terms', 'info');
+        } else {
+          console.info('Limited to 5 search terms');
+        }
+      }).catch(() => {
+        console.info('Limited to 5 search terms');
+      });
+    }
+    
+    // Update the Add Term button state
+    const addTermButton = document.querySelector('[data-action="add-term"]');
+    if (addTermButton) {
+      const isDisabled = container.children.length >= 5;
+      addTermButton.disabled = isDisabled;
+      if (isDisabled) {
+        addTermButton.classList.add('disabled');
+        addTermButton.setAttribute('title', 'Maximum of 5 search terms allowed');
+      } else {
+        addTermButton.classList.remove('disabled');
+        addTermButton.setAttribute('title', 'Add another search term');
+      }
+    }
   }
   
   /**

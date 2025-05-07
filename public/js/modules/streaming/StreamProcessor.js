@@ -264,6 +264,16 @@ class StreamProcessor {
     this.stats.startTime = Date.now();
     this.stats.totalBundleIds = bundleIds.length;
     
+    // Clear previous results only when starting a new extraction
+    // This is different from downloadCSV where we want to keep results visible
+    const resultElement = DOMUtils.getElement('result');
+    if (resultElement) {
+      const resultsDisplay = resultElement.querySelector('.stream-results-display');
+      if (resultsDisplay) {
+        resultsDisplay.style.display = 'none';
+      }
+    }
+    
     console.log('👉 State initialized with totalBundleIds:', this.stats.totalBundleIds);
     
     // Get result element and create initial UI
@@ -1015,12 +1025,15 @@ class StreamProcessor {
       });
     });
     
-    // Reset the result element's content
-    // But keep any results display that might be there
+    // We want to keep the results display visible
+    // DO NOT hide the results when exporting CSV
+    // Leave this commented for future reference
+    /*
     const resultsDisplay = resultElement.querySelector('.stream-results-display');
     if (resultsDisplay) {
       resultsDisplay.style.display = 'none';
     }
+    */
     
     // Clear any processing messages
     const staticIndicators = resultElement.querySelectorAll(':not(.stream-results-display)');

@@ -78,15 +78,11 @@ class TemplateEngineManager {
               <th scope="col">Store</th>
               <th scope="col">Domain</th>
               <th scope="col">App-ads.txt</th>
-    `;
-    
-    // Add search matches header if needed
-    if (searchTermText) {
-      tableHtml += `<th scope="col">Search Matches</th>`;
-    }
-    
-    // Add actions header
-    tableHtml += `<th scope="col">Actions</th></tr></thead><tbody>`;
+              <th scope="col">Matched Terms</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>`;
     
     // For details sections
     let detailsHtml = '';
@@ -124,44 +120,44 @@ class TemplateEngineManager {
         
         tableHtml += `</td>`;
         
-        // Search matches cell (if search terms provided)
-        if (searchTermText) {
-          tableHtml += `<td class="search-matches-cell">`;
+        // Search matches cell (always included)
+        tableHtml += `<td class="search-matches-cell">`;
+        
+        if (hasSearchMatches) {
+          tableHtml += `<span class="search-matches-found">`;
           
-          if (hasSearchMatches) {
-            tableHtml += `<span class="search-matches-found">`;
-            
-            // For multi-term search, show color-coded indicators
-            if (result.appAdsTxt.searchResults.termResults) {
-              // Generate colored indicators for each term - showing term numbers (1-based index)
-              result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
-                if (termResult.count > 0) {
-                  const colorClass = `term-match-${termIndex % 5}`;
-                  tableHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
-                }
-              });
-            } else {
-              // Fallback for single-term search
-              tableHtml += `${searchMatchCount} matches`;
-            }
-            
-            tableHtml += `</span>`;
-            
-            if (searchMatchCount > 0) {
-              const targetId = `search-${detailsId}`;
-              tableHtml += `
-                <button class="toggle-search-matches" data-action="toggle-matches" data-target="${targetId}" 
-                  type="button" aria-expanded="false" aria-controls="${targetId}">
-                  Show matches
-                </button>
-              `;
-            }
+          // For multi-term search, show color-coded indicators
+          if (result.appAdsTxt.searchResults.termResults) {
+            // Generate colored indicators for each term - showing term numbers (1-based index)
+            result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
+              if (termResult.count > 0) {
+                const colorClass = `term-match-${termIndex % 5}`;
+                tableHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
+              }
+            });
+          } else if (searchTermText) {
+            // Fallback for single-term search
+            tableHtml += `${searchMatchCount} matches`;
           } else {
-            tableHtml += `<span class="search-matches-missing">No matches</span>`;
+            tableHtml += `None`;
           }
           
-          tableHtml += `</td>`;
+          tableHtml += `</span>`;
+          
+          if (searchMatchCount > 0) {
+            const targetId = `search-${detailsId}`;
+            tableHtml += `
+              <button class="toggle-search-matches" data-action="toggle-matches" data-target="${targetId}" 
+                type="button" aria-expanded="false" aria-controls="${targetId}">
+                Show matches
+              </button>
+            `;
+          }
+        } else {
+          tableHtml += `<span class="search-matches-missing">None</span>`;
         }
+        
+        tableHtml += `</td>`;
         
         // Actions cell
         tableHtml += `
@@ -312,9 +308,10 @@ class TemplateEngineManager {
         tableHtml += `
           <tr class="error-row">
             <td>${DOMUtils.escapeHtml(result.bundleId)}</td>
-            <td class="error-message" colspan="${searchTermText ? 4 : 3}">
+            <td class="error-message" colspan="3">
               Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
             </td>
+            <td>N/A</td>
             <td></td>
           </tr>
         `;

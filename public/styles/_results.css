@@ -228,6 +228,13 @@
   font-weight: var(--font-weight-medium);
 }
 
+/* Term match indicator colors */
+.term-match-indicator.term-match-0 { background-color: var(--primary); }
+.term-match-indicator.term-match-1 { background-color: var(--highlight); }
+.term-match-indicator.term-match-2 { background-color: var(--success); }
+.term-match-indicator.term-match-3 { background-color: var(--warning); }
+.term-match-indicator.term-match-4 { background-color: var(--blue-400); }
+
 /* Details sections */
 .app-ads-details, 
 .search-matches-details {

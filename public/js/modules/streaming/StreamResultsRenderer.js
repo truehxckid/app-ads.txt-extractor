@@ -436,11 +436,12 @@ class StreamResultsRenderer {
                 <th>Store</th>
                 <th>Domain</th>
                 <th>app-ads.txt</th>
+                <th>Matched Terms</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="results-final-tbody">
-              ${results.length === 0 ? '<tr><td colspan="5" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
+              ${results.length === 0 ? '<tr><td colspan="6" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
             </tbody>
           </table>
         </div>
@@ -505,6 +506,34 @@ class StreamResultsRenderer {
       
       if (result.success) {
         const hasAppAds = result.appAdsTxt?.exists;
+        const hasSearchMatches = hasAppAds && result.appAdsTxt.searchResults && result.appAdsTxt.searchResults.count > 0;
+        const searchMatchCount = hasSearchMatches ? result.appAdsTxt.searchResults.count : 0;
+        
+        // Create matched terms cell content
+        let matchedTermsHtml = '';
+        if (hasSearchMatches) {
+          matchedTermsHtml += '<span class="search-matches-found">';
+          
+          // For multi-term search, show color-coded indicators
+          if (result.appAdsTxt.searchResults.termResults) {
+            // Generate colored indicators for each term - showing term numbers (1-based index)
+            result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
+              if (termResult.count > 0) {
+                const colorClass = `term-match-${termIndex % 5}`;
+                matchedTermsHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
+              }
+            });
+          } else if (searchMatchCount > 0) {
+            // Fallback for single-term search
+            matchedTermsHtml += `${searchMatchCount} matches`;
+          } else {
+            matchedTermsHtml += 'None';
+          }
+          
+          matchedTermsHtml += '</span>';
+        } else {
+          matchedTermsHtml = '<span class="search-matches-missing">None</span>';
+        }
         
         row.innerHTML = `
           <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
@@ -514,6 +543,9 @@ class StreamResultsRenderer {
             ${hasAppAds 
               ? '<span class="app-ads-found">Found</span>' 
               : '<span class="app-ads-missing">Not found</span>'}
+          </td>
+          <td class="search-matches-cell">
+            ${matchedTermsHtml}
           </td>
           <td>
             <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
@@ -526,6 +558,7 @@ class StreamResultsRenderer {
           <td colspan="3" class="error-message">
             Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
           </td>
+          <td>N/A</td>
           <td></td>
         `;
       }
