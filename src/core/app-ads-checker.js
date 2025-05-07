@@ -619,23 +619,83 @@ function processSearchTerms(lines, searchTerms) {
       count: 0
     };
     
+    // Group search terms by structuredParams for advanced search
+    let searchGroups = [];
+    let isStructuredSearch = false;
+    
+    // Check if searchTerms contains structured parameters
+    if (searchTerms.length > 0 && typeof searchTerms[0] === 'object') {
+      // If any term has both domain and publisherId, it's using the advanced search format
+      const hasAdvancedParams = searchTerms.some(term => 
+        term.domain && term.publisherId && 
+        typeof term.domain === 'string' && 
+        typeof term.publisherId === 'string');
+      
+      if (hasAdvancedParams) {
+        isStructuredSearch = true;
+        
+        // For advanced search, each object is its own group (AND relationship within group)
+        searchGroups = searchTerms.map(term => {
+          const groupTerms = [];
+          if (term.domain) groupTerms.push({ exactMatch: term.domain.toLowerCase() });
+          if (term.publisherId) groupTerms.push({ exactMatch: term.publisherId.toLowerCase() });
+          if (term.relationship) groupTerms.push({ exactMatch: term.relationship.toLowerCase() });
+          if (term.tagId) groupTerms.push({ exactMatch: term.tagId.toLowerCase() });
+          return groupTerms;
+        });
+        
+        // Filter out any empty groups
+        searchGroups = searchGroups.filter(group => group.length > 0);
+        
+        logger.debug({ 
+          searchGroups,
+          isStructuredSearch 
+        }, 'Using structured search with groups');
+      }
+    }
+    
+    // If not using structured search, check if we need to process input terms
+    if (!isStructuredSearch) {
+      // In simple search mode, if we have multiple search terms, we have two possibilities:
+      // 1. Each search term represents a separate search group (OR logic between them)
+      // 2. All search terms belong to the same group (AND logic between them)
+      
+      // For this implementation, we'll group all terms together for AND logic
+      // This matches the expectation that searching for "appnexus.com 12447" finds lines with both terms
+      searchGroups = [searchTerms];
+      
+      logger.debug({
+        searchGroups: searchGroups.map(group => group.map(term => 
+          typeof term === 'object' ? term.exactMatch : term
+        )),
+        termCount: searchTerms.length
+      }, 'Using simple search with AND logic between terms');
+    }
+    
     // Pre-compile regexes or prepare exact match terms for performance
-    const searchMatchers = searchTerms.map(term => {
+    const compileSearchMatcher = term => {
       if (typeof term === 'object' && term.exactMatch) {
         // If it's an exact match object, prepare the exact match string
         return {
           type: 'exact',
-          value: term.exactMatch.toLowerCase()
+          value: term.exactMatch.toLowerCase(),
+          originalTerm: term
         };
       } else {
         // Otherwise create a regex for backward compatibility
         const termStr = typeof term === 'string' ? term : String(term);
         return {
           type: 'regex',
-          value: new RegExp(termStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+          value: new RegExp(termStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+          originalTerm: term
         };
       }
-    });
+    };
+    
+    // Compile matchers for each term in each group
+    const searchGroupMatchers = searchGroups.map(group => 
+      group.map(term => compileSearchMatcher(term))
+    );
     
     // Process in batches to reduce memory pressure
     const BATCH_SIZE = 2000;
@@ -652,47 +712,59 @@ function processSearchTerms(lines, searchTerms) {
         if (!lineContent) continue;
         
         const lineNumber = i + 1;
-        let anyMatch = false;
+        const lineLower = lineContent.toLowerCase();
         
-        // Check each search term
-        searchTerms.forEach((term, termIndex) => {
-          try {
-            const matcher = searchMatchers[termIndex];
+        // Track if the line matches any of the search groups
+        let anyGroupMatch = false;
+        
+        // Check each search group
+        searchGroupMatchers.forEach((group, groupIndex) => {
+          // For each group, ALL terms in the group must match (AND logic)
+          let allGroupTermsMatch = group.length > 0;
+          
+          group.forEach(matcher => {
             let isMatch = false;
             
             if (matcher.type === 'exact') {
               // For exact match terms, check if the exact string appears in the line
-              // This will match the term exactly as the user entered it
-              isMatch = lineContent.toLowerCase().includes(matcher.value);
+              isMatch = lineLower.includes(matcher.value);
             } else {
               // For regex terms, use the regex test method
               isMatch = matcher.value.test(lineContent);
             }
             
-            if (isMatch) {
-              // Add to term-specific results
-              if (searchResults.termResults[termIndex]) {
-                searchResults.termResults[termIndex].matchingLines.push({
-                  lineNumber,
-                  content: lineContent,
-                  termIndex
-                });
-                searchResults.termResults[termIndex].count++;
-              }
-              anyMatch = true;
+            // If any term in the group doesn't match, the whole group doesn't match
+            if (!isMatch) {
+              allGroupTermsMatch = false;
             }
-          } catch (err) {
-            // Report error but continue processing
-            logger.error({ 
-              term: typeof term === 'object' ? term.exactMatch : term, 
-              lineIndex: i, 
-              error: err.message
-            }, 'Error matching search term');
+            
+            // Record individual term matches for per-term results
+            // Find the original term index in the flat searchTerms array
+            const termIndex = searchTerms.findIndex(term => {
+              if (typeof term === 'object' && typeof matcher.originalTerm === 'object') {
+                return term.exactMatch === matcher.originalTerm.exactMatch;
+              }
+              return term === matcher.originalTerm;
+            });
+            
+            if (isMatch && termIndex !== -1 && searchResults.termResults[termIndex]) {
+              searchResults.termResults[termIndex].matchingLines.push({
+                lineNumber,
+                content: lineContent,
+                termIndex
+              });
+              searchResults.termResults[termIndex].count++;
+            }
+          });
+          
+          // If all terms in this group matched, it's a match for the group
+          if (allGroupTermsMatch) {
+            anyGroupMatch = true;
           }
         });
         
-        // If any term matched, add to overall results
-        if (anyMatch) {
+        // If any group matched entirely, add to overall results
+        if (anyGroupMatch) {
           searchResults.matchingLines.push({
             lineNumber,
             content: lineContent
