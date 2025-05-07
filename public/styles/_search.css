@@ -96,11 +96,22 @@
 }
 
 /* Advanced search styles */
+.structured-search-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
 .structured-search-form {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-md);
-  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  position: relative;
 }
 
 .structured-search-field {
@@ -180,6 +191,51 @@
 
 .add-term-btn:hover {
   background: var(--highlight-hover);
+}
+
+/* Structured search add/remove buttons */
+.structured-search-actions {
+  grid-column: span 2;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-sm);
+}
+
+.remove-structured-search-btn {
+  background: var(--error);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  font-size: var(--font-size-sm);
+}
+
+.remove-structured-search-btn:hover {
+  background: var(--error-hover);
+}
+
+.structured-search-add-action {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--space-xs);
+}
+
+.add-structured-search-btn {
+  display: block;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--success);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+  transition: background var(--transition-fast);
+}
+
+.add-structured-search-btn:hover {
+  background: var(--success-hover);
 }
 
 /* Search Matches Tabs */

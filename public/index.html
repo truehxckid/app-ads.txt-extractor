@@ -139,18 +139,23 @@
             <!-- Simple search mode (visible by default) -->
             <div id="simpleSearchContainer" class="search-container">
               <div class="simple-search-field">
-                <label for="searchQuery">Search for:</label>
-                <div class="simple-search-input-wrapper">
-                  <input 
-                    type="text" 
-                    id="searchQuery" 
-                    placeholder="Enter search term (e.g., appnexus.com or 12447)"
-                    aria-label="Search term"
+                <label for="searchTermsContainer">Search for:</label>
+                <div id="searchTermsContainer" class="search-terms-container">
+                  <!-- Search terms will be added here dynamically -->
+                </div>
+                <div class="search-terms-actions">
+                  <button 
+                    type="button" 
+                    class="add-term-btn" 
+                    data-action="add-term"
+                    aria-label="Add another search term"
                   >
+                    + Add another term
+                  </button>
                 </div>
               </div>
               <p class="helper-text">
-                Enter a single search term to look for in app-ads.txt files (e.g., "google.com", "12447", etc.)
+                Enter one or more search terms to look for in app-ads.txt files (e.g., "google.com", "12447", etc.)
               </p>
             </div>
             
@@ -159,27 +164,52 @@
               <p class="helper-text">
                 Fill in the fields below to find specific entries in app-ads.txt files regardless of spacing.
               </p>
-              <div class="structured-search-form">
-                <div class="structured-search-field">
-                  <label for="structuredDomain">Domain:</label>
-                  <input type="text" id="structuredDomain" placeholder="e.g., appnexus.com">
+              <div id="structuredSearchContainer" class="structured-search-container">
+                <!-- First structured search form (default) -->
+                <div class="structured-search-form">
+                  <div class="structured-search-field">
+                    <label for="structuredDomain_0">Domain:</label>
+                    <input type="text" id="structuredDomain_0" class="structured-domain" placeholder="e.g., appnexus.com">
+                  </div>
+                  <div class="structured-search-field">
+                    <label for="structuredPublisherId_0">Publisher ID:</label>
+                    <input type="text" id="structuredPublisherId_0" class="structured-publisher-id" placeholder="e.g., 12447">
+                  </div>
+                  <div class="structured-search-field">
+                    <label for="structuredRelationship_0">Relationship:</label>
+                    <select id="structuredRelationship_0" class="structured-relationship">
+                      <option value="">Any</option>
+                      <option value="DIRECT">DIRECT</option>
+                      <option value="RESELLER">RESELLER</option>
+                    </select>
+                  </div>
+                  <div class="structured-search-field">
+                    <label for="structuredTagId_0">Tag ID (Optional):</label>
+                    <input type="text" id="structuredTagId_0" class="structured-tag-id" placeholder="e.g., abc123">
+                  </div>
+                  <div class="structured-search-actions">
+                    <button 
+                      type="button"
+                      class="remove-structured-search-btn"
+                      data-action="remove-structured-search"
+                      aria-label="Remove this search criteria"
+                      style="display: none;"
+                    >
+                      − Remove
+                    </button>
+                  </div>
                 </div>
-                <div class="structured-search-field">
-                  <label for="structuredPublisherId">Publisher ID:</label>
-                  <input type="text" id="structuredPublisherId" placeholder="e.g., 12447">
-                </div>
-                <div class="structured-search-field">
-                  <label for="structuredRelationship">Relationship:</label>
-                  <select id="structuredRelationship">
-                    <option value="">Any</option>
-                    <option value="DIRECT">DIRECT</option>
-                    <option value="RESELLER">RESELLER</option>
-                  </select>
-                </div>
-                <div class="structured-search-field">
-                  <label for="structuredTagId">Tag ID (Optional):</label>
-                  <input type="text" id="structuredTagId" placeholder="e.g., abc123">
-                </div>
+                <!-- Additional structured search forms will be added here dynamically -->
+              </div>
+              <div class="structured-search-add-action">
+                <button 
+                  type="button"
+                  class="add-structured-search-btn"
+                  data-action="add-structured-search"
+                  aria-label="Add another search criteria"
+                >
+                  + Add another search criteria
+                </button>
               </div>
             </div>
             

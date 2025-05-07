@@ -112,6 +112,14 @@ class SearchManager {
   }
   
   /**
+   * Compatibility method for UnifiedSearch
+   * @deprecated - Use UnifiedSearch.getSearchParams() instead
+   */
+  getCurrentSearchTerms() {
+    return this.getSearchTerms();
+  }
+  
+  /**
    * Set search terms in inputs
    * @param {string[]} terms - Array of search terms
    */

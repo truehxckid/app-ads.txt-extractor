@@ -215,7 +215,7 @@ class EventHandlerManager {
    */
   handleAddSearchTerm = (event) => {
     event.preventDefault();
-    SearchManager.addSearchTerm();
+    UnifiedSearch.addSearchTerm();
   }
   
   /**
@@ -316,6 +316,12 @@ class EventHandlerManager {
         break;
       case 'remove-term':
         this.handleRemoveSearchTerm(target);
+        break;
+      case 'add-structured-search':
+        this.handleAddStructuredSearch(target);
+        break;
+      case 'remove-structured-search':
+        this.handleRemoveStructuredSearch(target);
         break;
       case 'pagination':
         this.handlePaginationClick(target);
@@ -494,16 +500,7 @@ class EventHandlerManager {
    * @param {HTMLElement} button - Remove button
    */
   handleRemoveSearchTerm(button) {
-    const row = button.closest('.search-term-row');
-    if (row) {
-      row.remove();
-      
-      // Ensure at least one search term exists
-      const container = DOMUtils.getElement('searchTermsContainer');
-      if (container && container.children.length === 0) {
-        SearchManager.addSearchTerm();
-      }
-    }
+    UnifiedSearch.removeSearchTerm(button);
   }
   
   /**
@@ -570,6 +567,22 @@ class EventHandlerManager {
    */
   handleSwitchSearchMode(button) {
     UnifiedSearch.handleModeSwitch({ target: button });
+  }
+  
+  /**
+   * Handle add structured search button click
+   * @param {HTMLElement} button - Add button
+   */
+  handleAddStructuredSearch(button) {
+    UnifiedSearch.addStructuredSearchForm();
+  }
+  
+  /**
+   * Handle remove structured search button click
+   * @param {HTMLElement} button - Remove button
+   */
+  handleRemoveStructuredSearch(button) {
+    UnifiedSearch.removeStructuredSearchForm(button);
   }
 
   /**
