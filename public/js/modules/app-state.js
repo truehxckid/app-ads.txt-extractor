@@ -155,6 +155,11 @@ class AppStateManager {
   setSearchParams(params) {
     this.searchParams = params;
     
+    // Store advanced search params if present
+    if (params && params.mode === 'advanced' && params.structuredParams) {
+      this.setAdvancedSearchParams(params.structuredParams);
+    }
+    
     // For backwards compatibility
     if (params && params.mode === 'simple' && params.queries && params.queries.length > 0) {
       // Use all queries as separate search terms
@@ -172,6 +177,20 @@ class AppStateManager {
     } else {
       this.searchTerms = [];
     }
+  }
+  
+  /**
+   * Set advanced search parameters
+   * @param {Object|Array} structuredParams - Advanced search parameters
+   */
+  setAdvancedSearchParams(structuredParams) {
+    this.advancedSearchParams = structuredParams;
+    console.log('Advanced search parameters set in AppState:', structuredParams);
+    
+    // Notify listeners if needed
+    this.notifyListeners('stateChange', { 
+      advancedSearchParams: this.advancedSearchParams
+    });
   }
   
   /**

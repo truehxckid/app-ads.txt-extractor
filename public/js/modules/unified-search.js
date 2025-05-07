@@ -568,13 +568,35 @@ class UnifiedSearchManager {
   
   /**
    * Add a new empty structured search form
+   * Maximum of 5 forms allowed
    */
   addStructuredSearchForm() {
     const container = document.getElementById('structuredSearchContainer');
     if (container) {
+      // Limit to maximum 5 structured search forms
+      if (container.children.length >= 5) {
+        // Show notification if available
+        if (typeof showNotification === 'function') {
+          showNotification('Maximum of 5 advanced search forms allowed', 'info');
+        } else {
+          console.info('Maximum of 5 advanced search forms allowed');
+        }
+        return;
+      }
+      
       const index = container.children.length;
       this._addStructuredSearchFormToUI(container, {}, index);
       this._updateStructuredSearchFormsUI();
+      
+      // Disable add button if limit reached
+      if (container.children.length >= 5) {
+        const addButton = document.querySelector('[data-action="add-structured-search"]');
+        if (addButton) {
+          addButton.disabled = true;
+          addButton.classList.add('disabled');
+          addButton.setAttribute('title', 'Maximum of 5 advanced search forms allowed');
+        }
+      }
     }
   }
   
@@ -595,6 +617,16 @@ class UnifiedSearchManager {
       
       // Update forms UI
       this._updateStructuredSearchFormsUI();
+      
+      // Re-enable add button if below the limit
+      if (container && container.children.length < 5) {
+        const addButton = document.querySelector('[data-action="add-structured-search"]');
+        if (addButton) {
+          addButton.disabled = false;
+          addButton.classList.remove('disabled');
+          addButton.setAttribute('title', 'Add another search criteria');
+        }
+      }
     }
   }
 }

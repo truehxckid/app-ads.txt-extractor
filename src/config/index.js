@@ -60,7 +60,6 @@ const config = {
     rateLimitMax: 100, // Maximum requests per IP in window
     bodyLimit: '1mb',
     maxBundleIds: process.env.MAX_BUNDLE_IDS || 200, // Maximum number of bundle IDs per request
-    maxBatchDomains: process.env.MAX_BATCH_DOMAINS || 50, // Maximum number of domains in a batch request
     // New pagination defaults
     defaultPageSize: 20,
     maxPageSize: 100

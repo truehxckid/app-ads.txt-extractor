@@ -35,9 +35,10 @@ class CSVExporter {
   /**
    * Download all results via API
    * @param {string[]} bundleIds - Bundle IDs
-   * @param {string[]} searchTerms - Search terms
+   * @param {string[]} searchTerms - Search terms (for simple mode)
+   * @param {Object} structuredParams - Structured search parameters (for advanced mode)
    */
-  async downloadAllResults(bundleIds, searchTerms) {
+  async downloadAllResults(bundleIds, searchTerms = [], structuredParams = null) {
     if (!bundleIds || !bundleIds.length) {
       showNotification('No bundle IDs to process', 'error');
       return;
@@ -46,8 +47,12 @@ class CSVExporter {
     try {
       showNotification('Requesting full dataset for CSV export...', 'info');
       
-      // Call export API
-      const response = await Api.exportCsv(bundleIds, searchTerms);
+      // Determine the search mode based on parameters
+      const isAdvancedMode = structuredParams !== null;
+      console.log('📊 CSV Exporter: Using ' + (isAdvancedMode ? 'ADVANCED' : 'SIMPLE') + ' mode for export');
+      
+      // Call export API with appropriate parameters
+      const response = await Api.exportCsv(bundleIds, searchTerms, structuredParams);
       
       if (!response.results || !response.results.length) {
         showNotification('No results received from server', 'error');
@@ -97,18 +102,34 @@ class CSVExporter {
     // Create CSV header
     let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
     
-    // Add search columns if needed
+    // Add search columns if needed, but only for terms that actually have matches
+    let foundTerms = [];
     if (searchTerms && searchTerms.length > 0) {
-      // First add a column for each search term's presence
-      searchTerms.forEach((term, index) => {
+      // Identify which terms have at least one match across all results
+      foundTerms = searchTerms.map((term, index) => {
         const termDisplay = typeof term === 'object' ? term.exactMatch : term;
-        csvHeader += `,Term ${index + 1} (${termDisplay})`;
-      });
+        // Check if any result has a match for this term
+        const hasMatch = results.some(result => {
+          const hasAppAds = result.success && result.appAdsTxt?.exists;
+          const hasSearchResults = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
+          
+          if (hasSearchResults && result.appAdsTxt.searchResults?.termResults) {
+            const termResult = result.appAdsTxt.searchResults.termResults[index];
+            return termResult && termResult.count > 0;
+          }
+          return false;
+        });
+        
+        return {
+          index,
+          termDisplay,
+          hasMatch
+        };
+      }).filter(term => term.hasMatch);
       
-      // Then add columns for each search term's matching lines
-      searchTerms.forEach((term, index) => {
-        const termDisplay = typeof term === 'object' ? term.exactMatch : term;
-        csvHeader += `,Term ${index + 1} Lines`;
+      // Only add columns for terms that were found
+      foundTerms.forEach(term => {
+        csvHeader += `,Term: ${term.termDisplay},Matching Lines`;
       });
       
       csvHeader += `,Total Matches`;
@@ -140,31 +161,22 @@ class CSVExporter {
         
         // Search columns
         let searchCols = '';
-        if (searchTerms && searchTerms.length > 0) {
+        if (foundTerms && foundTerms.length > 0) {
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // First add term presence columns
-          searchTerms.forEach((term, index) => {
-            const termValue = typeof term === 'object' ? term.exactMatch : term;
-            
+          // Add term matches and matching lines only for terms that were found
+          foundTerms.forEach(term => {
             if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
               // Get the specific term result if available
-              const termResult = result.appAdsTxt.searchResults.termResults[index];
+              const termResult = result.appAdsTxt.searchResults.termResults[term.index];
               const hasTermMatches = termResult && termResult.count > 0;
-              searchCols += `,${hasTermMatches ? "Yes" : "No"}`;
-            } else {
-              searchCols += ",No";
-            }
-          });
-          
-          // Then add term matching lines columns
-          searchTerms.forEach((term, index) => {
-            if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
-              // Get the specific term result if available
-              const termResult = result.appAdsTxt.searchResults.termResults[index];
               
-              if (termResult && termResult.matchingLines && termResult.matchingLines.length > 0) {
+              // Add term match status
+              searchCols += `,${hasTermMatches ? "Yes" : "No"}`;
+              
+              // Add matching lines column
+              if (hasTermMatches && termResult.matchingLines && termResult.matchingLines.length > 0) {
                 // Limit to first 5 matches per term
                 const termLines = termResult.matchingLines
                   .slice(0, 5)
@@ -180,7 +192,8 @@ class CSVExporter {
                 searchCols += `,""`;
               }
             } else {
-              searchCols += `,""`;
+              // No match for this term
+              searchCols += `,No,""`;
             }
           });
           

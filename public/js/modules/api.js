@@ -30,6 +30,41 @@ class ApiService {
       // Check if streaming is enabled in localStorage
       const streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
       
+      // Get the current search mode if it exists
+      const currentSearchMode = window.currentSearchMode || 'simple';
+      
+      // STRICT SEPARATION: Only use appropriate parameters based on search mode
+      let finalSearchTerms = searchTerms;
+      let finalStructuredParams = null;
+      
+      if (currentSearchMode === 'advanced') {
+        // For advanced mode: Use structured params, clear search terms
+        finalSearchTerms = []; // No simple search terms in advanced mode
+        
+        // Get advanced params either directly or from AppState
+        const advancedSearchParams = 
+          structuredParams || 
+          window.AppState?.advancedSearchParams || 
+          window.advancedSearchParams || 
+          null;
+          
+        finalStructuredParams = advancedSearchParams;
+        console.log('🔍 API: Using ADVANCED search mode with structured params:', finalStructuredParams);
+      } else {
+        // For simple mode: Use search terms, clear structured params
+        finalSearchTerms = searchTerms;
+        finalStructuredParams = null; // No structured params in simple mode
+        console.log('🔍 API: Using SIMPLE search mode with terms:', finalSearchTerms);
+      }
+      
+      // Log what we're sending to the API
+      console.log('🔍 API.extractDomains parameters:', {
+        bundleIds: bundleIds?.length || 0,
+        searchTerms,
+        structuredParams: finalStructuredParams,
+        advancedParamsFound: !!advancedSearchParams
+      });
+      
       // FORCE REDIRECT: If streaming is enabled, use the streaming endpoint
       if (streamingEnabled) {
         console.log('🔄 API.extractDomains: REDIRECTING to streaming endpoint - streaming is enabled');
@@ -51,10 +86,10 @@ class ApiService {
           },
           body: JSON.stringify({ 
             bundleIds, 
-            searchTerms,
+            searchTerms: finalSearchTerms,
             page,
             pageSize,
-            structuredParams,
+            structuredParams: finalStructuredParams,
             fullAnalysis: true
           }),
           signal: controller.signal
@@ -109,10 +144,10 @@ class ApiService {
         },
         body: JSON.stringify({ 
           bundleIds, 
-          searchTerms,
+          searchTerms: finalSearchTerms,
           page,
           pageSize,
-          structuredParams,
+          structuredParams: finalStructuredParams,
           fullAnalysis: true
         }),
         signal: controller.signal
@@ -146,13 +181,30 @@ class ApiService {
       // Show loading notification
       showNotification('Preparing CSV export...', 'info');
       
+      // Determine search mode based on parameters
+      const isAdvancedMode = structuredParams !== null;
+      
+      // For advanced mode, use empty search terms and structured params
+      // For simple mode, use search terms and no structured params
+      const finalSearchTerms = isAdvancedMode ? [] : searchTerms;
+      const finalStructuredParams = isAdvancedMode ? structuredParams : null;
+      
+      console.log('🔍 API.exportCsv: Using ' + (isAdvancedMode ? 'ADVANCED' : 'SIMPLE') + ' mode', {
+        searchTerms: finalSearchTerms,
+        structuredParams: finalStructuredParams
+      });
+      
       const response = await fetch('/api/export-csv', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
+        body: JSON.stringify({ 
+          bundleIds, 
+          searchTerms: finalSearchTerms, 
+          structuredParams: finalStructuredParams 
+        })
       });
       
       if (!response.ok) {

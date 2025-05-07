@@ -290,14 +290,34 @@ class EventHandlerManager {
         // Handle all CSV download actions with the streaming method
         import('./streaming/StreamProcessor.js').then(module => {
           const StreamProcessor = module.default;
-          // Get bundle IDs and search terms
+          // Get bundle IDs and search parameters
           const bundleIds = DOMUtils.getTextareaLines('bundleIds');
-          const searchTerms = AppState.searchTerms.length > 0 ? 
-            AppState.searchTerms : DOMUtils.getSearchTerms();
+          
+          // Choose parameters based on current search mode
+          const currentSearchMode = window.currentSearchMode || 'simple';
+          let searchParams;
+          
+          if (currentSearchMode === 'advanced') {
+            // For advanced mode, create params object with structured params
+            const structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+            console.log('📊 CSV Export: Using ADVANCED search mode:', structuredParams);
+            searchParams = {
+              mode: 'advanced',
+              structuredParams: structuredParams
+            };
+          } else {
+            // For simple mode, create params object with search terms
+            const searchTerms = AppState.searchTerms.length > 0 ? AppState.searchTerms : DOMUtils.getSearchTerms();
+            console.log('📊 CSV Export: Using SIMPLE search mode:', searchTerms);
+            searchParams = {
+              mode: 'simple',
+              queries: searchTerms
+            };
+          }
           
           // Call export CSV function with streaming capability
           if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-            StreamProcessor.exportCsv(bundleIds, searchTerms);
+            StreamProcessor.exportCsv(bundleIds, searchParams);
             return; // Early return to prevent fallback
           }
           
@@ -486,13 +506,28 @@ class EventHandlerManager {
    * Handle download all CSV button click
    */
   handleDownloadAllCSV() {
-    // Get bundle IDs and search terms
+    // Get bundle IDs
     const bundleIds = DOMUtils.getTextareaLines('bundleIds');
-    const searchTerms = AppState.searchTerms.length > 0 ? 
-      AppState.searchTerms : DOMUtils.getSearchTerms();
     
-    // Download all results via API
-    CSVExporter.downloadAllResults(bundleIds, searchTerms);
+    // Choose parameters based on current search mode
+    const currentSearchMode = window.currentSearchMode || 'simple';
+    
+    if (currentSearchMode === 'advanced') {
+      // For advanced mode, use structured params
+      const structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+      console.log('📊 CSV Export All: Using ADVANCED search mode:', structuredParams);
+      
+      // Download with structured params and empty search terms
+      CSVExporter.downloadAllResults(bundleIds, [], structuredParams);
+    } else {
+      // For simple mode, use search terms
+      const searchTerms = AppState.searchTerms.length > 0 ? 
+        AppState.searchTerms : DOMUtils.getSearchTerms();
+      console.log('📊 CSV Export All: Using SIMPLE search mode:', searchTerms);
+      
+      // Download with search terms and no structured params
+      CSVExporter.downloadAllResults(bundleIds, searchTerms);
+    }
   }
   
   /**
