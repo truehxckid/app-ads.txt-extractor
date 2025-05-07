@@ -9,6 +9,7 @@ const path = require('path');
 const apiRoutes = require('./api');
 const healthRoutes = require('./health');
 const streamingRoutes = require('./streaming-api');
+const batchRoutes = require('./batch-api');
 const { notFoundHandler } = require('../middleware/error-handler');
 const config = require('../config');
 
@@ -22,6 +23,9 @@ router.use('/api', apiRoutes);
 
 // New streaming API routes
 router.use('/api/stream', streamingRoutes);
+
+// Batch processing API routes
+router.use('/api/batch', batchRoutes);
 
 // Static files
 router.use(express.static(config.dirs.public));

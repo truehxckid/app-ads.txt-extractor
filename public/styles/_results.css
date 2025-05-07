@@ -88,7 +88,7 @@
 
 .results-table th, 
 .results-table td {
-  padding: var(--space-sm);
+  padding: var(--space-sm) var(--space-xs);
   text-align: left;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
@@ -96,30 +96,45 @@
   white-space: nowrap;
 }
 
+/* Add hover effect to make row data more readable */
+.results-table tr:hover td {
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+  background-color: var(--hover-bg);
+  position: relative;
+  z-index: 1;
+}
+
 /* Define column widths */
 .results-table th:nth-child(1),
 .results-table td:nth-child(1) {
-  width: 25%;
+  width: 18%; /* Bundle ID - reduced slightly */
 }
 
 .results-table th:nth-child(2),
 .results-table td:nth-child(2) {
-  width: 12%;
+  width: 12%; /* Store - unchanged */
 }
 
 .results-table th:nth-child(3),
 .results-table td:nth-child(3) {
-  width: 25%;
+  width: 25%; /* Domain - unchanged */
 }
 
 .results-table th:nth-child(4),
 .results-table td:nth-child(4) {
-  width: 20%;
+  width: 15%; /* app-ads.txt - reduced */
 }
 
 .results-table th:nth-child(5),
 .results-table td:nth-child(5) {
-  width: 12%;
+  width: 20%; /* Matched Terms - increased */
+}
+
+.results-table th:nth-child(6),
+.results-table td:nth-child(6) {
+  width: 10%; /* Actions column */
 }
 
 .success-row { 

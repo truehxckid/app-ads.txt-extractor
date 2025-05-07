@@ -62,7 +62,7 @@ function validateSearchTerms(terms) {
     return trimmed ? [trimmed] : null;
   }
   
-  // Handle arrays (which may contain strings or objects with exactMatch)
+  // Handle arrays (which may contain strings or objects with various properties)
   if (Array.isArray(terms)) {
     const validTerms = terms
       .filter(term => {
@@ -75,6 +75,16 @@ function validateSearchTerms(terms) {
           return true;
         }
         
+        // Check for advanced search objects (domain, publisherId, relationship, tagId)
+        if (term && typeof term === 'object') {
+          // Consider valid if any of these fields has content
+          const hasContent = ['domain', 'publisherId', 'relationship', 'tagId'].some(field => 
+            term[field] && typeof term[field] === 'string' && term[field].trim()
+          );
+          
+          if (hasContent) return true;
+        }
+        
         return false;
       })
       .map(term => {
@@ -83,11 +93,28 @@ function validateSearchTerms(terms) {
           return term.toLowerCase().trim();
         }
         
-        // Process object terms
+        // Process object terms with exactMatch
         if (typeof term === 'object' && term.exactMatch) {
           return {
             exactMatch: term.exactMatch.toLowerCase().trim()
           };
+        }
+        
+        // Process advanced search objects
+        if (typeof term === 'object') {
+          const result = {};
+          
+          // Transfer and normalize any valid fields
+          ['domain', 'publisherId', 'relationship', 'tagId'].forEach(field => {
+            if (term[field] && typeof term[field] === 'string' && term[field].trim()) {
+              result[field] = term[field].trim();
+            }
+          });
+          
+          // Only return if we have at least one valid field
+          if (Object.keys(result).length > 0) {
+            return result;
+          }
         }
         
         return null;
@@ -105,7 +132,28 @@ function validateSearchTerms(terms) {
     }];
   }
   
-  throw new Error('Invalid search terms: must be a string, object with exactMatch, or array');
+  // Handle single advanced search object
+  if (typeof terms === 'object') {
+    const advancedFields = ['domain', 'publisherId', 'relationship', 'tagId'];
+    const hasAdvancedField = advancedFields.some(field => 
+      terms[field] && typeof terms[field] === 'string' && terms[field].trim()
+    );
+    
+    if (hasAdvancedField) {
+      const result = {};
+      advancedFields.forEach(field => {
+        if (terms[field] && typeof terms[field] === 'string' && terms[field].trim()) {
+          result[field] = terms[field].trim();
+        }
+      });
+      
+      if (Object.keys(result).length > 0) {
+        return [result];
+      }
+    }
+  }
+  
+  throw new Error('Invalid search terms: must be a string, object with search parameters, or array');
 }
 
 /**
@@ -195,11 +243,67 @@ function validateBundleIds(bundleIds, maxCount = 100) {
   };
 }
 
+/**
+ * Validate multiple domains
+ * @param {string[]} domains - Array of domains to validate
+ * @param {number} maxCount - Maximum allowed number of domains
+ * @returns {object} - Object with valid domains and validation results
+ */
+function validateDomains(domains, maxCount = 50) {
+  if (!Array.isArray(domains)) {
+    throw new Error('Domains must be provided as an array');
+  }
+  
+  // Filter and deduplicate domains
+  const uniqueDomains = [...new Set(
+    domains
+      .filter(domain => domain && typeof domain === 'string')
+      .map(domain => domain.trim().toLowerCase())
+      .filter(Boolean)
+  )];
+  
+  if (uniqueDomains.length === 0) {
+    throw new Error('No valid domains provided after filtering');
+  }
+  
+  if (uniqueDomains.length > maxCount) {
+    throw new Error(`Too many domains. Maximum allowed is ${maxCount}`);
+  }
+  
+  // Validate each domain
+  const validationResults = uniqueDomains.map(domain => {
+    const isValid = isValidDomain(domain);
+    
+    if (!isValid) {
+      logger.debug({ domain }, 'Domain validation failed');
+    }
+    
+    return { 
+      domain, 
+      isValid,
+      error: isValid ? null : 'Invalid domain format'
+    };
+  });
+  
+  const validDomains = validationResults
+    .filter(result => result.isValid)
+    .map(result => result.domain);
+  
+  return {
+    validDomains,
+    results: validationResults,
+    total: uniqueDomains.length,
+    valid: validDomains.length,
+    invalid: uniqueDomains.length - validDomains.length
+  };
+}
+
 module.exports = {
   validateBundleId,
   validateSearchTerms,
   isValidDomain,
   isValidUrl,
   validateBundleIds,
+  validateDomains,
   isNumericRokuId
 };

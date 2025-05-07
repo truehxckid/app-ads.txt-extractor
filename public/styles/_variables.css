@@ -160,6 +160,7 @@
   --bg-main: var(--gray-100);
   --bg-card: #fff;
   --bg-accent: var(--primary-100);
+  --hover-bg: #f0f7ff; /* Light blue hover background */
   --text-primary: var(--gray-900);
   --text-secondary: var(--gray-700);
   --text-muted: var(--gray-600);
@@ -174,6 +175,7 @@
   --bg-main: #121826;
   --bg-card: #1a2234;
   --bg-accent: rgba(52, 152, 219, 0.1);
+  --hover-bg: #1e293b; /* Dark blue hover background */
   --text-primary: #e6e6e6;
   --text-secondary: #b0b0b0;
   --text-muted: #90909a;

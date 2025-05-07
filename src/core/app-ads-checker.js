@@ -40,9 +40,11 @@ const appAdsWorkerPool = new WorkerPool(
  * Using streaming processing for large files to reduce memory usage
  * @param {string} domain - Domain to check
  * @param {string|string[]|null} searchTerms - Search terms to look for in the file
+ * @param {object} options - Optional processing options
+ * @param {boolean} options.skipCache - Whether to bypass cache
  * @returns {Promise<object>} - Results of the check
  */
-async function checkAppAdsTxt(domain, searchTerms = null) {
+async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
   const startTime = Date.now();
   let fileSize = 0;
   let processingMethod = 'none';
@@ -61,11 +63,17 @@ async function checkAppAdsTxt(domain, searchTerms = null) {
     const normalizedSearchTerms = validateSearchTerms(searchTerms);
     const cacheKey = keys.appAdsTxt(domain, normalizedSearchTerms);
     
-    // Check cache first
-    const cached = await cache.get(cacheKey);
-    if (cached) {
-      logger.debug({ domain, cached: true }, 'Using cached app-ads.txt result');
-      return cached;
+    // Check cache first (unless skipCache option is set)
+    const skipCache = options.skipCache === true;
+    
+    if (!skipCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) {
+        logger.debug({ domain, cached: true }, 'Using cached app-ads.txt result');
+        return cached;
+      }
+    } else {
+      logger.debug({ domain }, 'Skipping cache for app-ads.txt request');
     }
     
     logger.info({ domain, hasSearchTerms: !!normalizedSearchTerms }, 'Checking app-ads.txt');
@@ -625,11 +633,12 @@ function processSearchTerms(lines, searchTerms) {
     
     // Check if searchTerms contains structured parameters
     if (searchTerms.length > 0 && typeof searchTerms[0] === 'object') {
-      // If any term has both domain and publisherId, it's using the advanced search format
-      const hasAdvancedParams = searchTerms.some(term => 
-        term.domain && term.publisherId && 
-        typeof term.domain === 'string' && 
-        typeof term.publisherId === 'string');
+      // Check if any term has advanced search fields
+      const hasAdvancedParams = searchTerms.some(term => {
+        return ['domain', 'publisherId', 'relationship', 'tagId'].some(field => 
+          term[field] && typeof term[field] === 'string'
+        );
+      });
       
       if (hasAdvancedParams) {
         isStructuredSearch = true;

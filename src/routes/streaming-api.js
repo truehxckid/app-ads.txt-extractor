@@ -316,7 +316,20 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     
     // Add search columns if needed
     if (validatedTerms && validatedTerms.length > 0) {
-      csvHeader += `,Search Term,Search Matches,Matching Lines`;
+      // Create separate column for each search term if multiple terms exist
+      if (validatedTerms.length > 1) {
+        // Add a column for each search term
+        validatedTerms.forEach((term, index) => {
+          const termStr = typeof term === 'object' ? 
+            (term.exactMatch || Object.values(term).join('+')) : term;
+          csvHeader += `,Term ${index+1}: ${termStr},Matches ${index+1}`;
+        });
+        // Add a total matches column
+        csvHeader += `,Total Matches,Matching Lines`;
+      } else {
+        // Single search term - use simpler header
+        csvHeader += `,Search Term,Search Matches,Matching Lines`;
+      }
     }
     
     // Complete the header
@@ -440,7 +453,6 @@ function generateCsvLine(result, searchTerms) {
   // Search columns
   let searchCols = [];
   if (searchTerms && searchTerms.length > 0) {
-    const searchTermText = searchTerms.join(', ');
     const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
     const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
     
@@ -448,11 +460,42 @@ function generateCsvLine(result, searchTerms) {
     const matchingLinesSummary = hasMatches ? 
       truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines) : '';
     
-    searchCols = [
-      `"${searchTermText.replace(/"/g, '""')}"`,
-      matchCount.toString(),
-      `"${matchingLinesSummary.replace(/"/g, '""')}"`
-    ];
+    // Handle multiple search terms with separate columns
+    if (searchTerms.length > 1) {
+      // Add individual term match columns
+      searchTerms.forEach((term, index) => {
+        const termStr = typeof term === 'object' ? 
+          (term.exactMatch || Object.values(term).join('+')) : term;
+          
+        // Find term-specific matches
+        let termMatchCount = 0;
+        if (hasMatches && result.appAdsTxt.searchResults.termResults) {
+          const termResult = result.appAdsTxt.searchResults.termResults[index];
+          if (termResult) {
+            termMatchCount = termResult.count;
+          }
+        }
+        
+        searchCols.push(
+          `"${termStr.replace(/"/g, '""')}"`,
+          termMatchCount.toString()
+        );
+      });
+      
+      // Add total matches and matching lines columns
+      searchCols.push(
+        matchCount.toString(),
+        `"${matchingLinesSummary.replace(/"/g, '""')}"`
+      );
+    } else {
+      // Single search term - use simpler format
+      const searchTermText = searchTerms.join(', ');
+      searchCols = [
+        `"${searchTermText.replace(/"/g, '""')}"`,
+        matchCount.toString(),
+        `"${matchingLinesSummary.replace(/"/g, '""')}"`
+      ];
+    }
   }
   
   // Status columns

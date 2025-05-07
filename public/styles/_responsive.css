@@ -69,11 +69,39 @@
   /* Adjust table for mobile */
   .results-table {
     table-layout: auto;
+    font-size: var(--font-size-sm);
   }
   
+  /* Hide store column on mobile */
   .results-table th:nth-child(2),
   .results-table td:nth-child(2) {
     display: none;
+  }
+  
+  /* Adjust column widths for mobile */
+  .results-table th:nth-child(1),
+  .results-table td:nth-child(1) {
+    width: 25%; /* Bundle ID - increased for mobile */
+  }
+  
+  .results-table th:nth-child(3),
+  .results-table td:nth-child(3) {
+    width: 30%; /* Domain - increased for mobile */
+  }
+  
+  .results-table th:nth-child(4),
+  .results-table td:nth-child(4) {
+    width: 15%; /* app-ads.txt - reduced */
+  }
+  
+  .results-table th:nth-child(5),
+  .results-table td:nth-child(5) {
+    width: 20%; /* Matched Terms */
+  }
+  
+  .results-table th:nth-child(6),
+  .results-table td:nth-child(6) {
+    width: 10%; /* Actions */
   }
   
   .file-input-container {
@@ -136,5 +164,37 @@
     width: 90%;
     left: 5%;
     right: 5%;
+  }
+  
+  /* Further reduce table font size for very small screens */
+  .results-table {
+    font-size: var(--font-size-xs);
+  }
+  
+  /* Optimize column widths for very small screens */
+  .results-table th:nth-child(1),
+  .results-table td:nth-child(1) {
+    width: 30%; /* Bundle ID - primary info */
+  }
+  
+  .results-table th:nth-child(3),
+  .results-table td:nth-child(3) {
+    width: 35%; /* Domain - most important */
+  }
+  
+  .results-table th:nth-child(4),
+  .results-table td:nth-child(4) {
+    width: 15%; /* app-ads.txt status */
+  }
+  
+  .results-table th:nth-child(5),
+  .results-table td:nth-child(5) {
+    width: 20%; /* matched terms */
+  }
+  
+  /* Make copy button more compact */
+  .table-copy-btn {
+    padding: 3px 6px;
+    font-size: 11px;
   }
 }
