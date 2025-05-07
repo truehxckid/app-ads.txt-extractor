@@ -603,7 +603,7 @@ async function processStreamedContent(stream, searchTerms = null) {
 /**
  * Process search terms against lines of content
  * @param {string[]} lines - Lines of content
- * @param {string[]} searchTerms - Search terms
+ * @param {Array} searchTerms - Search terms (string or objects with exactMatch property)
  * @returns {object} - Search results
  */
 function processSearchTerms(lines, searchTerms) {
@@ -611,7 +611,7 @@ function processSearchTerms(lines, searchTerms) {
     const searchResults = {
       terms: searchTerms,
       termResults: searchTerms.map(term => ({
-        term,
+        term: typeof term === 'object' ? term.exactMatch : term,
         matchingLines: [],
         count: 0
       })),
@@ -619,10 +619,23 @@ function processSearchTerms(lines, searchTerms) {
       count: 0
     };
     
-    // Pre-compile regexes for performance
-    const searchRegexes = searchTerms.map(term => 
-      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    );
+    // Pre-compile regexes or prepare exact match terms for performance
+    const searchMatchers = searchTerms.map(term => {
+      if (typeof term === 'object' && term.exactMatch) {
+        // If it's an exact match object, prepare the exact match string
+        return {
+          type: 'exact',
+          value: term.exactMatch.toLowerCase()
+        };
+      } else {
+        // Otherwise create a regex for backward compatibility
+        const termStr = typeof term === 'string' ? term : String(term);
+        return {
+          type: 'regex',
+          value: new RegExp(termStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+        };
+      }
+    });
     
     // Process in batches to reduce memory pressure
     const BATCH_SIZE = 2000;
@@ -644,7 +657,19 @@ function processSearchTerms(lines, searchTerms) {
         // Check each search term
         searchTerms.forEach((term, termIndex) => {
           try {
-            if (searchRegexes[termIndex].test(lineContent)) {
+            const matcher = searchMatchers[termIndex];
+            let isMatch = false;
+            
+            if (matcher.type === 'exact') {
+              // For exact match terms, check if the exact string appears in the line
+              // This will match the term exactly as the user entered it
+              isMatch = lineContent.toLowerCase().includes(matcher.value);
+            } else {
+              // For regex terms, use the regex test method
+              isMatch = matcher.value.test(lineContent);
+            }
+            
+            if (isMatch) {
               // Add to term-specific results
               if (searchResults.termResults[termIndex]) {
                 searchResults.termResults[termIndex].matchingLines.push({
@@ -659,7 +684,7 @@ function processSearchTerms(lines, searchTerms) {
           } catch (err) {
             // Report error but continue processing
             logger.error({ 
-              term, 
+              term: typeof term === 'object' ? term.exactMatch : term, 
               lineIndex: i, 
               error: err.message
             }, 'Error matching search term');

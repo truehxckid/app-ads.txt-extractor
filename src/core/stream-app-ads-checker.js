@@ -172,7 +172,7 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
     // Initialize search term tracking if needed
     if (searchTerms && searchTerms.length > 0) {
       searchTermResults = searchTerms.map(term => ({
-        term,
+        term: typeof term === 'object' ? term.exactMatch : term,
         matchingLines: [],
         count: 0
       }));
@@ -263,14 +263,14 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
             // Check each search term
             searchTerms.forEach((term, termIndex) => {
               try {
-                // Ensure we're doing an exact match for the term, not substring
-                // by splitting the line into words and checking for exact matches
-                const lineWords = cleanLine.toLowerCase().split(/[\s,;]+/);
-                const termWords = term.toLowerCase().split(/[\s,;]+/);
-                
-                // For single word terms, check if the term is present in the line
-                if (termWords.length === 1) {
-                  if (lineWords.includes(termWords[0])) {
+                // Check if this is an exact match term from new UI
+                if (typeof term === 'object' && term.exactMatch) {
+                  const exactTerm = term.exactMatch.toLowerCase();
+                  const lowerLine = cleanLine.toLowerCase();
+                  
+                  // For exact match terms, check if the exact string appears in the line
+                  // This will match the term exactly as the user entered it
+                  if (lowerLine.includes(exactTerm)) {
                     // Add to term-specific results (limit to 500 matches per term)
                     if (searchTermResults[termIndex].matchingLines.length < 500) {
                       searchTermResults[termIndex].matchingLines.push({
@@ -283,18 +283,39 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
                     anyMatch = true;
                   }
                 }
-                // For multi-word terms, check if all words are present in the line
-                else if (termWords.every(word => cleanLine.toLowerCase().includes(word))) {
-                  // Add to term-specific results (limit to 500 matches per term)
-                  if (searchTermResults[termIndex].matchingLines.length < 500) {
-                    searchTermResults[termIndex].matchingLines.push({
-                      lineNumber: totalLineCount,
-                      content: cleanLine,
-                      termIndex
-                    });
+                // Backward compatibility with string terms
+                else if (typeof term === 'string') {
+                  const termWords = term.toLowerCase().split(/[\s,;]+/);
+                  const lineWords = cleanLine.toLowerCase().split(/[\s,;]+/);
+                  
+                  // For single word terms, check if the term is present in the line
+                  if (termWords.length === 1) {
+                    if (lineWords.includes(termWords[0])) {
+                      // Add to term-specific results (limit to 500 matches per term)
+                      if (searchTermResults[termIndex].matchingLines.length < 500) {
+                        searchTermResults[termIndex].matchingLines.push({
+                          lineNumber: totalLineCount,
+                          content: cleanLine,
+                          termIndex
+                        });
+                      }
+                      searchTermResults[termIndex].count++;
+                      anyMatch = true;
+                    }
                   }
-                  searchTermResults[termIndex].count++;
-                  anyMatch = true;
+                  // For multi-word terms, check if all words are present in the line
+                  else if (termWords.every(word => cleanLine.toLowerCase().includes(word))) {
+                    // Add to term-specific results (limit to 500 matches per term)
+                    if (searchTermResults[termIndex].matchingLines.length < 500) {
+                      searchTermResults[termIndex].matchingLines.push({
+                        lineNumber: totalLineCount,
+                        content: cleanLine,
+                        termIndex
+                      });
+                    }
+                    searchTermResults[termIndex].count++;
+                    anyMatch = true;
+                  }
                 }
               } catch (err) {
                 // Ignore search errors and continue

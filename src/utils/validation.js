@@ -49,28 +49,63 @@ function validateBundleId(id) {
 
 /**
  * Validate search terms
- * @param {string|string[]} terms - Search terms to validate
- * @returns {string[]|null} - Array of validated search terms or null if no valid terms
+ * @param {string|string[]|object[]} terms - Search terms to validate
+ * @returns {(string|object)[]} - Array of validated search terms or null if no valid terms
  * @throws {Error} - If terms format is invalid
  */
 function validateSearchTerms(terms) {
   if (!terms) return null;
   
+  // Handle single string term
   if (typeof terms === 'string') {
     const trimmed = terms.toLowerCase().trim();
     return trimmed ? [trimmed] : null;
   }
   
+  // Handle arrays (which may contain strings or objects with exactMatch)
   if (Array.isArray(terms)) {
     const validTerms = terms
-      .filter(term => term && typeof term === 'string')
-      .map(term => term.toLowerCase().trim())
+      .filter(term => {
+        // Check for valid string terms
+        if (term && typeof term === 'string') return true;
+        
+        // Check for valid object terms with exactMatch property
+        if (term && typeof term === 'object' && term.exactMatch && 
+            typeof term.exactMatch === 'string' && term.exactMatch.trim()) {
+          return true;
+        }
+        
+        return false;
+      })
+      .map(term => {
+        // Process string terms
+        if (typeof term === 'string') {
+          return term.toLowerCase().trim();
+        }
+        
+        // Process object terms
+        if (typeof term === 'object' && term.exactMatch) {
+          return {
+            exactMatch: term.exactMatch.toLowerCase().trim()
+          };
+        }
+        
+        return null;
+      })
       .filter(Boolean);
     
     return validTerms.length > 0 ? validTerms : null;
   }
   
-  throw new Error('Invalid search terms: must be a string or array of strings');
+  // Handle single object with exactMatch property
+  if (typeof terms === 'object' && terms.exactMatch && 
+      typeof terms.exactMatch === 'string' && terms.exactMatch.trim()) {
+    return [{
+      exactMatch: terms.exactMatch.toLowerCase().trim()
+    }];
+  }
+  
+  throw new Error('Invalid search terms: must be a string, object with exactMatch, or array');
 }
 
 /**

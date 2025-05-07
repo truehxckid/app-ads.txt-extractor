@@ -161,7 +161,7 @@ function processSearchTermsInChunks(lines, searchTerms) {
     const searchResults = {
       terms: validSearchTerms,
       termResults: validSearchTerms.map(term => ({
-        term,
+        term: typeof term === 'object' && term.exactMatch ? term.exactMatch : term,
         matchingLines: [],
         count: 0
       })),
@@ -177,10 +177,23 @@ function processSearchTermsInChunks(lines, searchTerms) {
     const CHUNK_SIZE = 2000; // Reduced from 5000 to 2000
     const totalChunks = Math.ceil(lines.length / CHUNK_SIZE);
     
-    // Precompile case-insensitive regex patterns for better performance
-    const searchRegexes = validSearchTerms.map(term => 
-      new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
-    );
+    // Precompile case-insensitive regex patterns or prepare exact match terms for better performance
+    const searchMatchers = validSearchTerms.map(term => {
+      if (typeof term === 'object' && term.exactMatch) {
+        // If it's an exact match object, prepare the exact match string
+        return {
+          type: 'exact',
+          value: term.exactMatch.toLowerCase()
+        };
+      } else {
+        // Otherwise create a regex for backward compatibility
+        const termStr = typeof term === 'string' ? term : String(term);
+        return {
+          type: 'regex',
+          value: new RegExp(termStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+        };
+      }
+    });
     
     for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
       // Report progress and memory usage for large files
@@ -213,11 +226,22 @@ function processSearchTermsInChunks(lines, searchTerms) {
         const lineNumber = i + 1;
         let anyMatch = false;
         
-        // Check each search term using regex for better performance
+        // Check each search term using precomputed matchers
         for (let termIndex = 0; termIndex < validSearchTerms.length; termIndex++) {
           try {
-            // Use precompiled regex for faster matching
-            if (searchRegexes[termIndex].test(lineContent)) {
+            const matcher = searchMatchers[termIndex];
+            let isMatch = false;
+            
+            if (matcher.type === 'exact') {
+              // For exact match terms, check if the exact string appears in the line
+              // This will match the term exactly as the user entered it
+              isMatch = lineContent.toLowerCase().includes(matcher.value);
+            } else {
+              // For regex terms, use the regex test method
+              isMatch = matcher.value.test(lineContent);
+            }
+            
+            if (isMatch) {
               // Add to term-specific results
               if (searchResults.termResults[termIndex]) {
                 searchResults.termResults[termIndex].matchingLines.push({

@@ -116,29 +116,15 @@ class UnifiedSearchManager {
       return null; // No search parameters
     }
     
-    // Process each input value - split by commas and trim each part
-    let searchTerms = [];
-    inputValues.forEach(value => {
-      // Split by comma, trim each part, and filter out empty parts
-      const parts = value.split(',')
-        .map(part => part.trim())
-        .filter(Boolean);
-      
-      // Add all parts to the search terms array
-      searchTerms = searchTerms.concat(parts);
-    });
+    // Use each input value as an exact search term without splitting
+    const searchTerms = inputValues;
     
     // Create array of structured params for each term
     const structuredParams = searchTerms.map(term => {
       const params = {};
       
-      // Check if query resembles a domain
-      if (term.includes('.')) {
-        params.domain = term;
-      } else {
-        // If not a domain, assume it's a publisher ID
-        params.publisherId = term;
-      }
+      // Treat the entire term as one entity
+      params.exactMatch = term;
       
       return params;
     });
