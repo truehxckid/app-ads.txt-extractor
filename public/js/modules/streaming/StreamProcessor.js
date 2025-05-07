@@ -1040,6 +1040,19 @@ class StreamProcessor {
    * @param {Object} structuredParams - Structured search parameters (optional)
    */
   async exportCsv(bundleIds, searchTerms = [], structuredParams = null) {
+    // Check if an export was recently triggered (within the last 3 seconds)
+    const now = Date.now();
+    if (this._lastExportTime && (now - this._lastExportTime < 3000)) {
+      console.log('CSV export already in progress or recently triggered, ignoring duplicate request');
+      return;
+    }
+    
+    // Set timestamp to prevent duplicate exports
+    this._lastExportTime = now;
+    
+    // Log export attempt
+    console.log('CSV export initiated at', new Date().toISOString());
+    
     if (!bundleIds || !bundleIds.length) {
       showNotification('No bundle IDs to export', 'error');
       return;
@@ -1065,11 +1078,13 @@ class StreamProcessor {
       this.progressUI.setStatusMessage('Preparing CSV export...', 'info');
       showNotification('Starting CSV export...', 'info');
       
-      // Create a download link
+      // Create a download link with unique timestamp
+      const timestamp = Date.now();
       const downloadLink = document.createElement('a');
-      downloadLink.href = `/api/stream/export-csv?ts=${Date.now()}`; // Add timestamp to prevent caching
+      downloadLink.href = `/api/stream/export-csv?ts=${timestamp}`; // Add timestamp to prevent caching
       downloadLink.download = `developer_domains_${new Date().toISOString().slice(0, 10)}.csv`;
       downloadLink.style.display = 'none';
+      downloadLink.id = `csv-download-${timestamp}`; // Add unique ID
       
       // Update visual progress indicators
       this.progressUI.updateProgress({
@@ -1078,13 +1093,19 @@ class StreamProcessor {
       });
       this.progressUI.setStatusMessage('Connecting to server...', 'info');
       
-      // Set up fetch for streaming response
-      const response = await fetch('/api/stream/export-csv', {
+      // Set up fetch for streaming response with a unique cache buster
+      const response = await fetch(`/api/stream/export-csv?nocache=${timestamp}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
         },
-        body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
+        body: JSON.stringify({ 
+          bundleIds, 
+          searchTerms, 
+          structuredParams,
+          timestamp // Include timestamp in request to prevent duplicate processing
+        })
       });
       
       if (!response.ok) {
@@ -1119,16 +1140,27 @@ class StreamProcessor {
       
       // Set the link's href to the object URL
       downloadLink.href = url;
+      console.log(`Initiating download with ID: csv-download-${timestamp}`);
       
       // Append link to body and trigger click
       document.body.appendChild(downloadLink);
-      downloadLink.click();
       
-      // Clean up
+      // Use a timeout to ensure we don't trigger downloads too quickly
       setTimeout(() => {
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(url);
-      }, 100);
+        // Verify the link still exists (wasn't already clicked)
+        if (document.getElementById(`csv-download-${timestamp}`)) {
+          console.log(`Clicking download link: csv-download-${timestamp}`);
+          downloadLink.click();
+          
+          // Clean up
+          setTimeout(() => {
+            if (document.getElementById(`csv-download-${timestamp}`)) {
+              document.body.removeChild(downloadLink);
+            }
+            URL.revokeObjectURL(url);
+          }, 1000);
+        }
+      }, 500);
       
       // Complete the indicators
       this.progressUI.complete({
@@ -1161,6 +1193,8 @@ class StreamProcessor {
       console.error('CSV export error:', err);
       showNotification(`Export error: ${err.message}`, 'error');
       this.progressUI.showError(`Export error: ${err.message}`);
+      // Reset the export timestamp on error
+      this._lastExportTime = null;
     }
   }
 }

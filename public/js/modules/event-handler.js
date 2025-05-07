@@ -224,7 +224,31 @@ class EventHandlerManager {
    */
   handleDocumentClick = (event) => {
     const target = event.target;
-    const action = target.dataset.action || target.closest('[data-action]')?.dataset.action;
+    const actionElement = target.hasAttribute('data-action') 
+      ? target 
+      : target.closest('[data-action]');
+    
+    // Make sure we have an action element
+    if (!actionElement) return;
+    
+    const action = actionElement.dataset.action;
+    
+    // Check for duplicate events (sometimes the browser sends duplicate events)
+    const now = Date.now();
+    const lastClickTime = this._lastClickTime || 0;
+    const lastClickAction = this._lastClickAction || '';
+    
+    // If the same action was clicked within 300ms, it's likely a duplicate event
+    if (action === lastClickAction && (now - lastClickTime < 300)) {
+      console.log('Ignoring potential duplicate click event on:', action);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    
+    // Update click tracking
+    this._lastClickTime = now;
+    this._lastClickAction = action;
     
     if (!action) return;
     
@@ -243,19 +267,25 @@ class EventHandlerManager {
         break;
       case 'download-csv':
       case 'stream-download-csv':
-        // Prevent multiple execution by using a debounce flag
-        if (this._isExporting) {
-          console.log('CSV export already in progress, ignoring duplicate request');
+        // Prevent multiple execution by using a debounce mechanism
+        // Instead of just a flag, use a timestamp for better prevention
+        const currentTime = Date.now();
+        if (this._lastExportTime && (currentTime - this._lastExportTime < 5000)) {
+          console.log('CSV export recently triggered, ignoring duplicate request');
+          // Prevent event propagation
+          event.preventDefault();
+          event.stopPropagation();
           return;
         }
         
-        // Set debounce flag
-        this._isExporting = true;
+        // Set timestamp
+        this._lastExportTime = currentTime;
         
-        // Reset the flag after a longer delay to prevent double clicks
-        setTimeout(() => {
-          this._isExporting = false;
-        }, 5000); // Increased from 1000ms to 5000ms
+        // Stop click event propagation to prevent any duplicate triggers
+        event.preventDefault();
+        event.stopPropagation();
+        
+        console.log('CSV export triggered at: ' + new Date().toISOString());
         
         // Handle all CSV download actions with the streaming method
         import('./streaming/StreamProcessor.js').then(module => {
@@ -279,9 +309,6 @@ class EventHandlerManager {
           
           // Fall back to regular download if streaming fails
           CSVExporter.downloadResults(AppState.results);
-          
-          // Reset the flag in case of error
-          this._isExporting = false;
         });
         break;
       case 'download-all-csv':
