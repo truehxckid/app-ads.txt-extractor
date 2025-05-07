@@ -11,19 +11,21 @@ let successCount = 0;
 let errorCount = 0;
 let withAppAdsTxtCount = 0;
 let searchTerms = [];
+let structuredParams = null;
 let lastProgressUpdate = 0;
 let processingStartTime = 0;
 
 // Message handler
 self.onmessage = function(e) {
-  const { type, bundleIds, searchTerms: terms } = e.data;
+  const { type, bundleIds, searchTerms: terms, structuredParams: params } = e.data;
   
   if (type === 'processBundleIds') {
     // Reset state
     resetState();
     
-    // Store search terms
+    // Store search terms and structured params
     searchTerms = terms || [];
+    structuredParams = params || null;
     processingStartTime = Date.now();
     
     // Initialize UI in main thread with total count
@@ -31,6 +33,7 @@ self.onmessage = function(e) {
       type: 'initialize',
       data: {
         hasSearchTerms: searchTerms.length > 0,
+        hasStructuredParams: structuredParams !== null,
         totalBundleIds: bundleIds.length,
         processedCount: 0,
         percent: 0
@@ -38,7 +41,7 @@ self.onmessage = function(e) {
     });
     
     // Start processing
-    processStreamedBundleIds(bundleIds, searchTerms);
+    processStreamedBundleIds(bundleIds, searchTerms, structuredParams);
   }
 };
 
@@ -53,6 +56,7 @@ function resetState() {
   errorCount = 0;
   withAppAdsTxtCount = 0;
   searchTerms = [];
+  structuredParams = null;
   lastProgressUpdate = 0;
   processingStartTime = 0;
 }
@@ -61,8 +65,9 @@ function resetState() {
  * Process bundle IDs using streaming
  * @param {string[]} bundleIds - Bundle IDs to process
  * @param {string[]} searchTerms - Search terms
+ * @param {Object} structuredParams - Structured search parameters (optional)
  */
-async function processStreamedBundleIds(bundleIds, searchTerms) {
+async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams = null) {
   try {
     // Start fetch request
     const response = await fetch('/api/stream/extract-multiple', {
@@ -71,7 +76,7 @@ async function processStreamedBundleIds(bundleIds, searchTerms) {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify({ bundleIds, searchTerms })
+      body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
     });
     
     if (!response.ok) {

@@ -19,7 +19,8 @@ class AppStateManager {
     // Results and pagination
     this.results = [];
     this.pagination = null;
-    this.searchTerms = [];
+    this.searchTerms = []; // Legacy - will be removed
+    this.searchParams = null; // New unified search parameters
     this.pageSize = 20;
     
     // Event listeners
@@ -127,11 +128,49 @@ class AppStateManager {
   }
   
   /**
-   * Set search terms
+   * Set search terms (legacy - kept for compatibility)
    * @param {Array} terms - Search terms array
+   * @deprecated Use setSearchParams instead
    */
   setSearchTerms(terms) {
     this.searchTerms = Array.isArray(terms) ? terms : [];
+    
+    // Also set as simple search for backwards compatibility
+    if (terms && terms.length > 0) {
+      this.setSearchParams({
+        mode: 'simple',
+        query: terms[0],
+        structuredParams: {
+          domain: terms[0].includes('.') ? terms[0] : undefined,
+          publisherId: !terms[0].includes('.') ? terms[0] : undefined
+        }
+      });
+    }
+  }
+  
+  /**
+   * Set unified search parameters
+   * @param {Object} params - Search parameters object
+   */
+  setSearchParams(params) {
+    this.searchParams = params;
+    
+    // For backwards compatibility
+    if (params && params.mode === 'simple' && params.query) {
+      this.searchTerms = [params.query];
+    } else if (params && params.structuredParams) {
+      // Convert structured params to legacy format
+      const structuredParams = params.structuredParams;
+      if (structuredParams.domain) {
+        this.searchTerms = [structuredParams.domain];
+      } else if (structuredParams.publisherId) {
+        this.searchTerms = [structuredParams.publisherId];
+      } else {
+        this.searchTerms = [];
+      }
+    } else {
+      this.searchTerms = [];
+    }
   }
   
   /**

@@ -15,9 +15,10 @@ class ApiService {
    * @param {string[]} searchTerms - Array of search terms (optional)
    * @param {number} page - Page number for pagination
    * @param {number} pageSize - Number of items per page
+   * @param {Object} structuredParams - Structured search parameters (optional)
    * @returns {Promise<Object>} - API response
    */
-  async extractDomains(bundleIds, searchTerms = [], page = 1, pageSize = 20) {
+  async extractDomains(bundleIds, searchTerms = [], page = 1, pageSize = 20, structuredParams = null) {
     try {
       // Increase fetch timeout with AbortController
       const controller = new AbortController();
@@ -53,6 +54,7 @@ class ApiService {
             searchTerms,
             page,
             pageSize,
+            structuredParams,
             fullAnalysis: true
           }),
           signal: controller.signal
@@ -110,6 +112,7 @@ class ApiService {
           searchTerms,
           page,
           pageSize,
+          structuredParams,
           fullAnalysis: true
         }),
         signal: controller.signal
@@ -135,9 +138,10 @@ class ApiService {
    * Export all results for CSV download
    * @param {string[]} bundleIds - Array of bundle IDs
    * @param {string[]} searchTerms - Array of search terms (optional)
+   * @param {Object} structuredParams - Structured search parameters (optional)
    * @returns {Promise<Object>} - API response with all results
    */
-  async exportCsv(bundleIds, searchTerms = []) {
+  async exportCsv(bundleIds, searchTerms = [], structuredParams = null) {
     try {
       // Show loading notification
       showNotification('Preparing CSV export...', 'info');
@@ -148,7 +152,7 @@ class ApiService {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ bundleIds, searchTerms })
+        body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
       });
       
       if (!response.ok) {
@@ -196,6 +200,40 @@ class ApiService {
       return await response.json();
     } catch (err) {
       console.error('App-ads.txt check failed:', err);
+      throw err;
+    }
+  }
+  
+  /**
+   * Perform structured search on app-ads.txt
+   * @param {string} domain - Domain to check
+   * @param {Object} query - Structured query (domain, publisherId, relationship, tagId)
+   * @returns {Promise<Object>} - API response with structured matches
+   */
+  async structuredSearch(domain, query) {
+    try {
+      // Show loading notification
+      if (typeof showNotification === 'function') {
+        showNotification('Performing structured search...', 'info');
+      }
+      
+      const response = await fetch('/api/structured-search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ domain, query })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (err) {
+      console.error('Structured search failed:', err);
       throw err;
     }
   }

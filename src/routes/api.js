@@ -17,6 +17,7 @@ const config = require('../config');
 const { BadRequestError, ValidationError } = require('../middleware/error-handler');
 const { getLogger } = require('../utils/logger');
 const memoryManager = require('../services/memory-manager');
+const { searchStructured } = require('../utils/app-ads-parser');
 
 const logger = getLogger('api-routes');
 const router = express.Router();
@@ -506,6 +507,79 @@ router.get('/memory', async (req, res, next) => {
     res.json({
       success: true,
       memory: memoryStats
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @api {post} /api/structured-search Perform structured search on app-ads.txt
+ * @apiName StructuredSearch
+ * @apiGroup AppAds
+ * 
+ * @apiParam {String} domain Domain to check
+ * @apiParam {Object} query Structured query with domain, publisherId, relationship, and/or tagId
+ * 
+ * @apiSuccess {Boolean} success Success status
+ * @apiSuccess {Object} result Search results
+ */
+router.post('/structured-search', async (req, res, next) => {
+  try {
+    const { domain, query } = req.body;
+    
+    if (!domain) {
+      throw new BadRequestError('Domain is required');
+    }
+    
+    if (!query || typeof query !== 'object') {
+      throw new BadRequestError('Valid structured query object is required');
+    }
+    
+    // Validate that at least one query field is provided
+    const hasValidQueryField = ['domain', 'publisherId', 'relationship', 'tagId']
+      .some(field => query[field] && typeof query[field] === 'string' && query[field].trim().length > 0);
+    
+    if (!hasValidQueryField) {
+      throw new BadRequestError('Query must include at least one valid search field (domain, publisherId, relationship, or tagId)');
+    }
+    
+    logger.info({ 
+      domain, 
+      queryFields: Object.keys(query).filter(k => query[k]),
+      queryValues: Object.values(query).filter(Boolean)
+    }, 'Structured search request');
+    
+    // First, fetch the app-ads.txt content
+    const appAdsTxtResult = await checkAppAdsTxt(domain);
+    
+    if (!appAdsTxtResult.exists || !appAdsTxtResult.content) {
+      return res.json({
+        success: false,
+        error: 'app-ads.txt file not found or empty',
+        result: {
+          domain,
+          exists: false,
+          matches: [],
+          count: 0
+        }
+      });
+    }
+    
+    // Perform structured search on the content
+    const searchResult = searchStructured(appAdsTxtResult.content, query);
+    
+    // Return the result
+    res.json({
+      success: true,
+      result: {
+        domain,
+        exists: true,
+        url: appAdsTxtResult.url,
+        matches: searchResult.matches,
+        count: searchResult.count,
+        query: query
+      }
     });
   } catch (err) {
     next(err);

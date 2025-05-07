@@ -109,22 +109,84 @@
           </div>
           
           <div class="input-group search-options">
-            <label id="search-terms-label">Search in app-ads.txt files (optional):</label>
-            <div id="searchTermsContainer" role="group" aria-labelledby="search-terms-label">
-              <!-- Search terms will be added here dynamically -->
+            <label id="search-options-label">Search in app-ads.txt files (optional):</label>
+            
+            <div class="search-modes">
+              <div class="search-mode-toggle">
+                <button
+                  type="button"
+                  class="search-mode-btn active"
+                  data-mode="simple"
+                  data-action="switch-search-mode"
+                  aria-pressed="true"
+                >
+                  Simple
+                </button>
+                <button
+                  type="button"
+                  class="search-mode-btn"
+                  data-mode="advanced"
+                  data-action="switch-search-mode"
+                  aria-pressed="false"
+                >
+                  Advanced
+                </button>
+              </div>
             </div>
-            <button 
-              type="button" 
-              class="add-term-btn" 
-              data-action="add-term" 
-              aria-label="Add search term"
-            >
-              Add Search Term
-            </button>
-            <small class="helper-text">
-              Search for multiple terms within app-ads.txt files (e.g., "google.com", "direct", "specific publisher ID").<br>
-              Results will show matches for any of the terms (OR logic).
-            </small>
+            
+            <!-- Simple search mode (visible by default) -->
+            <div id="simpleSearchContainer" class="search-container">
+              <div class="simple-search-field">
+                <label for="searchQuery">Search for:</label>
+                <div class="simple-search-input-wrapper">
+                  <input 
+                    type="text" 
+                    id="searchQuery" 
+                    placeholder="Enter search term (e.g., appnexus.com or 12447)"
+                    aria-label="Search term"
+                  >
+                </div>
+              </div>
+              <p class="helper-text">
+                Enter a single search term to look for in app-ads.txt files (e.g., "google.com", "12447", etc.)
+              </p>
+            </div>
+            
+            <!-- Advanced search mode (hidden by default) -->
+            <div id="advancedSearchContainer" class="search-container" style="display: none;">
+              <p class="helper-text">
+                Fill in the fields below to find specific entries in app-ads.txt files regardless of spacing.
+              </p>
+              <div class="structured-search-form">
+                <div class="structured-search-field">
+                  <label for="structuredDomain">Domain:</label>
+                  <input type="text" id="structuredDomain" placeholder="e.g., appnexus.com">
+                </div>
+                <div class="structured-search-field">
+                  <label for="structuredPublisherId">Publisher ID:</label>
+                  <input type="text" id="structuredPublisherId" placeholder="e.g., 12447">
+                </div>
+                <div class="structured-search-field">
+                  <label for="structuredRelationship">Relationship:</label>
+                  <select id="structuredRelationship">
+                    <option value="">Any</option>
+                    <option value="DIRECT">DIRECT</option>
+                    <option value="RESELLER">RESELLER</option>
+                  </select>
+                </div>
+                <div class="structured-search-field">
+                  <label for="structuredTagId">Tag ID (Optional):</label>
+                  <input type="text" id="structuredTagId" placeholder="e.g., abc123">
+                </div>
+              </div>
+            </div>
+            
+            <div class="search-help-text">
+              <small class="helper-text">
+                Search will find exact matches in app-ads.txt files.<br>
+                The search is space-insensitive, so "appnexus.com, 12447" will match "appnexus.com,12447".
+              </small>
+            </div>
           </div>
           
           <div class="action-bar">

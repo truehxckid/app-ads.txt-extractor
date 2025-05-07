@@ -10,6 +10,7 @@ import { checkBrowserSupport } from './utils/browser-compat.js';
 import DOMUtils from './modules/dom-utils.js';
 import StreamingIntegration from './modules/streaming-integration.js';
 import StreamProgressUI from './modules/streaming/StreamProgressUI.js';
+import UnifiedSearch from './modules/unified-search.js';
 
 /**
  * Initialize the application
@@ -36,6 +37,10 @@ function initApp() {
     
     // Initialize progress UI (explicitly)
     console.info('Initializing StreamProgressUI module...');
+    
+    // Initialize unified search component
+    console.info('Initializing UnifiedSearch module...');
+    UnifiedSearch.initialize();
     
     // Expose globally for debugging and direct access
     window.ProgressUI = StreamProgressUI;

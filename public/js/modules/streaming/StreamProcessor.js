@@ -186,12 +186,35 @@ class StreamProcessor {
   /**
    * Process bundle IDs using streaming
    * @param {string[]} bundleIds - Bundle IDs to process
-   * @param {string[]} searchTerms - Search terms (optional)
+   * @param {Object|string[]} searchParams - Unified search parameters or legacy search terms
    * @returns {Promise<boolean>} - Success status
    */
-  async processBundleIds(bundleIds, searchTerms = []) {
+  async processBundleIds(bundleIds, searchParams = null) {
     console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
-    console.log('🚀 Search terms:', searchTerms);
+    
+    // Handle both unified search params and legacy search terms
+    let searchTerms = [];
+    let structuredParams = null;
+    
+    if (Array.isArray(searchParams)) {
+      // Legacy format - just search terms array
+      searchTerms = searchParams;
+      console.log('🚀 Legacy search terms:', searchTerms);
+    } else if (searchParams && typeof searchParams === 'object') {
+      // New unified format
+      if (searchParams.mode === 'simple' && searchParams.query) {
+        searchTerms = [searchParams.query];
+        structuredParams = searchParams.structuredParams || null;
+        console.log('🚀 Simple search mode with query:', searchParams.query);
+      } else if (searchParams.structuredParams) {
+        structuredParams = searchParams.structuredParams;
+        console.log('🚀 Advanced search mode with params:', structuredParams);
+      }
+    }
+    
+    // For debugging
+    console.log('🚀 Using search terms:', searchTerms);
+    console.log('🚀 Using structured params:', structuredParams);
     
     // First, remove any stray progress bars from previous exports or interruptions
     const extraProgressBars = document.querySelectorAll('.progress-indicator, #streamProgress');
@@ -311,11 +334,12 @@ class StreamProcessor {
           }
         }, 5000);
         
-        // Send message to worker
+        // Send message to worker with structured parameters
         this.worker.postMessage({
           type: 'processBundleIds',
           bundleIds,
           searchTerms,
+          structuredParams,
           totalBundleIds: bundleIds.length
         });
         
@@ -346,7 +370,7 @@ class StreamProcessor {
         }
       }, 5000);
       
-      return await this._processBundleIdsMainThread(bundleIds, searchTerms);
+      return await this._processBundleIdsMainThread(bundleIds, searchTerms, structuredParams);
     } catch (err) {
       console.error('Error starting streaming process:', err);
       showNotification(`Streaming error: ${err.message}`, 'error');
@@ -359,10 +383,11 @@ class StreamProcessor {
    * Process bundle IDs using streaming on the main thread
    * @param {string[]} bundleIds - Bundle IDs to process
    * @param {string[]} searchTerms - Search terms (optional)
+   * @param {Object} structuredParams - Structured search parameters (optional)
    * @returns {Promise<boolean>} - Success status
    * @private
    */
-  async _processBundleIdsMainThread(bundleIds, searchTerms = []) {
+  async _processBundleIdsMainThread(bundleIds, searchTerms = [], structuredParams = null) {
     try {
       // Add a cache-busting parameter to avoid cached responses
       const timestamp = Date.now();
@@ -441,7 +466,7 @@ class StreamProcessor {
         
         // Use the API module which will automatically redirect to streaming endpoint
         // if streaming is enabled in localStorage
-        const apiResponse = await Api.extractDomains(bundleIds, searchTerms);
+        const apiResponse = await Api.extractDomains(bundleIds, searchTerms, 1, 20, structuredParams);
         
         // Check if we got a streaming response
         if (apiResponse.isStreaming && apiResponse.response) {
@@ -499,7 +524,11 @@ class StreamProcessor {
             'X-Debug-Mode': 'true',
             'Cache-Control': 'no-cache, no-store, must-revalidate'
           },
-          body: JSON.stringify({ bundleIds, searchTerms }),
+          body: JSON.stringify({ 
+            bundleIds, 
+            searchTerms,
+            structuredParams 
+          }),
           signal: controller.signal
         });
         
@@ -999,8 +1028,9 @@ class StreamProcessor {
    * Export results to CSV via streaming
    * @param {string[]} bundleIds - Bundle IDs
    * @param {string[]} searchTerms - Search terms
+   * @param {Object} structuredParams - Structured search parameters (optional)
    */
-  async exportCsv(bundleIds, searchTerms = []) {
+  async exportCsv(bundleIds, searchTerms = [], structuredParams = null) {
     if (!bundleIds || !bundleIds.length) {
       showNotification('No bundle IDs to export', 'error');
       return;
@@ -1045,7 +1075,7 @@ class StreamProcessor {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ bundleIds, searchTerms })
+        body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
       });
       
       if (!response.ok) {

@@ -4,13 +4,14 @@
  */
 
 import AppState from './app-state.js';
-import SearchManager from './search.js';
+import SearchManager from './search.js'; // Legacy - will be phased out
 import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
 import ThemeManager from '../utils/theme.js';
 import Api from './api.js';
 import CSVExporter from './exporter.js';
 import StreamProcessor from './streaming/StreamProcessor.js';
+import UnifiedSearch from './unified-search.js';
 
 /**
  * Event Handler Class
@@ -98,11 +99,11 @@ class EventHandlerManager {
       return;
     }
     
-    // Get search terms
-    const searchTerms = DOMUtils.getSearchTerms();
+    // Get unified search parameters
+    const searchParams = UnifiedSearch.getSearchParams();
     
-    // Store search terms in app state
-    AppState.setSearchTerms(searchTerms);
+    // Store search parameters in app state
+    AppState.setSearchParams(searchParams);
     
     // Show processing indicator and disable extract button
     AppState.setProcessing(true);
@@ -254,6 +255,9 @@ class EventHandlerManager {
         break;
       case 'close-error':
         DOMUtils.hideErrorBoundary();
+        break;
+      case 'switch-search-mode':
+        this.handleSwitchSearchMode(target);
         break;
     }
   }
@@ -499,6 +503,14 @@ class EventHandlerManager {
     showNotification('An error occurred. Check console for details.', 'error');
   }
   
+  /**
+   * Handle search mode switch
+   * @param {HTMLElement} button - Mode toggle button
+   */
+  handleSwitchSearchMode(button) {
+    UnifiedSearch.handleModeSwitch({ target: button });
+  }
+
   /**
    * Check if an error is critical
    * @param {Error|string} error - Error object or message

@@ -603,6 +603,112 @@ button:disabled,
   margin-bottom: var(--space-md);
 }
 
+/* Unified Search Styles */
+.search-modes {
+  margin-bottom: 15px;
+  display: flex;
+  justify-content: center;
+}
+
+.search-mode-toggle {
+  display: inline-flex;
+  background-color: var(--bg-main);
+  border-radius: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+
+.search-mode-btn {
+  padding: 8px 16px;
+  background-color: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.search-mode-btn.active {
+  background-color: var(--primary);
+  color: white;
+  font-weight: 500;
+}
+
+.search-mode-btn:hover:not(.active) {
+  background-color: var(--bg-accent);
+  color: var(--text-primary);
+}
+
+.search-container {
+  margin-top: 10px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background-color: var(--bg-card);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+/* Simple search styles */
+.simple-search-field {
+  margin-bottom: 10px;
+}
+
+.simple-search-input-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.simple-search-input-wrapper input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+/* Advanced search styles */
+.structured-search-form {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.structured-search-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.structured-search-field label {
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.structured-search-field input,
+.structured-search-field select {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.search-help-text {
+  margin-top: 10px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .structured-search-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .search-term-row {
   display: flex;
   gap: var(--space-sm);
