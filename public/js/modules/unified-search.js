@@ -108,13 +108,25 @@ class UnifiedSearchManager {
    */
   getSimpleSearchParams() {
     // Get all search terms from the search terms container
-    const searchTerms = Array.from(document.querySelectorAll('.search-term-input'))
+    const inputValues = Array.from(document.querySelectorAll('.search-term-input'))
       .map(input => input.value.trim())
       .filter(Boolean);
     
-    if (!searchTerms.length) {
+    if (!inputValues.length) {
       return null; // No search parameters
     }
+    
+    // Process each input value - split by commas and trim each part
+    let searchTerms = [];
+    inputValues.forEach(value => {
+      // Split by comma, trim each part, and filter out empty parts
+      const parts = value.split(',')
+        .map(part => part.trim())
+        .filter(Boolean);
+      
+      // Add all parts to the search terms array
+      searchTerms = searchTerms.concat(parts);
+    });
     
     // Create array of structured params for each term
     const structuredParams = searchTerms.map(term => {

@@ -263,7 +263,28 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
             // Check each search term
             searchTerms.forEach((term, termIndex) => {
               try {
-                if (cleanLine.toLowerCase().includes(term.toLowerCase())) {
+                // Ensure we're doing an exact match for the term, not substring
+                // by splitting the line into words and checking for exact matches
+                const lineWords = cleanLine.toLowerCase().split(/[\s,;]+/);
+                const termWords = term.toLowerCase().split(/[\s,;]+/);
+                
+                // For single word terms, check if the term is present in the line
+                if (termWords.length === 1) {
+                  if (lineWords.includes(termWords[0])) {
+                    // Add to term-specific results (limit to 500 matches per term)
+                    if (searchTermResults[termIndex].matchingLines.length < 500) {
+                      searchTermResults[termIndex].matchingLines.push({
+                        lineNumber: totalLineCount,
+                        content: cleanLine,
+                        termIndex
+                      });
+                    }
+                    searchTermResults[termIndex].count++;
+                    anyMatch = true;
+                  }
+                }
+                // For multi-word terms, check if all words are present in the line
+                else if (termWords.every(word => cleanLine.toLowerCase().includes(word))) {
                   // Add to term-specific results (limit to 500 matches per term)
                   if (searchTermResults[termIndex].matchingLines.length < 500) {
                     searchTermResults[termIndex].matchingLines.push({

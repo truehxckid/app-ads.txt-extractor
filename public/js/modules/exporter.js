@@ -99,8 +99,12 @@ class CSVExporter {
     let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
     
     // Add search columns if needed
-    if (searchTerm) {
-      csvHeader += `,Search Term,Search Matches,Matching Lines`;
+    if (searchTerms && searchTerms.length > 0) {
+      // Add separate column for each search term
+      searchTerms.forEach((term, index) => {
+        csvHeader += `,Search Term ${index + 1}`;
+      });
+      csvHeader += `,Total Matches,Matching Lines`;
     }
     
     // Complete the header
@@ -129,9 +133,26 @@ class CSVExporter {
         
         // Search columns
         let searchCols = '';
-        if (searchTerm) {
+        if (searchTerms && searchTerms.length > 0) {
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
+          
+          // Add presence indicator for each search term
+          const termMatches = [];
+          searchTerms.forEach(term => {
+            if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
+              // Check if this specific term has any matches
+              const termMatch = result.appAdsTxt.searchResults.matchingLines.some(line => 
+                line.content.toLowerCase().includes(term.toLowerCase())
+              );
+              termMatches.push(termMatch ? "Yes" : "No");
+            } else {
+              termMatches.push("No");
+            }
+          });
+          
+          // Add each search term's match status to searchCols
+          searchCols = ',' + termMatches.join(',');
           
           // Limit matching lines to first 10 for CSV file size
           const matchingLines = hasMatches ? 
@@ -144,7 +165,7 @@ class CSVExporter {
             `${matchingLines} (+ ${result.appAdsTxt.searchResults.matchingLines.length - 10} more)` :
             matchingLines;
             
-          searchCols = `,${`"${searchTerm.replace(/"/g, '""')}"`},${matchCount},${`"${matchingLinesSummary}"`}`;
+          searchCols += `,${matchCount},${`"${matchingLinesSummary}"`}`;
         }
         
         // Status columns
