@@ -131,7 +131,6 @@ class UnifiedSearchManager {
     
     return {
       mode: 'simple',
-      query: searchTerms.join(','), // Join for backward compatibility
       queries: searchTerms, // Array of all search terms
       structuredParams: structuredParams
     };
@@ -416,7 +415,7 @@ class UnifiedSearchManager {
     removeButton.dataset.action = 'remove-structured-search';
     removeButton.dataset.index = index;
     removeButton.setAttribute('aria-label', 'Remove this search criteria');
-    removeButton.textContent = '− Remove';
+    removeButton.textContent = '−';
     
     actionsDiv.appendChild(removeButton);
     

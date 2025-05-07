@@ -211,10 +211,11 @@ class StreamProcessor {
       console.log('🚀 Legacy search terms:', searchTerms);
     } else if (searchParams && typeof searchParams === 'object') {
       // New unified format
-      if (searchParams.mode === 'simple' && searchParams.query) {
-        searchTerms = [searchParams.query];
+      if (searchParams.mode === 'simple' && searchParams.queries) {
+        // Use all search terms from the array 
+        searchTerms = searchParams.queries;
         structuredParams = searchParams.structuredParams || null;
-        console.log('🚀 Simple search mode with query:', searchParams.query);
+        console.log('🚀 Simple search mode with queries:', searchParams.queries);
       } else if (searchParams.structuredParams) {
         structuredParams = searchParams.structuredParams;
         console.log('🚀 Advanced search mode with params:', structuredParams);

@@ -139,11 +139,11 @@ class AppStateManager {
     if (terms && terms.length > 0) {
       this.setSearchParams({
         mode: 'simple',
-        query: terms[0],
-        structuredParams: {
-          domain: terms[0].includes('.') ? terms[0] : undefined,
-          publisherId: !terms[0].includes('.') ? terms[0] : undefined
-        }
+        queries: terms,
+        structuredParams: terms.map(term => ({
+          domain: term.includes('.') ? term : undefined,
+          publisherId: !term.includes('.') ? term : undefined
+        }))
       });
     }
   }
@@ -156,8 +156,9 @@ class AppStateManager {
     this.searchParams = params;
     
     // For backwards compatibility
-    if (params && params.mode === 'simple' && params.query) {
-      this.searchTerms = [params.query];
+    if (params && params.mode === 'simple' && params.queries && params.queries.length > 0) {
+      // Use all queries as separate search terms
+      this.searchTerms = params.queries;
     } else if (params && params.structuredParams) {
       // Convert structured params to legacy format
       const structuredParams = params.structuredParams;
