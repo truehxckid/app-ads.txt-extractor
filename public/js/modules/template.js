@@ -133,11 +133,11 @@ class TemplateEngineManager {
             
             // For multi-term search, show color-coded indicators
             if (result.appAdsTxt.searchResults.termResults) {
-              // Generate colored indicators for each term
+              // Generate colored indicators for each term - showing term numbers (1-based index)
               result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
                 if (termResult.count > 0) {
                   const colorClass = `term-match-${termIndex % 5}`;
-                  tableHtml += `<span class="term-match-indicator ${colorClass}">${termResult.count}</span> `;
+                  tableHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
                 }
               });
             } else {
@@ -255,7 +255,7 @@ class TemplateEngineManager {
                   const termTabId = `term-${termIndex}-${detailsId}`;
                   const colorClass = `term-match-${termIndex % 5}`;
                   
-                  tabsHtml += `<button class="search-tab ${colorClass}" data-action="tab-switch" data-tab="${termTabId}" role="tab" aria-selected="false" aria-controls="${termTabId}" id="tab-${termTabId}">${DOMUtils.escapeHtml(termResult.term)}</button>`;
+                  tabsHtml += `<button class="search-tab ${colorClass}" data-action="tab-switch" data-tab="${termTabId}" role="tab" aria-selected="false" aria-controls="${termTabId}" id="tab-${termTabId}">Term #${termIndex + 1}: ${DOMUtils.escapeHtml(termResult.term)}</button>`;
                   
                   // Generate the term-specific tab content
                   const termMatchingLinesHtml = termResult.matchingLines
@@ -273,7 +273,7 @@ class TemplateEngineManager {
                   tabContentsHtml += `
                     <div id="${termTabId}" class="search-tab-content" role="tabpanel" aria-labelledby="tab-${termTabId}" aria-hidden="true">
                       <div class="search-matches-count">
-                        <strong>Matches for "${DOMUtils.escapeHtml(termResult.term)}":</strong> ${termResult.count}
+                        <strong>Matches for Term #${termIndex + 1} "${DOMUtils.escapeHtml(termResult.term)}":</strong> ${termResult.count}
                       </div>
                       <div class="search-matches-list">
                         <table class="search-matches-table">
@@ -398,7 +398,7 @@ class TemplateEngineManager {
     
     terms.forEach((term, index) => {
       const colorClass = `term-match-${index % 5}`;
-      html += `<span class="search-highlight ${colorClass}">${DOMUtils.escapeHtml(term)}</span> `;
+      html += `<span class="search-highlight ${colorClass}">#${index + 1}: ${DOMUtils.escapeHtml(term)}</span> `;
     });
     
     html += '</div>';

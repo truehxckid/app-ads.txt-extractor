@@ -11,7 +11,7 @@
   background: var(--bg-accent);
   border-radius: var(--radius-sm);
   margin-bottom: var(--space-md);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
 }
 
 .summary-stats {
@@ -72,7 +72,7 @@
 .results-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   table-layout: fixed;
 }
 
@@ -178,7 +178,7 @@
   color: white;
   padding: 1px 4px;
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   line-height: 1.2;
 }
@@ -195,14 +195,14 @@
 .search-matches-missing {
   color: var(--text-muted);
   font-style: italic;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .toggle-app-ads, 
 .toggle-search-matches {
   margin-left: var(--space-xs);
   padding: 1px 4px;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   height: auto;
 }
 
@@ -236,7 +236,7 @@
   background: var(--bg-accent);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   animation: slideDown var(--transition-normal);
 }
 
@@ -272,7 +272,7 @@
   padding: var(--space-sm);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   border: 1px solid var(--border);
 }
 

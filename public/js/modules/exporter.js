@@ -93,18 +93,25 @@ class CSVExporter {
     // Check if search was performed
     const hasSearchResults = results.some(r => r.success && r.appAdsTxt?.searchResults);
     const searchTerms = hasSearchResults && results.find(r => r.appAdsTxt?.searchResults)?.appAdsTxt.searchResults?.terms;
-    const searchTerm = searchTerms ? searchTerms.join(', ') : null;
     
     // Create CSV header
     let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
     
     // Add search columns if needed
     if (searchTerms && searchTerms.length > 0) {
-      // Add separate column for each search term
+      // First add a column for each search term's presence
       searchTerms.forEach((term, index) => {
-        csvHeader += `,Search Term ${index + 1}`;
+        const termDisplay = typeof term === 'object' ? term.exactMatch : term;
+        csvHeader += `,Term ${index + 1} (${termDisplay})`;
       });
-      csvHeader += `,Total Matches,Matching Lines`;
+      
+      // Then add columns for each search term's matching lines
+      searchTerms.forEach((term, index) => {
+        const termDisplay = typeof term === 'object' ? term.exactMatch : term;
+        csvHeader += `,Term ${index + 1} Lines`;
+      });
+      
+      csvHeader += `,Total Matches`;
     }
     
     // Complete the header
@@ -137,35 +144,48 @@ class CSVExporter {
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // Add presence indicator for each search term
-          const termMatches = [];
-          searchTerms.forEach(term => {
-            if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
-              // Check if this specific term has any matches
-              const termMatch = result.appAdsTxt.searchResults.matchingLines.some(line => 
-                line.content.toLowerCase().includes(term.toLowerCase())
-              );
-              termMatches.push(termMatch ? "Yes" : "No");
+          // First add term presence columns
+          searchTerms.forEach((term, index) => {
+            const termValue = typeof term === 'object' ? term.exactMatch : term;
+            
+            if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
+              // Get the specific term result if available
+              const termResult = result.appAdsTxt.searchResults.termResults[index];
+              const hasTermMatches = termResult && termResult.count > 0;
+              searchCols += `,${hasTermMatches ? "Yes" : "No"}`;
             } else {
-              termMatches.push("No");
+              searchCols += ",No";
             }
           });
           
-          // Add each search term's match status to searchCols
-          searchCols = ',' + termMatches.join(',');
+          // Then add term matching lines columns
+          searchTerms.forEach((term, index) => {
+            if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
+              // Get the specific term result if available
+              const termResult = result.appAdsTxt.searchResults.termResults[index];
+              
+              if (termResult && termResult.matchingLines && termResult.matchingLines.length > 0) {
+                // Limit to first 5 matches per term
+                const termLines = termResult.matchingLines
+                  .slice(0, 5)
+                  .map(line => `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`)
+                  .join(' | ');
+                
+                const termLinesSummary = termResult.matchingLines.length > 5 ?
+                  `${termLines} (+ ${termResult.matchingLines.length - 5} more)` :
+                  termLines;
+                
+                searchCols += `,${`"${termLinesSummary}"`}`;
+              } else {
+                searchCols += `,""`;
+              }
+            } else {
+              searchCols += `,""`;
+            }
+          });
           
-          // Limit matching lines to first 10 for CSV file size
-          const matchingLines = hasMatches ? 
-            result.appAdsTxt.searchResults.matchingLines
-              .slice(0, 10)
-              .map(line => `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`)
-              .join(' | ') : '';
-          
-          const matchingLinesSummary = hasMatches && result.appAdsTxt.searchResults.matchingLines.length > 10 ?
-            `${matchingLines} (+ ${result.appAdsTxt.searchResults.matchingLines.length - 10} more)` :
-            matchingLines;
-            
-          searchCols += `,${matchCount},${`"${matchingLinesSummary}"`}`;
+          // Add total match count
+          searchCols += `,${matchCount}`;
         }
         
         // Status columns

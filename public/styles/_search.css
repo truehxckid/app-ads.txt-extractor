@@ -39,7 +39,7 @@
   color: var(--text-secondary);
   border: none;
   border-radius: var(--radius-full);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   cursor: pointer;
   transition: all 0.2s ease;
   font-weight: var(--font-weight-semibold); /* Always bold */
@@ -255,7 +255,7 @@
 /* Search Matches Tabs */
 .search-terms-legend {
   margin: var(--space-sm) 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
 }
 
@@ -273,7 +273,7 @@
   padding: var(--space-sm) var(--space-md);
   margin-bottom: -1px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-md);
   cursor: pointer;
   color: var(--text-secondary);
   border: 1px solid transparent;
@@ -365,7 +365,7 @@
 .search-matches-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-md);
 }
 
 .search-matches-table th, 
