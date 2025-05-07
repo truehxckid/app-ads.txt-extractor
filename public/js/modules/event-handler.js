@@ -109,7 +109,7 @@ class EventHandlerManager {
     AppState.setProcessing(true);
     
     // Process the bundleIds with StreamProcessor
-    StreamProcessor.processBundleIds(bundleIds, searchTerms);
+    StreamProcessor.processBundleIds(bundleIds, searchParams);
   }
   
   /**
