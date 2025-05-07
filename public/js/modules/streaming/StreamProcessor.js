@@ -277,12 +277,12 @@ class StreamProcessor {
     console.log('👉 State initialized with totalBundleIds:', this.stats.totalBundleIds);
     
     // Get result element and create initial UI
-    const resultElement = DOMUtils.getElement('result');
-    if (!resultElement) return false;
+    const resultSection = DOMUtils.getElement('result');
+    if (!resultSection) return false;
     
     // Make sure the result section is visible
-    if (resultElement) {
-      resultElement.style.display = 'block';
+    if (resultSection) {
+      resultSection.style.display = 'block';
     }
     
     // Clear any existing "Sending request to server..." messages
@@ -295,7 +295,7 @@ class StreamProcessor {
     });
     
     // Initialize UI components
-    this.resultsRenderer.initializeUI(resultElement, bundleIds.length, searchTerms.length > 0);
+    this.resultsRenderer.initializeUI(resultSection, bundleIds.length, searchTerms.length > 0);
     
     // We'll just use the worker indicator now, so no need for separate progress UI
     console.log('Not initializing detailed progress UI, will use worker indicator only');
