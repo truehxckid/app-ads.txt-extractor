@@ -437,24 +437,43 @@ class UnifiedExporter {
     if (hasAppAds && result.appAdsTxt?.searchResults) {
       const searchResults = result.appAdsTxt.searchResults;
       
-      // Calculate real match count by counting unique matching lines
-      const uniqueMatchingLines = new Set();
+      // Calculate real match count by extracting the actual unique values
+      // This avoids counting the same match multiple times across different criteria
+      const uniqueMatchValues = new Set();
+      
+      // Track raw matches for debugging
+      const allMatches = [];
       
       // Collect all unique matching lines from all term results
       if (searchResults.termResults && searchResults.termResults.length > 0) {
         searchResults.termResults.forEach(tr => {
           if (tr.matches && tr.matches.length > 0) {
-            tr.matches.forEach(match => uniqueMatchingLines.add(match));
+            tr.matches.forEach(match => {
+              // Extract the actual value before the colon (if present)
+              const baseValue = match.includes(':') ? match.split(':')[0] + ':' + match.split(':')[1] : match;
+              uniqueMatchValues.add(baseValue);
+              allMatches.push(match);
+            });
           } else if (tr.matchingLines && tr.matchingLines.length > 0) {
             tr.matchingLines.forEach(line => {
-              if (line.content) uniqueMatchingLines.add(line.content);
+              if (line.content) {
+                // Extract the base value if it's a content line
+                const content = line.content;
+                const baseValue = content.includes(':') ? content.split(':')[0] + ':' + content.split(':')[1] : content;
+                uniqueMatchValues.add(baseValue);
+                allMatches.push(content);
+              }
             });
           }
         });
       }
       
-      // Use the number of unique matches instead of the raw count from server
-      matchCount = String(uniqueMatchingLines.size || 0);
+      // Log for debugging
+      console.log('Unique match values: ', Array.from(uniqueMatchValues));
+      console.log('All matches: ', allMatches);
+      
+      // Use the number of truly unique matches
+      matchCount = String(uniqueMatchValues.size || 0);
       
       // Process matching lines to ensure uniqueness
       if (searchResults.termResults && searchResults.termResults.length > 0) {
@@ -513,24 +532,43 @@ class UnifiedExporter {
     
     // Also check for matchInfo format (used in some implementations)
     if (result.matchInfo) {
-      // Calculate real match count by counting unique matching lines
-      const uniqueMatchingLines = new Set();
+      // Calculate real match count by extracting the actual unique values
+      // This avoids counting the same match multiple times across different criteria
+      const uniqueMatchValues = new Set();
+      
+      // Track raw matches for debugging
+      const allMatches = [];
       
       // Collect all unique matching lines from all term results
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
         result.matchInfo.termResults.forEach(tr => {
           if (tr.matches && tr.matches.length > 0) {
-            tr.matches.forEach(match => uniqueMatchingLines.add(match));
+            tr.matches.forEach(match => {
+              // Extract the actual value before the colon (if present)
+              const baseValue = match.includes(':') ? match.split(':')[0] + ':' + match.split(':')[1] : match;
+              uniqueMatchValues.add(baseValue);
+              allMatches.push(match);
+            });
           } else if (tr.matchingLines && tr.matchingLines.length > 0) {
             tr.matchingLines.forEach(line => {
-              if (line.content) uniqueMatchingLines.add(line.content);
+              if (line.content) {
+                // Extract the base value if it's a content line
+                const content = line.content;
+                const baseValue = content.includes(':') ? content.split(':')[0] + ':' + content.split(':')[1] : content;
+                uniqueMatchValues.add(baseValue);
+                allMatches.push(content);
+              }
             });
           }
         });
       }
       
-      // Use the number of unique matches
-      matchCount = String(uniqueMatchingLines.size || 0);
+      // Log for debugging
+      console.log('MatchInfo - Unique match values: ', Array.from(uniqueMatchValues));
+      console.log('MatchInfo - All matches: ', allMatches);
+      
+      // Use the number of truly unique matches
+      matchCount = String(uniqueMatchValues.size || 0);
       
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
         // First collect unique terms and their matches
