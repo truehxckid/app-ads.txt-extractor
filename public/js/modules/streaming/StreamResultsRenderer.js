@@ -318,13 +318,24 @@ class StreamResultsRenderer {
   _renderResults(results) {
     console.log('🔄 StreamResultsRenderer: Rendering', results.length, 'results');
     
+    // Filter results for advanced search if needed
+    const filteredResults = results.filter(result => {
+      // Keep results if:
+      // 1. Not using advanced search (no matchesAdvancedSearch property), or
+      // 2. Result matches advanced search criteria, or
+      // 3. Result doesn't have the matchesAdvancedSearch property (backward compatibility)
+      return !('matchesAdvancedSearch' in result) || result.matchesAdvancedSearch === true;
+    });
+    
+    console.log('🔄 StreamResultsRenderer: Filtered to', filteredResults.length, 'results after advanced search filtering');
+    
     // Store the full results for pagination
-    this.allResults = results;
+    this.allResults = filteredResults;
     
     // Set up pagination variables
     this.pageSize = 50;
     this.currentPage = 1;
-    this.totalPages = Math.ceil(results.length / this.pageSize);
+    this.totalPages = Math.ceil(filteredResults.length / this.pageSize);
     
     // Create a results display element
     const resultsDisplay = document.createElement('div');

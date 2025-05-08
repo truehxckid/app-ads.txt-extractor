@@ -956,6 +956,10 @@ class StreamProcessor {
         if (data.results && Array.isArray(data.results)) {
           console.log('⚡ StreamProcessor: Storing final results array from worker');
           this.results = data.results;
+          console.log('⚡ StreamProcessor: Received', this.results.length, 'results from worker');
+          if (this.results.length === 0) {
+            console.warn('⚡ StreamProcessor: No results received from worker!');
+          }
         }
         
         // Update final stats

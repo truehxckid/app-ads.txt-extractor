@@ -290,16 +290,16 @@ function processResult(result) {
   if (result.success) {
     // Check if this result matches structured parameters if we're using advanced search
     if (structuredParams && Array.isArray(structuredParams) && structuredParams.length > 0) {
-      if (!matchesStructuredParams(result, structuredParams)) {
-        // Result doesn't match the advanced search criteria, don't count it as success
-        // and don't add it to results
-        console.log('Result excluded by advanced search:', result.bundleId);
-        errorCount++; // Count as error for stats
-        return; // Skip storing and sending this result
-      }
+      // Always store results regardless of matching - we'll let the client filter them
+      // Just mark whether it matches the criteria in a new property
+      const matches = matchesStructuredParams(result, structuredParams);
+      result.matchesAdvancedSearch = matches;
       
-      // If we get here, it matches the advanced search criteria
-      console.log('Result matched advanced search criteria:', result.bundleId);
+      if (!matches) {
+        console.log('Result doesn\'t match advanced search criteria, but still tracking:', result.bundleId);
+      } else {
+        console.log('Result matched advanced search criteria:', result.bundleId);
+      }
     }
     
     // Count as success
