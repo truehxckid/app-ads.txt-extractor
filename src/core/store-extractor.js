@@ -73,11 +73,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null, structu
         if (structuredParams) {
           // Advanced search - check if we need to recheck app-ads.txt
           try {
-            logger.debug({ 
-              bundleId, 
-              domain: cached.domain,
-              hasStructuredParams: true
-            }, 'Using advanced search, rechecking app-ads.txt');
+            // Recheck with advanced search
             
             const appAdsTxt = await checkAppAdsTxt(cached.domain, [], { structuredParams });
             return {...cached, appAdsTxt, searchTerms: [], structuredParams};
@@ -97,12 +93,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null, structu
           // If search terms are different, recheck app-ads.txt with new terms
           if (JSON.stringify(cachedTerms.sort()) !== JSON.stringify(newTerms.sort())) {
             try {
-              logger.debug({ 
-                bundleId, 
-                domain: cached.domain,
-                cachedTerms,
-                newTerms
-              }, 'Different search terms, rechecking app-ads.txt');
+              // Recheck with new search terms
               
               const validatedTerms = validateSearchTerms(newTerms);
               const appAdsTxt = await checkAppAdsTxt(cached.domain, validatedTerms);
@@ -119,7 +110,7 @@ async function extractFromStore(bundleId, storeType, searchTerms = null, structu
         }
       }
       
-      logger.debug({ bundleId, storeType, cached: true }, 'Using cached store extraction');
+      // Return cached results
       return cached;
     }
     
@@ -143,20 +134,10 @@ async function extractFromStore(bundleId, storeType, searchTerms = null, structu
         try {
           developerUrl = extractor(html);
           if (developerUrl) {
-            logger.debug({ 
-              bundleId, 
-              storeType, 
-              developerUrl,
-              method: 'pattern'
-            }, 'Developer URL extracted');
             break;
           }
         } catch (extractErr) {
-          logger.debug({ 
-            error: extractErr.message,
-            bundleId,
-            storeType
-          }, 'Extractor error');
+          // Continue to next extractor
         }
       }
       
@@ -177,13 +158,6 @@ async function extractFromStore(bundleId, storeType, searchTerms = null, structu
             if (el.length > 0) {
               developerUrl = el.attr('content') || el.attr('href');
               if (developerUrl) {
-                logger.debug({ 
-                  bundleId, 
-                  storeType, 
-                  developerUrl,
-                  method: 'cheerio',
-                  selector
-                }, 'Developer URL extracted');
                 break;
               }
             }
@@ -301,11 +275,7 @@ async function getDeveloperInfo(bundleId, searchTerms = null, structuredParams =
     const validId = validateBundleId(bundleId);
     const storeType = detectStoreType(validId);
     
-    logger.debug({ 
-      bundleId: validId, 
-      storeType, 
-      hasSearchTerms: !!searchTerms 
-    }, 'Getting developer info');
+    // Detect store type and validate ID
     
     // Skip numeric Roku Bundle IDs
     if (storeType === 'roku-numeric') {

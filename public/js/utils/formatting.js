@@ -38,7 +38,6 @@ export function formatDate(date, options = {}) {
     
     return dateObj.toLocaleDateString(undefined, { ...defaultOptions, ...options });
   } catch (err) {
-    console.error('Error formatting date:', err);
     return String(date);
   }
 }

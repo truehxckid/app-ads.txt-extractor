@@ -62,7 +62,7 @@ class EventHandlerManager {
       errorCloseBtn.addEventListener('click', () => DOMUtils.hideErrorBoundary());
     }
     
-    console.log('Event handlers initialized');
+    // Event handlers initialized
   }
   
   /**
@@ -178,7 +178,7 @@ class EventHandlerManager {
             // Show notification
             showNotification(`Successfully imported ${bundleIds.length} bundle IDs`, 'success');
           } catch (parseErr) {
-            console.error('Error parsing CSV:', parseErr);
+            // Error parsing CSV
             showNotification(`Error parsing CSV: ${parseErr.message}`, 'error');
             
             // Hide progress
@@ -186,7 +186,7 @@ class EventHandlerManager {
           }
         });
       } catch (err) {
-        console.error('Error reading file:', err);
+        // Error reading file
         showNotification('Error reading file', 'error');
         
         // Hide progress
@@ -195,7 +195,7 @@ class EventHandlerManager {
     };
     
     reader.onerror = function() {
-      console.error('Error reading file');
+      // Error reading file
       showNotification('Error reading file', 'error');
       
       // Hide progress
@@ -221,16 +221,6 @@ class EventHandlerManager {
     if (!actionElement) return;
     
     const action = actionElement.dataset.action;
-    
-    // Log click events for debugging
-    console.log('EVENT MONITOR: Click detected on:', 
-      actionElement.tagName, 
-      actionElement.id ? `#${actionElement.id}` : '', 
-      actionElement.className ? `.${actionElement.className.split(' ').join('.')}` : '', 
-      `"${actionElement.textContent.trim().substring(0, 20)}${actionElement.textContent.trim().length > 20 ? '...' : ''}"`
-    );
-    console.log('EVENT MONITOR: data-action:', action);
-    
     // Check for duplicate events (sometimes the browser sends duplicate events)
     const now = Date.now();
     const lastClickTime = this._lastClickTime || 0;
@@ -238,7 +228,6 @@ class EventHandlerManager {
     
     // If the same action was clicked within 300ms, it's likely a duplicate event
     if (action === lastClickAction && (now - lastClickTime < 300)) {
-      console.log('Ignoring potential duplicate click event on:', action);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -269,7 +258,7 @@ class EventHandlerManager {
         
         // Check global timestamp first (takes precedence)
         if (window._lastGlobalExportTime && (currentTime - window._lastGlobalExportTime < 5000)) {
-          console.log('CSV export recently triggered (global tracking), ignoring duplicate request');
+          // CSV export recently triggered (global tracking), ignoring duplicate request
           showNotification('Export already in progress, please wait a few seconds', 'info');
           // Prevent event propagation
           event.preventDefault();
@@ -279,7 +268,7 @@ class EventHandlerManager {
         
         // Also check local timestamp as fallback
         if (this._lastExportTime && (currentTime - this._lastExportTime < 5000)) {
-          console.log('CSV export recently triggered (local tracking), ignoring duplicate request');
+          // CSV export recently triggered (local tracking), ignoring duplicate request
           showNotification('Export already in progress, please wait a few seconds', 'info');
           // Prevent event propagation
           event.preventDefault();
@@ -295,7 +284,7 @@ class EventHandlerManager {
         event.preventDefault();
         event.stopPropagation();
         
-        console.log('CSV export triggered at: ' + new Date().toISOString());
+        // CSV export triggered
         
         // Handle all CSV download actions with the streaming method
         import('./streaming/StreamProcessor.js').then(module => {
@@ -312,7 +301,7 @@ class EventHandlerManager {
             structuredParams = [structuredParams];
           }
           
-          console.log('📊 CSV Export: Using advanced search mode:', structuredParams);
+          // Use advanced search mode
           const searchParams = {
             mode: 'advanced',
             structuredParams: structuredParams
@@ -320,8 +309,7 @@ class EventHandlerManager {
           
           // Call export CSV function with streaming capability
           if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-            // Log the search params we're sending
-            console.log('Calling StreamProcessor.exportCsv with searchParams:', searchParams);
+            // Call exportCsv with search parameters
             
             // Removed redundant check that was causing issues
             // The check at the start of this function is sufficient
@@ -333,11 +321,8 @@ class EventHandlerManager {
           }
           
           // If StreamProcessor exists but exportCsv method doesn't exist, fall back
-          console.warn('StreamProcessor exists but exportCsv method not found, falling back to regular download');
           CSVExporter.downloadResults(AppState.results);
         }).catch(error => {
-          console.error('Error importing StreamProcessor for CSV export:', error);
-          
           // Fall back to regular download if streaming fails
           CSVExporter.downloadResults(AppState.results);
           
@@ -407,7 +392,7 @@ class EventHandlerManager {
               showBtn.textContent = 'Hide Results';
             }
           }).catch(error => {
-            console.error('Error importing modules:', error);
+            // Error importing modules
             
             // Fallback to a single import if parallel loading fails
             import('./streaming/StreamResultsRenderer.js').then(module => {
@@ -415,7 +400,7 @@ class EventHandlerManager {
               // Fallback to window.AppState
               streamResultsRenderer.showResults(window.AppState?.results || []);
             }).catch(fallbackError => {
-              console.error('Error in fallback code path:', fallbackError);
+              // Error in fallback code path
             });
           });
         }
@@ -424,17 +409,11 @@ class EventHandlerManager {
   }
   
   /**
-   * Handle keyboard shortcuts
+   * Handle keyboard shortcuts - Empty placeholder for potential future shortcuts
    * @param {KeyboardEvent} event - Keydown event
    */
   handleKeydown = (event) => {
-    // Ctrl+D for debug mode
-    if (event.ctrlKey && event.key.toLowerCase() === 'd') {
-      event.preventDefault();
-      // Just toggle debug mode - don't show additional notification
-      // The persistent debug info panel is enough
-      AppState.toggleDebugMode();
-    }
+    // Reserved for future keyboard shortcuts
   }
   
   /**
@@ -460,7 +439,7 @@ class EventHandlerManager {
       
       showNotification(`Copied ${textToCopy} to clipboard`, 'success', 1500);
     } catch (err) {
-      console.error('Error copying to clipboard:', err);
+      // Error handling for clipboard
       showNotification('Failed to copy to clipboard', 'error');
     }
   }
@@ -577,29 +556,29 @@ class EventHandlerManager {
    * @param {HTMLElement} button - Pagination button
    */
   handlePaginationClick(button) {
-    console.log('Pagination button clicked:', button);
+    // Pagination button clicked
     
     // Check if the button has 'data-action="paginate"' attribute
     const action = button.getAttribute('data-action');
     if (action !== 'paginate') {
-      console.log('Button does not have data-action="paginate":', action);
+      // Button does not have correct action
       return;
     }
     
     // Get the page number from the button
     const pageAttr = button.getAttribute('data-page');
     if (!pageAttr) {
-      console.log('Button does not have data-page attribute');
+      // Button does not have page attribute
       return;
     }
     
     const page = parseInt(pageAttr, 10);
     if (isNaN(page) || page <= 0) {
-      console.log('Invalid page number:', pageAttr);
+      // Invalid page number
       return;
     }
     
-    console.log('Changing to page:', page);
+    // Changing to page
     
     // Import StreamResultsRenderer and use its _renderPage method to handle pagination
     import('./streaming/StreamResultsRenderer.js').then(module => {
@@ -608,13 +587,13 @@ class EventHandlerManager {
       if (streamResultsRenderer && typeof streamResultsRenderer._renderPage === 'function') {
         // Get results either from StreamResultsRenderer's allResults or from AppState
         const results = streamResultsRenderer.allResults || window.AppState?.results || [];
-        console.log('Rendering page', page, 'with', results.length, 'total results');
+        // Rendering page with results
         streamResultsRenderer._renderPage(results, page);
       } else {
-        console.error('StreamResultsRenderer or _renderPage method not found');
+        // Renderer or method not found
       }
     }).catch(error => {
-      console.error('Error importing StreamResultsRenderer for pagination:', error);
+      // Error importing module
     });
   }
   
@@ -623,8 +602,6 @@ class EventHandlerManager {
    * @param {ErrorEvent} event - Error event
    */
   handleGlobalError(event) {
-    console.error('Global error:', event.error || event.message);
-    
     // Check if it's related to streaming or a known non-critical issue
     const errorString = String(event.error || event.message || '').toLowerCase();
     
@@ -632,7 +609,6 @@ class EventHandlerManager {
     if (errorString.includes('target.classname.replace') || 
         errorString.includes('event-monitor') ||
         errorString.includes('iscriticalerror')) {
-      console.log('Ignoring non-critical UI error:', errorString);
       return;
     }
     
@@ -646,9 +622,6 @@ class EventHandlerManager {
       DOMUtils.showErrorBoundary(`${event.message || 'Application error'}`);
       return;
     }
-    
-    // For non-critical errors, just log to console
-    // Skip showing notification to reduce UI clutter during streaming
   }
   
   /**
@@ -656,8 +629,6 @@ class EventHandlerManager {
    * @param {PromiseRejectionEvent} event - Rejection event
    */
   handleUnhandledRejection(event) {
-    console.error('Unhandled promise rejection:', event.reason);
-    
     // Prevent showing too many errors for network issues
     if (event.reason instanceof TypeError || 
         (event.reason.message && event.reason.message.includes('network'))) {
@@ -665,7 +636,7 @@ class EventHandlerManager {
       return;
     }
     
-    showNotification('An error occurred. Check console for details.', 'error');
+    showNotification('An error occurred.', 'error');
   }
   
   // Search mode switch handler removed (only advanced mode is supported now)

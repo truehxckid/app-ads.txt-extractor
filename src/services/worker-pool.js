@@ -148,12 +148,11 @@ class WorkerPool {
         return;
       }
       
+      // Log concise task information
       logger.debug({
         taskId: task.id,
         queueLength: this.queue.length,
-        priority,
-        dataSizeKB: Math.round(dataSizeEstimate / 1024),
-        estimatedMemoryMb
+        priority
       }, 'Task queued');
       
       // Insert into queue based on priority
@@ -183,7 +182,8 @@ class WorkerPool {
       this._runWorker(task);
     }
     
-    if (this.queue.length > 0) {
+    // Only log when queue is meaningful
+    if (this.queue.length > 3) {
       logger.debug({
         queueLength: this.queue.length,
         activeWorkers: this.activeWorkers

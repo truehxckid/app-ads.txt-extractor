@@ -49,8 +49,6 @@ class StreamProgressUI {
     // If so, remove all other progress indicators to prevent overlap
     const workerProgressIndicator = document.querySelector('.worker-processing-indicator');
     if (workerProgressIndicator) {
-      console.log('Active worker progress indicator found, removing other progress indicators before initializing');
-      
       // Remove any existing progress indicators except the worker indicator
       const otherProgressIndicators = document.querySelectorAll('.visual-indicators-container, .progress-indicator, #streamProgress');
       otherProgressIndicators.forEach(indicator => {
@@ -60,7 +58,6 @@ class StreamProgressUI {
       });
       
       // If worker indicator exists, we shouldn't create a new progress UI
-      console.log('Skipping new progress UI creation as worker indicator already exists');
       return false;
     }
     
@@ -86,11 +83,9 @@ class StreamProgressUI {
     
     // If container is still not found, try to get by ID
     if (!containerElement) {
-      console.warn('Container not found, trying to get by ID: result');
       containerElement = document.getElementById('result');
       
       if (!containerElement) {
-        console.error('Container not found, visual indicators will not be displayed');
         return false;
       }
     }
@@ -105,8 +100,6 @@ class StreamProgressUI {
     this.clearIndicators();
     
     // We're no longer creating visual indicators at all
-    // Just log that we're starting
-    console.log('Starting processing without UI indicators');
     
     // Create a hidden container to store references if needed, but don't display it
     const dummyContainer = DOMUtils.createElement('div', {
@@ -120,7 +113,6 @@ class StreamProgressUI {
     // Add to DOM but keep hidden
     containerElement.appendChild(dummyContainer);
     
-    console.log('Visual indicators initialized successfully');
     return true;
   }
   
@@ -154,7 +146,7 @@ class StreamProgressUI {
     this.fallbackProgressBar = indicator.querySelector('.fallback-progress-bar');
     this.fallbackStatusText = indicator.querySelector('.fallback-status-text');
     
-    console.log('Fallback indicator created');
+    // Fallback indicator created
   }
   
   /**
@@ -323,9 +315,6 @@ class StreamProgressUI {
       percent = Math.min(100, Math.round((this.stats.processed / this.stats.total) * 100));
     }
     
-    // Just log progress - no UI updates
-    console.log(`Processing progress: ${percent}% (${this.stats.processed || 0} of ${this.stats.total || 0})`);
-    
     // Update the worker indicator directly instead of using our own indicators
     const workerIndicator = document.querySelector('.worker-processing-indicator h3');
     if (workerIndicator) {
@@ -344,8 +333,6 @@ class StreamProgressUI {
    * @param {Object} stats - Processing statistics
    */
   forceUpdate(stats = {}) {
-    console.log('⚡ StreamProgressUI.forceUpdate: Emergency direct DOM update with:', stats);
-    
     // Update our stats
     this.updateProgress(stats);
     
@@ -408,7 +395,7 @@ class StreamProgressUI {
         }
       }
     } catch (err) {
-      console.error('Error during direct DOM update:', err);
+      // Silent error handling for non-critical UI updates
     }
   }
   
@@ -599,9 +586,8 @@ class StreamProgressUI {
       }
     }
     
-    // Calculate elapsed time for logging
+    // Calculate elapsed time
     const elapsed = (Date.now() - this.stats.startTime) / 1000; // in seconds
-    console.log(`Processing complete! Processed ${this.stats.processed} items in ${elapsed.toFixed(1)} seconds`);
   }
   
   /**
@@ -674,8 +660,6 @@ class StreamProgressUI {
    * @private
    */
   _cleanupAllPreviousIndicators(container) {
-    console.log('StreamProgressUI: Cleaning up all previous indicators');
-    
     if (!container) return;
     
     // Check if worker indicator exists - if so, we should preserve it
@@ -707,7 +691,6 @@ class StreamProgressUI {
       elements.forEach(element => {
         // Do not remove the worker indicator - we want to keep it visible
         if (!workerIndicator || element !== workerIndicator) {
-          console.log(`StreamProgressUI: Removing ${selector} from container`);
           element.remove();
         }
       });
@@ -720,7 +703,6 @@ class StreamProgressUI {
       elements.forEach(element => {
         // Do not remove the worker indicator - we want to keep it visible
         if (!workerIndicator || element !== workerIndicator) {
-          console.log(`StreamProgressUI: Removing ${selector} from document`);
           element.remove();
         }
       });
@@ -738,7 +720,6 @@ class StreamProgressUI {
           element.textContent.includes('Processing...') || 
           element.textContent.includes('Sending request') ||
           element.textContent.includes('Worker Processing'))) {
-        console.log('StreamProgressUI: Removing element with progress text');
         element.remove();
       }
     });

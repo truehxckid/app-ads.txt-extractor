@@ -26,14 +26,14 @@ class StreamProcessor {
     this.progressUI = StreamProgressUI;
     this.dataParser = StreamDataParser;
     this.resultsRenderer = StreamResultsRenderer;
-    // Create a minimal debug replacement
+    // Minimal no-op debugger
     this.debugger = {
       initialize: () => true,
-      logStatus: (msg) => console.log('Stream Debug:', msg),
-      logChunk: (chunk, length) => console.log(`Stream Debug: Chunk ${length} bytes`),
-      logError: (err) => console.error('Stream Debug Error:', err),
-      logConnectionInfo: (response) => console.log('Stream Debug Connection:', response.status),
-      logSummary: (msg, stats) => console.log('Stream Debug Summary:', msg, stats),
+      logStatus: () => {},
+      logChunk: () => {},
+      logError: (err) => console.error('Error:', err), // Keep error logging
+      logConnectionInfo: () => {},
+      logSummary: () => {},
       clear: () => {},
       close: () => {}
     };
@@ -68,8 +68,6 @@ class StreamProcessor {
   initialize() {
     if (this.initialized) return true;
     
-    console.log('🚀 StreamProcessor: Initializing streaming processor');
-    
     // Check if browser supports streaming
     if (!window.ReadableStream || !window.TextDecoder) {
       console.warn('Browser does not support streaming, falling back to regular processing');
@@ -78,35 +76,30 @@ class StreamProcessor {
     
     // Ensure the components are properly initialized
     if (this.dataParser) {
-      console.log('🚀 StreamProcessor: Setting decoder on dataParser');
       this.dataParser.setDecoder(this.decoder);
     } else {
-      console.error('🚀 StreamProcessor: dataParser is not available!');
+      console.error('StreamProcessor: dataParser is not available!');
     }
     
     // Try to initialize web worker if supported
     try {
       if (window.Worker) {
-        console.log('⚡ StreamProcessor: Web Workers are supported, initializing worker');
         this.worker = new Worker('/js/workers/stream-worker.js');
         
         // Set up event listener for worker messages
         this.worker.onmessage = (e) => {
-          console.log('⚡ StreamProcessor: Received worker message:', e.data.type);
           this._handleWorkerMessage(e.data);
         };
         
         // Add error handler for worker errors
         this.worker.onerror = (error) => {
-          console.error('⚡ StreamProcessor: Worker error:', error);
+          console.error('Worker error:', error);
         };
-        
-        console.log('⚡ StreamProcessor: Worker initialized successfully');
       } else {
-        console.warn('⚡ StreamProcessor: Web Workers not supported by browser');
+        console.warn('Web Workers not supported by browser');
       }
     } catch (err) {
-      console.error('⚡ StreamProcessor: Failed to initialize streaming worker:', err);
+      console.error('Failed to initialize streaming worker:', err);
     }
     
     // Create a debug element to verify initialization
@@ -123,7 +116,6 @@ class StreamProcessor {
       console.error('Failed to create debug element:', err);
     }
     
-    console.log('🚀 StreamProcessor: Initialization complete');
     this.initialized = true;
     return true;
   }
@@ -185,14 +177,14 @@ class StreamProcessor {
         ].join(', ');
         
         const elementsToRemove = document.querySelectorAll(indicatorsToRemove);
-        console.log(`🚀 StreamProcessor: Removing ${elementsToRemove.length} elements during reset`);
+        // Removing elements during state reset
         elementsToRemove.forEach(element => element.remove());
       }
     }
     
     // Terminate worker if active
     if (this.worker) {
-      console.log('🚀 StreamProcessor: Terminating existing worker for new job');
+      // Terminating existing worker for new job
       this.worker.terminate();
       this.worker = null;
     }
@@ -205,8 +197,6 @@ class StreamProcessor {
    * @returns {Promise<boolean>} - Success status
    */
   async processBundleIds(bundleIds, searchParams = null) {
-    console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
-    
     // We only use structured params now - always in advanced mode
     let structuredParams = null;
     let searchMode = 'advanced'; // Always advanced mode now
@@ -217,7 +207,6 @@ class StreamProcessor {
       structuredParams = searchParams.map(term => {
         return { domain: typeof term === 'string' ? term.trim() : term };
       });
-      console.log('🚀 Legacy search terms converted to structured params:', structuredParams);
     } else if (searchParams && typeof searchParams === 'object') {
       // Support legacy simple mode by converting to advanced mode
       if (searchParams.mode === 'simple' && searchParams.queries) {
@@ -225,7 +214,6 @@ class StreamProcessor {
         structuredParams = searchParams.queries.map(term => {
           return { domain: term.trim() };
         });
-        console.log('🚀 Simple search mode converted to structured params:', structuredParams);
       } else if (searchParams.structuredParams) {
         // Use advanced mode structured params
         // Ensure structuredParams is always an array for consistency
@@ -235,7 +223,6 @@ class StreamProcessor {
           // Convert single object to array with one item
           structuredParams = [searchParams.structuredParams];
         }
-        console.log('🚀 Advanced search mode with params:', structuredParams);
       }
     }
     
@@ -250,13 +237,9 @@ class StreamProcessor {
     // Store search mode in a global property for reference elsewhere
     window.currentSearchMode = searchMode;
     
-    // For debugging
-    console.log('🚀 Using structured params:', structuredParams);
-    
     // First, remove any stray progress bars from previous exports or interruptions
     const extraProgressBars = document.querySelectorAll('.progress-indicator, #streamProgress');
     if (extraProgressBars.length > 0) {
-      console.log('🚀 Removing extra progress bars before starting new process');
       extraProgressBars.forEach(bar => {
         if (bar.parentNode) {
           bar.parentNode.removeChild(bar);
@@ -277,7 +260,7 @@ class StreamProcessor {
     
     // Ensure worker is terminated if it exists from a previous run
     if (this.worker) {
-      console.log('🚀 StreamProcessor: Terminating existing worker before starting new job');
+      // Terminate existing worker before starting new job
       this.worker.terminate();
       this.worker = null;
       
@@ -300,7 +283,7 @@ class StreamProcessor {
       }
     }
     
-    console.log('👉 State initialized with totalBundleIds:', this.stats.totalBundleIds);
+    // State initialized with bundle IDs count
     
     // Get result element and create initial UI
     const resultSection = DOMUtils.getElement('result');
@@ -315,7 +298,6 @@ class StreamProcessor {
     const existingProgressMessages = document.querySelectorAll('.progress-indicator');
     existingProgressMessages.forEach(element => {
       if (element.textContent && element.textContent.includes('Sending request')) {
-        console.log('🚀 Removing existing progress message:', element);
         element.remove();
       }
     });
@@ -340,32 +322,27 @@ class StreamProcessor {
       // Force attempt to create a worker if not already initialized
       if (!this.worker && window.Worker) {
         try {
-          console.log('⚡ StreamProcessor: Late initialization of Web Worker');
           this.worker = new Worker('/js/workers/stream-worker.js');
           
           // Set up event listener for worker messages
           this.worker.onmessage = (e) => {
-            console.log('⚡ StreamProcessor: Received worker message:', e.data.type);
             this._handleWorkerMessage(e.data);
           };
           
           // Add error handler for worker errors
           this.worker.onerror = (error) => {
-            console.error('⚡ StreamProcessor: Worker error:', error);
+            console.error('Worker error:', error);
             // Fall back to main thread if worker errors during setup
             this.worker = null;
           };
         } catch (workerError) {
-          console.error('⚡ StreamProcessor: Late worker initialization failed:', workerError);
+          console.error('Worker initialization failed:', workerError);
           this.worker = null;
         }
       }
       
       // If worker is available and initialized, use it
       if (this.worker) {
-        console.log('⚡ StreamProcessor: Using Web Worker for streaming processing');
-        // We no longer use progress UI for status messages
-        
         // Create visual indicator that worker is being used
         const workerIndicator = document.createElement('div');
         workerIndicator.className = 'worker-indicator';
@@ -379,13 +356,6 @@ class StreamProcessor {
             workerIndicator.parentNode.removeChild(workerIndicator);
           }
         }, 5000);
-        
-        // Enhanced logging before sending to worker
-      console.log('🚀 StreamProcessor: About to send to worker - structuredParams:', structuredParams);
-      console.log('🚀 StreamProcessor: Structured params type:', structuredParams ? typeof structuredParams : 'null');
-      if (structuredParams) {
-        console.log('🚀 StreamProcessor: Is structuredParams array?', Array.isArray(structuredParams));
-      }
         
       // Send message to worker with structured parameters - ensure we're sending complete data
       this.worker.postMessage({
@@ -407,7 +377,7 @@ class StreamProcessor {
       }
       
       // If no worker, process with main thread
-      console.warn('⚡ StreamProcessor: No worker available, falling back to main thread processing');
+      console.warn('No worker available, falling back to main thread processing');
       this.progressUI.setStatusMessage('Processing on main thread (slower)...', 'info');
       
       // Create visual indicator that main thread is being used
@@ -444,7 +414,6 @@ class StreamProcessor {
     try {
       // Add a cache-busting parameter to avoid cached responses
       const timestamp = Date.now();
-      console.log(`⚡ CRITICAL DEBUG: Starting stream fetch with timestamp ${timestamp}`);
       
       // First clear any "Sending request to server..." message that might be displayed
       const progressIndicator = document.querySelector('.progress-indicator');
@@ -460,7 +429,6 @@ class StreamProcessor {
       
       // If debug element doesn't exist, create it
       if (!debugElement) {
-        console.log('⚡ CRITICAL DEBUG: Creating debug information element');
         const debugInfoElement = document.createElement('div');
         debugInfoElement.id = 'debug-information';
         debugInfoElement.style.cssText = 'background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; overflow: auto; max-height: 300px; display: block;';
@@ -468,8 +436,6 @@ class StreamProcessor {
         // Add to the page
         const container = document.querySelector('.container') || document.body;
         container.appendChild(debugInfoElement);
-        
-        console.log('⚡ CRITICAL DEBUG: Debug information element created');
       }
       
       // Now get the element (should exist now) and update it
@@ -482,12 +448,7 @@ class StreamProcessor {
           Starting fetch request...
         `;
         debugInfoElement.style.display = 'block';
-      } else {
-        console.error('⚡ CRITICAL DEBUG: Failed to create or find debug information element');
       }
-      
-      // Log some network state
-      console.log('⚡ Network status:', navigator.onLine ? 'Online' : 'Offline');
       
       // Create debug panel
       this.debugger.initialize('Stream Debug');
@@ -498,12 +459,12 @@ class StreamProcessor {
       // Start streaming process with a shorter timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => {
-        console.log('⚡ CRITICAL DEBUG: Fetch timed out after 60 seconds!');
+        // Fetch request timed out
         controller.abort();
       }, 60000); // 60 second timeout
       
       try {
-        console.log('⚡ CRITICAL DEBUG: Sending fetch request...');
+        // Send API request
         
         // Update debug information
         const debugInfo = document.getElementById('debug-information') || document.getElementById('debugInfo');
@@ -515,7 +476,7 @@ class StreamProcessor {
         const ApiModule = await import('../api.js');
         const Api = ApiModule.default;
         
-        console.log('⚡ CRITICAL DEBUG: Using API.extractDomains which should redirect to streaming endpoint');
+        // Using API.extractDomains which should redirect to streaming endpoint
         
         // Use the API module which will automatically redirect to streaming endpoint
         // if streaming is enabled in localStorage
@@ -523,14 +484,11 @@ class StreamProcessor {
         
         // Check if we got a streaming response
         if (apiResponse.isStreaming && apiResponse.response) {
-          console.log('⚡ CRITICAL DEBUG: Api.extractDomains returned a streaming response!');
-          
-          // Log the full response object for debugging
-          console.log('⚡ CRITICAL DEBUG: Api.extractDomains response:', apiResponse);
+          // API returned a streaming response
           
           const response = apiResponse.response;
           
-          console.log('⚡ CRITICAL DEBUG: Fetch response received:', response.status, response.statusText);
+          // Fetch response received
           
           // Clear the timeout since we got a response
           clearTimeout(timeoutId);
@@ -560,13 +518,13 @@ class StreamProcessor {
           return true;
         } else {
           // We got a regular JSON response, not a streaming response
-          console.error('⚡ CRITICAL DEBUG: Api.extractDomains did not return a streaming response!');
+          // Api.extractDomains did not return streaming response
           throw new Error('Api.extractDomains did not return a streaming response. Check localStorage "streamingEnabled" setting.');
         }
         
         // Legacy code path - direct fetch to streaming endpoint
         // This is a fallback in case the Api.extractDomains approach doesn't work
-        console.log('⚡ CRITICAL DEBUG: FALLBACK: Using direct streaming API endpoint with nocache:', timestamp);
+        // Fallback: Using direct streaming API endpoint
         
         // Use the streaming endpoint directly as a fallback
         const response = await fetch(`/api/stream/extract-multiple?nocache=${timestamp}`, {
@@ -584,7 +542,7 @@ class StreamProcessor {
           signal: controller.signal
         });
         
-        console.log('⚡ CRITICAL DEBUG: FALLBACK: Fetch response received:', response.status, response.statusText);
+        // Fallback fetch response received
         
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
@@ -638,11 +596,9 @@ class StreamProcessor {
    */
   _processResult(result) {
     if (!result || !result.bundleId) {
-      console.error('📦 Error: Invalid result object received', result);
+      console.error('Error: Invalid result object received');
       return;
     }
-    
-    console.log('📦 Processing result for:', result.bundleId);
     
     // Update statistics
     this.stats.processedCount++;
@@ -654,18 +610,6 @@ class StreamProcessor {
       }
     } else {
       this.stats.errorCount++;
-    }
-    
-    // Log every 10th result to avoid console spam
-    if (this.stats.processedCount % 10 === 0 || this.stats.processedCount < 5) {
-      console.log('📊 Updated stats:', { 
-        processed: this.stats.processedCount, 
-        success: this.stats.successCount,
-        errors: this.stats.errorCount,
-        withAppAds: this.stats.withAppAdsTxtCount,
-        total: this.stats.totalBundleIds,
-        bufferSize: this.resultBuffer ? this.resultBuffer.length + 1 : 0 // +1 for current result
-      });
     }
     
     // Add to results array
@@ -747,7 +691,7 @@ class StreamProcessor {
         const hadResults = this.resultBuffer.length > 0;
         
         // Log rendering operation
-        console.log('📊 StreamProcessor: Rendered batch of', this.resultBuffer.length, 'results');
+        // Rendered batch of results
         
         // Clear buffer and reset rendering state
         this.resultBuffer = [];
@@ -892,18 +836,13 @@ class StreamProcessor {
    * @private
    */
   _handleWorkerMessage(message) {
-    console.log('⚡ StreamProcessor: Handling worker message:', message.type);
     const { type, data } = message;
     
     switch (type) {
       case 'initialize':
-        console.log('⚡ StreamProcessor: Worker initialize message received');
         // Initialize UI if needed
         if (!document.getElementById('results-tbody')) {
-          console.log('⚡ StreamProcessor: Initializing UI from worker message');
           this.resultsRenderer.initializeUI(null, data.totalBundleIds || this.stats.totalBundleIds, data.hasSearchTerms || false);
-        } else {
-          console.log('⚡ StreamProcessor: UI already initialized, skipping');
         }
         break;
         
@@ -921,8 +860,7 @@ class StreamProcessor {
           data.percent = 0; // Default to 0% if we can't calculate
         }
         
-        // Log the data from worker to help with debugging
-        console.log('Worker progress data:', data, 'Calculated percent:', data.percent);
+        // Process progress update from worker
         
         try {
           // Update progress UI with error handling
@@ -989,8 +927,6 @@ class StreamProcessor {
       case 'result':
         // Process individual result
         if (data.result) {
-          console.log('⚡ Worker result received:', data.result.bundleId);
-          
           // Add directly to results array - bypassing buffer since worker has its own batching
           this.results.push(data.result);
           
@@ -1003,20 +939,11 @@ class StreamProcessor {
         break;
         
       case 'complete':
-        console.log('⚡ StreamProcessor: Worker complete message received', {
-          processedCount: data.processedCount,
-          successCount: data.successCount, 
-          errorCount: data.errorCount,
-          withAppAdsTxtCount: data.withAppAdsTxtCount
-        });
-        
         // Store final results if provided
         if (data.results && Array.isArray(data.results)) {
-          console.log('⚡ StreamProcessor: Storing final results array from worker');
           this.results = data.results;
-          console.log('⚡ StreamProcessor: Received', this.results.length, 'results from worker');
           if (this.results.length === 0) {
-            console.warn('⚡ StreamProcessor: No results received from worker!');
+            console.warn('No results received from worker');
           }
         }
         
@@ -1044,12 +971,11 @@ class StreamProcessor {
         
         // Terminate the worker since we're completely done with it
         if (this.worker) {
-          console.log('⚡ StreamProcessor: Processing complete - terminating worker');
           try {
             this.worker.terminate();
             this.worker = null;
           } catch (err) {
-            console.error('⚡ Error terminating worker:', err);
+            console.error('Error terminating worker:', err);
           }
         }
         
@@ -1079,7 +1005,6 @@ class StreamProcessor {
    * @private
    */
   _clearAllProcessingIndicators() {
-    console.log('🚀 StreamProcessor: Clearing all processing indicators');
     
     // Get the result container using DOMUtils for caching
     const resultElement = DOMUtils.getElement('result');
@@ -1107,26 +1032,10 @@ class StreamProcessor {
     // Create a combined selector for a single query - more efficient
     const combinedSelector = elementsToRemove.join(', ');
     const elements = document.querySelectorAll(combinedSelector);
+    // Remove all matched elements using the more efficient Element.remove()
+    elements.forEach(element => element.remove());
     
-    // Log removal count for debugging
-    console.log(`🚀 StreamProcessor: Removing ${elements.length} indicator elements`);
-    
-    // Remove all matched elements
-    elements.forEach(element => {
-      if (element.parentNode) {
-        element.parentNode.removeChild(element);
-      }
-    });
-    
-    // We want to keep the results display visible
-    // DO NOT hide the results when exporting CSV
-    // Leave this commented for future reference
-    /*
-    const resultsDisplay = resultElement.querySelector('.stream-results-display');
-    if (resultsDisplay) {
-      resultsDisplay.style.display = 'none';
-    }
-    */
+    // Keep the results display visible during export
     
     // Clear any processing messages with a more efficient approach
     const staticIndicators = resultElement.querySelectorAll(':not(.stream-results-display)');
@@ -1144,7 +1053,6 @@ class StreamProcessor {
     
     // Now remove all at once
     indicatorsToRemove.forEach(element => element.remove());
-    console.log(`🚀 StreamProcessor: Removed ${indicatorsToRemove.length} message elements`);
   }
   
   /**
@@ -1161,9 +1069,6 @@ class StreamProcessor {
     window._lastGlobalExportTime = now; // Set timestamp here first
     this._exportInProgress = true;
     this._lastExportTime = now;
-    
-    // Log export attempt
-    console.log('CSV export initiated at', new Date().toISOString());
     
     if (!bundleIds || !bundleIds.length) {
       showNotification('No bundle IDs to export', 'error');
@@ -1185,27 +1090,17 @@ class StreamProcessor {
       if (searchParams.structuredParams) {
         // Advanced mode: use structuredParams
         structuredParams = searchParams.structuredParams;
-        console.log('CSV Export: Using advanced search mode with structuredParams:', structuredParams);
+        // Using advanced search mode with structured parameters
         
         // Ensure structuredParams is an array
         if (!Array.isArray(structuredParams)) {
           structuredParams = [structuredParams];
-          console.log('CSV Export: Converted structuredParams to array:', structuredParams);
+          // Converted parameters to array format
         }
       }
     }
     
-    // Debug check the variables
-    console.log('CSV Export: Final parameters:', {
-      mode: searchMode,
-      structuredParams
-    });
-    
-    // Log the actual parameters we'll use
-    console.log('CSV Export parameters:', {
-      bundleIds: bundleIds.length,
-      structuredParams: structuredParams
-    });
+    // Prepare export parameters
     
     // Get the results container to show progress
     const resultElement = DOMUtils.getElement('result');
@@ -1235,7 +1130,7 @@ class StreamProcessor {
       
       // Get the existing results
       const fullResults = window.AppState?.results || this.results || [];
-      console.log('CSV Export: Using', fullResults.length, 'existing results for client-side CSV generation');
+      // Using existing results for client-side CSV generation
       
       // Create CSV header
       let csvContent = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL,Advanced Search Results,Match Count,Matching Lines,Success,Error\n";
@@ -1298,7 +1193,6 @@ class StreamProcessor {
       
       // Set the link's href to the object URL
       downloadLink.href = url;
-      console.log(`Initiating download with ID: csv-download-${timestamp}`);
       
       // Append link to body and trigger click
       document.body.appendChild(downloadLink);
@@ -1307,7 +1201,6 @@ class StreamProcessor {
       setTimeout(() => {
         // Verify the link still exists (wasn't already clicked)
         if (document.getElementById(`csv-download-${timestamp}`)) {
-          console.log(`Clicking download link: csv-download-${timestamp}`);
           downloadLink.click();
           
           // Clean up
@@ -1349,7 +1242,7 @@ class StreamProcessor {
         window._lastGlobalExportTime = null;
         this._lastExportTime = null;
         this._exportInProgress = false;
-        console.log('Export timestamps and flags cleared, ready for next export');
+        // Export state cleared, ready for next export
       }, 3000);
       
       showNotification('CSV export complete', 'success');
@@ -1357,6 +1250,13 @@ class StreamProcessor {
       console.error('CSV export error:', err);
       showNotification(`Export error: ${err.message}`, 'error');
       this.progressUI.showError(`Export error: ${err.message}`);
+      
+      // Clean up any dangling download elements
+      const downloadElements = document.querySelectorAll('[id^="csv-download-"]');
+      downloadElements.forEach(el => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+      
       // Reset both local and global export timestamps and flags on error
       this._lastExportTime = null;
       window._lastGlobalExportTime = null;

@@ -46,7 +46,6 @@ async function streamAppAdsTxt(domain, searchTerms = null, responseStream = null
         await rateLimiter.limit('app-ads-txt');
         
         const url = `${protocol}://${domain}/app-ads.txt`;
-        logger.debug({ url }, 'Streaming app-ads.txt');
         
         // First make a HEAD request to check if the file exists and get its size
         try {
@@ -89,11 +88,7 @@ async function streamAppAdsTxt(domain, searchTerms = null, responseStream = null
           // Stream the file content and process it
           return await processAppAdsStream(url, validatedTerms, responseStream);
         } catch (headErr) {
-          logger.debug({
-            protocol,
-            domain,
-            error: headErr.message
-          }, 'HEAD request failed, trying GET instead');
+          // HEAD request failed, try GET instead
           
           // If HEAD failed, try direct GET request
           return await processAppAdsStream(url, validatedTerms, responseStream);
@@ -111,8 +106,6 @@ async function streamAppAdsTxt(domain, searchTerms = null, responseStream = null
         if (err.response?.status === 429 || err.response?.status === 403) {
           rateLimiter.reportError('app-ads-txt', err.response.status);
         }
-        
-        logger.debug(errorDetails, 'Failed to stream app-ads.txt');
         
         // Try next protocol
       }

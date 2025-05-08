@@ -201,14 +201,7 @@ function processSearchTermsInChunks(lines, searchTerms) {
         // Filter out any empty groups
         searchGroups = searchGroups.filter(group => group.length > 0);
         
-        safeSendToParent({
-          debug: true,
-          message: 'Using structured search with groups',
-          searchGroups: searchGroups.map(group => group.map(term => term.exactMatch)),
-          isStructuredSearch,
-          timestamp: Date.now(),
-          success: true
-        });
+        // Structured search enabled
       }
     }
     
@@ -221,17 +214,6 @@ function processSearchTermsInChunks(lines, searchTerms) {
       // For this implementation, we'll group all terms together for AND logic
       // This matches the expectation that searching for "appnexus.com 12447" finds lines with both terms
       searchGroups = [validSearchTerms];
-      
-      safeSendToParent({
-        debug: true,
-        message: 'Using simple search with AND logic between terms',
-        searchTerms: validSearchTerms.map(term => 
-          typeof term === 'object' ? term.exactMatch : term
-        ),
-        termCount: validSearchTerms.length,
-        timestamp: Date.now(),
-        success: true
-      });
     }
     
     // Define helper function to compile matchers
@@ -264,20 +246,9 @@ function processSearchTermsInChunks(lines, searchTerms) {
     const totalChunks = Math.ceil(lines.length / CHUNK_SIZE);
     
     for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
-      // Report progress and memory usage for large files
+      // Check memory for large files
       if (lines.length > 10000 && (batchIndex % 5 === 0 || batchIndex === totalChunks - 1)) {
-        const memoryUsage = monitorMemory();
-        
-        safeSendToParent({
-          debug: true,
-          progress: `Processing search terms: ${Math.min(((batchIndex + 1) / totalChunks) * 100, 100).toFixed(1)}%`,
-          batch: batchIndex + 1,
-          totalChunks,
-          matchesFound: searchResults.matchingLines.length,
-          memoryUsage,
-          timestamp: Date.now(),
-          success: true
-        });
+        monitorMemory();
       }
       
       const batchStart = batchIndex * CHUNK_SIZE;
@@ -359,16 +330,8 @@ function processSearchTermsInChunks(lines, searchTerms) {
       }
     }
     
-    // Report completion with memory usage
-    const finalMemory = monitorMemory();
-    safeSendToParent({
-      debug: true,
-      message: 'Completed search term processing',
-      matchesFound: searchResults.matchingLines.length,
-      memoryUsage: finalMemory,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Final memory check
+    monitorMemory();
     
     // Dynamically adjust max matches based on memory usage
     // This helps prevent memory issues with very large result sets
@@ -429,14 +392,7 @@ function processSearchTermsInChunks(lines, searchTerms) {
  */
 function analyzeAppAdsTxtInChunks(lines, options = {}) {
   try {
-    // Initial debug message
-    safeSendToParent({
-      debug: true,
-      message: 'Starting chunked app-ads.txt analysis',
-      lineCount: lines.length,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Begin chunked analysis
     
     // Validate input
     if (!Array.isArray(lines)) {
@@ -461,21 +417,9 @@ function analyzeAppAdsTxtInChunks(lines, options = {}) {
     const totalChunks = Math.ceil(lines.length / CHUNK_SIZE);
     
     for (let batchIndex = 0; batchIndex < totalChunks; batchIndex++) {
-      // Report progress for large files
+      // Monitor memory for large files
       if (lines.length > 5000 && (batchIndex % 5 === 0 || batchIndex === totalChunks - 1)) {
-        // Monitor memory with each progress update
-        const memoryUsage = monitorMemory();
-        
-        safeSendToParent({
-          debug: true,
-          progress: `Analyzing app-ads.txt: ${Math.min(((batchIndex + 1) / totalChunks) * 100, 100).toFixed(1)}%`,
-          batch: batchIndex + 1,
-          totalChunks,
-          validLinesFound: validLineCount,
-          memoryUsage,
-          timestamp: Date.now(),
-          success: true
-        });
+        monitorMemory();
       }
       
       const batchStart = batchIndex * CHUNK_SIZE;
@@ -562,18 +506,8 @@ function analyzeAppAdsTxtInChunks(lines, options = {}) {
       }
     }
     
-    // Report completion with final memory usage
-    const finalMemory = monitorMemory();
-    
-    safeSendToParent({
-      debug: true,
-      message: 'Completed app-ads.txt analysis',
-      validLines: validLineCount,
-      uniquePublishers: publishers.size,
-      memoryUsage: finalMemory,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Final memory check
+    monitorMemory();
     
     return {
       totalLines: lines.length,
@@ -632,16 +566,8 @@ function processAppAdsContent() {
       throw new Error('Invalid or missing content in worker data');
     }
     
-    // Log initial memory usage 
-    const initialMemory = monitorMemory();
-    safeSendToParent({
-      debug: true,
-      message: 'Initial memory usage',
-      memoryUsage: initialMemory,
-      contentLength: content.length,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Monitor initial memory
+    monitorMemory();
     
     // Split content into lines using a more memory-efficient approach
     // for very large files
@@ -649,13 +575,6 @@ function processAppAdsContent() {
     try {
       // Stream-like approach for very large files
       if (content.length > 5000000) { // 5MB threshold
-        safeSendToParent({
-          debug: true,
-          message: 'Using stream-like approach for large file',
-          contentLength: content.length,
-          timestamp: Date.now(),
-          success: true
-        });
         
         // Process in chunks to avoid large array allocation
         const chunkSize = 1000000; // 1MB chunks
@@ -704,26 +623,12 @@ function processAppAdsContent() {
         lines = content.split(/\r\n|\n|\r/);
       }
       
-      safeSendToParent({
-        debug: true,
-        message: 'Content split into lines',
-        lineCount: lines.length,
-        timestamp: Date.now(),
-        success: true
-      });
     } catch (splitErr) {
       throw new Error(`Failed to split content into lines: ${splitErr.message}`);
     }
     
-    // Log memory usage after splitting
-    const afterSplitMemory = monitorMemory();
-    safeSendToParent({
-      debug: true,
-      message: 'Memory usage after splitting',
-      memoryUsage: afterSplitMemory,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Monitor memory after splitting
+    monitorMemory();
     
     // Analyze the content using the new chunked processing
     let analyzed;
@@ -753,15 +658,8 @@ function processAppAdsContent() {
       };
     }
     
-    // Log memory usage after analysis
-    const afterAnalysisMemory = monitorMemory();
-    safeSendToParent({
-      debug: true,
-      message: 'Memory usage after analysis',
-      memoryUsage: afterAnalysisMemory,
-      timestamp: Date.now(),
-      success: true
-    });
+    // Monitor memory after analysis
+    monitorMemory();
     
     // Process search terms if provided - with chunked processing
     let searchResults = null;

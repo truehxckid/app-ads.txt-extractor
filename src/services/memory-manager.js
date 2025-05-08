@@ -96,22 +96,18 @@ class MemoryManager {
         if (timeSinceLastGc > 5000) {
           this.forceGarbageCollection();
           
-          // Log memory usage after GC
+          // Only log significant memory freed
           const afterGc = process.memoryUsage();
           const memoryFreed = memUsage.heapUsed - afterGc.heapUsed;
+          const memoryFreedMB = Math.round(memoryFreed / (1024 * 1024));
           
-          logger.info({
-            memoryBefore: {
-              heapUsed: `${Math.round(memUsage.heapUsed / (1024 * 1024))}MB`,
-              heapTotal: `${Math.round(memUsage.heapTotal / (1024 * 1024))}MB`
-            },
-            memoryAfter: {
-              heapUsed: `${Math.round(afterGc.heapUsed / (1024 * 1024))}MB`,
-              heapTotal: `${Math.round(afterGc.heapTotal / (1024 * 1024))}MB`
-            },
-            memoryFreed: `${Math.round(memoryFreed / (1024 * 1024))}MB`,
-            heapUsageRatio: heapUsageRatio.toFixed(2)
-          }, 'Forced garbage collection complete');
+          // Only log if significant memory was freed (more than 10MB)
+          if (memoryFreedMB > 10) {
+            logger.info({
+              memoryFreedMB: memoryFreedMB,
+              heapUsageRatio: heapUsageRatio.toFixed(2)
+            }, 'Forced garbage collection complete');
+          }
         }
       }
       
@@ -128,7 +124,6 @@ class MemoryManager {
    */
   forceGarbageCollection() {
     if (!this.canForceGc) {
-      logger.debug('Force GC not available - run Node with --expose-gc');
       return false;
     }
     

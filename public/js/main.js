@@ -1,6 +1,5 @@
 /**
  * Main entry point for App-Ads.txt Extractor
- * Initializes the application and connects modules
  */
 
 import AppState from './modules/app-state.js';
@@ -17,10 +16,15 @@ import UnifiedSearch from './modules/unified-search.js';
  */
 function initApp() {
   try {
+    // Remove any existing debug info panels
+    const debugInfo = document.getElementById('debugInfo');
+    if (debugInfo) {
+      debugInfo.remove();
+    }
     // Check browser compatibility
     const compatibilityIssues = checkBrowserSupport();
     if (compatibilityIssues.length > 0) {
-      console.warn('Browser compatibility issues:', compatibilityIssues);
+      // Browser compatibility issues detected
     }
     
     // Initialize theme
@@ -35,15 +39,11 @@ function initApp() {
     // Initialize streaming integration
     StreamingIntegration.initialize();
     
-    // Initialize progress UI (explicitly)
-    console.info('Initializing StreamProgressUI module...');
-    
-    // Initialize unified search component
-    console.info('Initializing UnifiedSearch module...');
+    // Initialize UI components
     UnifiedSearch.initialize();
     
-    // Expose globally for debugging and direct access
-    window.ProgressUI = StreamProgressUI;
+    // Initialize progress UI
+    StreamProgressUI.initialize();
     
     // Add global error handling
     window.addEventListener('error', EventHandler.handleGlobalError);
@@ -51,12 +51,8 @@ function initApp() {
     
     // Initial form setup
     setupInitialForm();
-    
-    console.info('App initialized successfully');
-    console.info('Press Ctrl+D to toggle debug mode');
-    
   } catch (err) {
-    console.error('Failed to initialize application:', err);
+    // Failed to initialize application
     DOMUtils.showErrorBoundary('Failed to initialize application');
   }
 }
@@ -81,12 +77,10 @@ if (document.readyState === 'loading') {
   initApp();
 }
 
-// Export for debugging
-window.AppDebug = {
-  AppState: AppState,
+// Export minimal app utilities
+window.AppUtilities = {
   resetApp: () => {
     AppState.reset();
     window.location.reload();
-  },
-  StreamingEnabled: () => StreamingIntegration.streamingEnabled
+  }
 };

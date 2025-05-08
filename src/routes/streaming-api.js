@@ -304,16 +304,12 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       throw new BadRequestError('Missing or invalid bundle IDs. Please provide an array of bundle IDs.');
     }
     
-    // Log if we received existing results from the client
-    console.log(`CSV Export: Received ${existingResults?.length || 0} existing results from client`);
-    
     // Check request size
     const requestSize = JSON.stringify(req.body).length;
-    console.log(`CSV Export: Request payload size: ${requestSize} bytes`);
     
-    // Increase request size limit for this endpoint
+    // Log large request sizes
     if (requestSize > 500000) {
-      console.log(`CSV Export: Request too large (${requestSize} bytes), processing without existing results`);
+      logger.warn(`CSV Export: Request too large (${requestSize} bytes), processing without existing results`);
     }
     
     // Validate and filter bundle IDs
@@ -392,7 +388,7 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     }
     
     // If we don't have existing results, process the bundle IDs from scratch
-    console.log("No existing results available, fetching data from scratch");
+    logger.info('No existing results available, fetching data from scratch');
     
     // Process bundle IDs in larger batches for better performance
     const BATCH_SIZE = 25; // Increased from 10 to 25 for better throughput
@@ -444,8 +440,7 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       // Wait for all bundle IDs in batch to complete
       const batchResults = await Promise.all(batchPromises);
       
-      // Log batch results summary for debugging
-      console.log(`CSV Export: Processing batch of ${batchResults.length} results`);
+      // Process batch results
       
       // Extra processing step to ensure search results are properly formatted
       const processedResults = batchResults.map(result => {
@@ -599,23 +594,7 @@ function generateCsvLine(result, searchTerms) {
   // Check both new lightweight format (result.hasAppAds) and legacy format (result.appAdsTxt?.exists)
   const hasAppAds = result.success && (result.hasAppAds || result.appAdsTxt?.exists);
   
-  // Format the detailed result structure to debug match information
-  const detailedInfo = {
-    bundleId: result.bundleId,
-    domain: result.domain,
-    hasAppAds: hasAppAds,
-    hasSearchResults: result.appAdsTxt?.searchResults || result.matchInfo ? true : false,
-    matchesAdvancedSearch: result.matchesAdvancedSearch,
-    hasMatchInfo: result.matchInfo ? true : false,
-    searchResultInfo: result.appAdsTxt?.searchResults ? {
-      count: result.appAdsTxt.searchResults.count,
-      hasTermResults: !!result.appAdsTxt.searchResults.termResults,
-      termResultsLength: result.appAdsTxt.searchResults.termResults?.length || 0
-    } : null
-  };
-  
-  // Create debug logging to understand the result structure
-  console.log('Processing result for CSV export:', detailedInfo);
+  // Extract necessary data for CSV generation
   
   // Basic columns
   const basicCols = [

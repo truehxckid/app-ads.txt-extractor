@@ -14,7 +14,6 @@ class StreamDataParser {
    */
   constructor(decoder) {
     this.decoder = decoder || new TextDecoder();
-    console.log('🔍 StreamDataParser instance created with decoder:', !!this.decoder);
   }
   
   /**
@@ -23,7 +22,6 @@ class StreamDataParser {
    */
   setDecoder(decoder) {
     if (decoder) {
-      console.log('🔍 StreamDataParser: Setting decoder');
       this.decoder = decoder;
     }
   }
@@ -37,10 +35,6 @@ class StreamDataParser {
    * @returns {Promise<void>}
    */
   async processStream(stream, resultCallback, debuggerInstance, progressUI) {
-    console.log('🌊 StreamDataParser.processStream: Starting stream processing');
-    console.log('🌊 CRITICAL CHECK: Stream exists:', !!stream);
-    console.log('🌊 CRITICAL CHECK: Stream is readable:', !!stream.getReader);
-    
     // Get stream reader
     const reader = stream.getReader();
     let buffer = '';
@@ -48,17 +42,15 @@ class StreamDataParser {
     let chunkCount = 0;
     const streamStartTime = Date.now();
     
-    // Add debug event
+    // Add stream processing start event
     try {
-      // Add an event to the monitor to help debug
       if (window.dispatchEvent) {
         window.dispatchEvent(new CustomEvent('stream-processing-started', {
           detail: { streamStartTime, timestamp: Date.now() }
         }));
-        console.log('🌊 STREAM EVENT: Dispatched stream-processing-started event');
       }
     } catch (e) {
-      console.error('Error dispatching stream event:', e);
+      // Silent error handling for non-critical event
     }
     
     // Set up heartbeat for progress updates
@@ -74,9 +66,7 @@ class StreamDataParser {
     
     try {
       // Process the stream
-      console.log('⚡ SUPER CRITICAL DEBUG: Starting to read stream');
-      
-      // Update debug info safely
+      // Update debug info safely if in debug mode
       const updateDebugInfo = (message) => {
         try {
           const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
@@ -84,19 +74,15 @@ class StreamDataParser {
             debugElement.innerHTML += message;
           }
         } catch (err) {
-          console.error('Error updating debug info:', err);
+          // Silent error handling for non-critical UI updates
         }
       };
       
-      updateDebugInfo('<br>Starting to read stream...');
-      
       while (true) {
         try {
-          console.log('⚡ Stream reader: Calling reader.read()...');
           const { done, value } = await reader.read();
           
           if (done) {
-            console.log('⚡ Stream reader: Read complete, stream done');
             updateDebugInfo('<br>Stream read complete!');
             if (debuggerInstance) {
               debuggerInstance.logStatus('Stream complete (done=true)');
@@ -105,7 +91,6 @@ class StreamDataParser {
           }
           
           // Decode the chunk and add to buffer
-          console.log(`⚡ Stream reader: Received data chunk of size ${value?.length || 0} bytes`);
           updateDebugInfo(`<br>Received chunk #${chunkCount+1} (${value?.length || 0} bytes)`);
           
           const chunk = this.decoder.decode(value, { stream: true });
@@ -118,25 +103,21 @@ class StreamDataParser {
           }
           
           // Process complete objects
-          console.log('⚡ Parsing buffer of length:', buffer.length);
           updateDebugInfo(`<br>Parsing buffer (${buffer.length} bytes)...`);
           
           const extractedResults = this._extractObjectsFromBuffer(buffer);
           
           if (extractedResults.objects.length > 0) {
-            console.log(`⚡⚡⚡ SUCCESS!! Extracted ${extractedResults.objects.length} results from buffer!`);
             updateDebugInfo(`<br><strong style="color:green">SUCCESS! Found ${extractedResults.objects.length} results</strong>`);
             buffer = extractedResults.remainingBuffer;
             
             // Process each extracted result
             for (const resultObject of extractedResults.objects) {
-              console.log(`⚡⚡⚡ Processing result object:`, resultObject.bundleId);
               updateDebugInfo(`<br>Processing: ${resultObject.bundleId || 'unknown'}`);
               
               if (resultCallback) {
                 resultCallback(resultObject);
               } else {
-                console.error('⚡⚡⚡ CRITICAL ERROR: resultCallback is not defined!');
                 updateDebugInfo('<br><span style="color:red">ERROR: Result callback missing!</span>');
               }
               parseCount++;
@@ -150,7 +131,6 @@ class StreamDataParser {
           if (debuggerInstance) {
             debuggerInstance.logError('Error reading chunk: ' + readError.message);
           }
-          console.error('Error reading stream chunk:', readError);
           // Continue trying to read in case of recoverable errors
         }
       }
@@ -176,8 +156,6 @@ class StreamDataParser {
    * @private
    */
   _extractObjectsFromBuffer(buffer) {
-    console.log('🔍 Parsing buffer of length:', buffer.length);
-    
     const objects = [];
     let currentIndex = 0;
     let objectStart = -1;
@@ -277,11 +255,6 @@ class StreamDataParser {
           remainingBuffer: buffer.substring(nextStart)
         };
       }
-    }
-    
-    // Log extracted objects
-    if (objects.length > 0) {
-      console.log(`📊 Extracted ${objects.length} objects from buffer`);
     }
     
     // Return objects and remaining buffer

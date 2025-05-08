@@ -13,7 +13,6 @@ class AppStateManager {
   constructor() {
     // Core state
     this.isProcessing = false;
-    this.debugMode = false;
     this.darkMode = false;
     
     // Results and pagination
@@ -36,10 +35,6 @@ class AppStateManager {
    * Initialize state from localStorage if available
    */
   initialize() {
-    // Load debug mode preference
-    this.debugMode = localStorage.getItem('debugMode') === 'true';
-    this.updateDebugMode(this.debugMode);
-    
     // Load dark mode preference from theme manager
     this.darkMode = document.documentElement.getAttribute('data-theme') === 'dark';
     
@@ -48,56 +43,6 @@ class AppStateManager {
     if (!isNaN(savedPageSize) && savedPageSize > 0) {
       this.pageSize = savedPageSize;
     }
-    
-    console.log('AppState initialized with:', {
-      debugMode: this.debugMode,
-      darkMode: this.darkMode,
-      pageSize: this.pageSize
-    });
-  }
-  
-  /**
-   * Toggle debug mode
-   * @returns {boolean} New debug mode state
-   */
-  toggleDebugMode() {
-    const newState = !this.debugMode;
-    this.updateDebugMode(newState);
-    localStorage.setItem('debugMode', newState);
-    return newState;
-  }
-  
-  /**
-   * Update debug mode and related UI
-   * @param {boolean} isDebug - Debug mode state
-   */
-  updateDebugMode(isDebug) {
-    this.debugMode = isDebug;
-    
-    // Look for debug info element
-    let debugInfo = document.getElementById('debugInfo');
-    
-    // If debug mode is enabled but element doesn't exist, create it
-    if (this.debugMode && !debugInfo) {
-      debugInfo = document.createElement('div');
-      debugInfo.id = 'debugInfo';
-      debugInfo.className = 'debug-info';
-      debugInfo.style.cssText = 'position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); color: #00ff00; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; max-width: 50%; max-height: 200px; overflow: auto; z-index: 9999;';
-      debugInfo.innerHTML = '<strong>Debug Mode Enabled</strong><br>App-Ads.txt Extractor<br>Press Ctrl+D to toggle';
-      document.body.appendChild(debugInfo);
-      
-      console.log('Debug info element created');
-    }
-    
-    // Update visibility if element exists
-    if (debugInfo) {
-      debugInfo.style.display = this.debugMode ? 'block' : 'none';
-    }
-    
-    // Log debug mode state
-    console.log(`Debug mode ${this.debugMode ? 'enabled' : 'disabled'}`);
-    
-    this.notifyListeners('stateChange', { debugMode: this.debugMode });
   }
   
   /**
@@ -232,9 +177,6 @@ class AppStateManager {
     } else {
       this.advancedSearchParams = null;
     }
-    
-    console.log('Advanced search parameters set in AppState:', this.advancedSearchParams);
-    
     // Notify listeners if needed
     this.notifyListeners('stateChange', { 
       advancedSearchParams: this.advancedSearchParams
@@ -301,7 +243,7 @@ class AppStateManager {
       try {
         callback(data);
       } catch (err) {
-        console.error(`Error in ${event} listener:`, err);
+        // Silently ignore errors in listeners to avoid console pollution
       }
     }
   }
@@ -313,7 +255,6 @@ const AppState = new AppStateManager();
 // Make AppState available globally
 if (typeof window !== 'undefined') {
   window.AppState = AppState;
-  console.log('AppState attached to window object');
 }
 
 export default AppState;

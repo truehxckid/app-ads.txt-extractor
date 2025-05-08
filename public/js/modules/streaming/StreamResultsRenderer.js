@@ -45,7 +45,6 @@ class StreamResultsRenderer {
     
     // Listen for stream completion events to show results
     window.addEventListener('streaming-show-results', (event) => {
-      console.log('🔄 StreamResultsRenderer: Received show-results event');
       const appState = window.AppState || {};
       const results = appState.results || [];
       
@@ -56,7 +55,6 @@ class StreamResultsRenderer {
     // Listen for progress updates from StreamProcessor
     window.addEventListener('streaming-progress-update', (event) => {
       if (event.detail && event.detail.stats) {
-        console.log('🔄 StreamResultsRenderer: Received progress update from StreamProcessor', event.detail.stats);
         // Sync our stats with StreamProcessor's stats
         this.syncWithProcessorStats(event.detail.stats);
       }
@@ -101,15 +99,26 @@ class StreamResultsRenderer {
    * @param {Array} keys - Keys to clear (or all if not specified)
    */
   _clearCache(keys = null) {
-    if (keys) {
+    if (keys && Array.isArray(keys) && keys.length > 0) {
+      // Clear only specified keys
       keys.forEach(key => {
-        this.domCache[key] = null;
+        if (key in this.domCache) {
+          this.domCache[key] = null;
+        }
       });
     } else {
-      // Clear all cache entries
-      Object.keys(this.domCache).forEach(key => {
-        this.domCache[key] = null;
-      });
+      // Clear all cache entries in one operation
+      this.domCache = {
+        resultElement: this.resultElement, // Preserve main container reference
+        resultsContainer: null,
+        resultsTable: null,
+        resultsTableContainer: null,
+        resultsTableBody: null,
+        progressIndicators: null,
+        workerIndicator: null,
+        completionBanner: null,
+        paginationControls: null
+      };
     }
   }
   
@@ -138,7 +147,7 @@ class StreamResultsRenderer {
     // Perform thorough cleanup of all existing elements
     this._cleanupPreviousElements();
     
-    console.log('🔄 StreamResultsRenderer: Initializing UI with', totalItems, 'items');
+    // Initialize UI with provided items count
     
     // First check if we already have any progress indicators
     // Remove all existing visual-indicators-container to avoid overlap
@@ -213,8 +222,6 @@ class StreamResultsRenderer {
    * @private
    */
   _cleanupPreviousElements() {
-    console.log('🔄 StreamResultsRenderer: Cleaning up previous elements');
-    
     // Remove all indicators and processing elements
     const elementsToRemove = [
       '.worker-processing-indicator', 
@@ -246,8 +253,6 @@ class StreamResultsRenderer {
       }
     });
     
-    console.log(`🔄 StreamResultsRenderer: Removed ${removedCount} elements`);
-    
     // Clear any progress messages or indicators without specific classes
     if (this.resultElement) {
       // Find any elements that might contain progress-related text
@@ -267,7 +272,6 @@ class StreamResultsRenderer {
         element.remove();
       });
       
-      console.log(`🔄 StreamResultsRenderer: Removed ${textElements.length} text-matched elements`);
     }
     
     // Clear the DOM cache after cleanup
@@ -279,17 +283,7 @@ class StreamResultsRenderer {
    * @private
    */
   _setupEventListeners() {
-    // REMOVED redundant event listeners - All actions with data-action 
-    // are now handled by the central EventHandler in event-handler.js
-    
-    // Previously this method had duplicate handlers for:
-    // - toggle-ads
-    // - toggle-matches
-    // - copy
-    // - tab-switch
-    
-    // These are now all handled by the main event handler 
-    // through a single document click event listener in EventHandler.js
+    // All UI events are centralized in EventHandler.js
   }
   
   /**
@@ -305,8 +299,6 @@ class StreamResultsRenderer {
     this.cumulativeStats.errors = processorStats.errorCount || processorStats.errors || this.cumulativeStats.errors;
     this.cumulativeStats.withAppAds = processorStats.withAppAdsTxtCount || processorStats.withAppAds || this.cumulativeStats.withAppAds;
     this.cumulativeStats.total = processorStats.totalBundleIds || processorStats.total || this.cumulativeStats.total;
-    
-    console.log('🔄 StreamResultsRenderer: Synced with processor stats', this.cumulativeStats);
     
     // Update the UI with the synced stats
     this.updateSummaryStats(this.cumulativeStats);
@@ -383,10 +375,7 @@ class StreamResultsRenderer {
   renderBatch(results, searchTerms = []) {
     if (!results || !results.length) return;
     
-    console.log('🔄 StreamResultsRenderer: Received batch of', results.length, 'results');
-    
-    // Instead of trying to render results in real-time, we'll just accumulate them
-    // and update the counter statistics
+    // Accumulate results and update counter statistics
     
     try {
       // Count number of results with app-ads.txt
@@ -411,9 +400,7 @@ class StreamResultsRenderer {
         total: this.cumulativeStats.total || this.stats?.totalBundleIds || 0
       };
       
-      console.log('🔄 StreamResultsRenderer: Cumulative stats:', updatedStats);
-      
-      // Update summary stats with the cumulative counts
+      // Update summary stats with cumulative counts
       this.updateSummaryStats(updatedStats);
       
       // Dispatch a custom event to notify that results were processed
@@ -429,7 +416,7 @@ class StreamResultsRenderer {
         }));
       }
     } catch (err) {
-      console.error('🔄 Error processing results batch:', err);
+      // Silent error handling for non-critical batch processing
     }
   }
   
@@ -455,31 +442,23 @@ class StreamResultsRenderer {
     
     // Try to get results from AppState if none provided
     if (!results || !results.length) {
-      console.log('🔄 StreamResultsRenderer: No results provided, trying to get from AppState');
-      
       // Try to get AppState via import
       import('../app-state.js').then(module => {
-        console.log('🔄 Imported AppState:', module.default);
         const importedAppState = module.default;
         
         if (importedAppState && importedAppState.results && importedAppState.results.length) {
-          console.log('🔄 Found results in imported AppState:', importedAppState.results.length);
           this._renderResults(importedAppState.results);
           return;
         } else {
-          console.log('🔄 No results in imported AppState, trying window.AppState');
           // Fall back to window.AppState
           const windowAppState = window.AppState || {};
           if (windowAppState.results && windowAppState.results.length) {
-            console.log('🔄 Found results in window.AppState:', windowAppState.results.length);
             this._renderResults(windowAppState.results);
           } else {
-            console.log('🔄 No results in window.AppState, rendering empty results');
             this._renderResults([]);
           }
         }
       }).catch(error => {
-        console.error('🔄 Error importing AppState:', error);
         this._renderResults(results || []);
       });
     } else {
@@ -494,8 +473,6 @@ class StreamResultsRenderer {
    * @private
    */
   _renderResults(results) {
-    console.log('🔄 StreamResultsRenderer: Rendering', results.length, 'results');
-    
     // Filter results for advanced search if needed
     const filteredResults = results.filter(result => {
       // Keep results if:
@@ -504,9 +481,6 @@ class StreamResultsRenderer {
       // 3. Result doesn't have the matchesAdvancedSearch property (backward compatibility)
       return !('matchesAdvancedSearch' in result) || result.matchesAdvancedSearch === true;
     });
-    
-    console.log('🔄 StreamResultsRenderer: Filtered to', filteredResults.length, 'results after advanced search filtering');
-    
     // Store the full results for pagination
     this.allResults = filteredResults;
     
@@ -780,7 +754,6 @@ class StreamResultsRenderer {
   _setupEventListeners(container) {
     // Safety check - if container is undefined, exit early
     if (!container) {
-      console.warn('StreamResultsRenderer: No container provided to _setupEventListeners');
       return;
     }
     
@@ -896,8 +869,6 @@ const streamResultsRenderer = new StreamResultsRenderer();
  */
 streamResultsRenderer.updateCompletionStatus = function(stats) {
   if (!this.resultElement) return;
-  
-  console.log('🔄 StreamResultsRenderer: Processing complete, updating UI with stats:', stats);
   
   // Create a streaming completion banner
   const completionBanner = document.createElement('div');
