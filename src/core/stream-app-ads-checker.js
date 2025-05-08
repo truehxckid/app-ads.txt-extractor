@@ -393,11 +393,17 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
           // Create search results if needed
           let searchResults = null;
           if (searchTerms && searchTerms.length > 0) {
+            // Count the unique lines that matched - not the total individual term matches
+            // This provides a more accurate count of actual matching lines
+            const uniqueMatchingLines = new Set();
+            searchMatchingLines.forEach(line => uniqueMatchingLines.add(line.content));
+            
             searchResults = {
               terms: searchTerms,
               termResults: searchTermResults,
               matchingLines: searchMatchingLines,
-              count: searchMatchingLines.length
+              // Use the number of unique lines as the count - this fixes overcounting issues
+              count: uniqueMatchingLines.size
             };
           }
           

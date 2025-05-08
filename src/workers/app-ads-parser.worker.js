@@ -363,8 +363,16 @@ function processSearchTermsInChunks(lines, searchTerms) {
       }
     });
     
-    // Set total match count
-    searchResults.count = searchResults.totalMatchingLines || searchResults.matchingLines.length;
+    // Count unique matching lines to fix overcounting issues
+    const uniqueMatchingLines = new Set();
+    searchResults.matchingLines.forEach(line => {
+      if (line && line.content) {
+        uniqueMatchingLines.add(line.content);
+      }
+    });
+    
+    // Set total match count based on unique lines
+    searchResults.count = searchResults.totalMatchingLines || uniqueMatchingLines.size;
     
     return searchResults;
   } catch (err) {

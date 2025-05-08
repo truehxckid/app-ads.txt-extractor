@@ -613,21 +613,31 @@ async function processStreamedContent(stream, searchTerms = null, structuredPara
         if (structuredParams) {
           // For advanced search
           const formattedParams = Array.isArray(structuredParams) ? structuredParams : [structuredParams];
+          // Count the unique lines that matched - not the total individual term matches
+          const uniqueMatchingLines = new Set();
+          searchMatchingLines.forEach(line => uniqueMatchingLines.add(line.content));
+          
           searchResults = {
             mode: 'advanced',
             advancedParams: formattedParams,
             termResults: searchTermResults,
             matchingLines: searchMatchingLines,
-            count: searchMatchingLines.length
+            // Use the number of unique lines as the count - this fixes overcounting issues
+            count: uniqueMatchingLines.size
           };
         } else if (searchTerms && searchTerms.length > 0) {
           // For simple search
+          // Count the unique lines that matched - not the total individual term matches
+          const uniqueMatchingLines = new Set();
+          searchMatchingLines.forEach(line => uniqueMatchingLines.add(line.content));
+          
           searchResults = {
             mode: 'simple',
             terms: searchTerms,
             termResults: searchTermResults,
             matchingLines: searchMatchingLines,
-            count: searchMatchingLines.length
+            // Use the number of unique lines as the count - this fixes overcounting issues
+            count: uniqueMatchingLines.size
           };
         }
         

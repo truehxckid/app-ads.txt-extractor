@@ -558,6 +558,25 @@ function matchesStructuredParams(result, params) {
     }
   }
   
+  // Fix the match count to use unique entries instead of summing up individual matches
+  if (hasAnyMatches && result.appAdsTxt.searchResults) {
+    // Count unique matching entries instead of summing up individual matches
+    // This fixes the overcounting issue with multiple matches
+    const uniqueMatches = new Set();
+    
+    // Collect unique matches from all term results
+    if (result.appAdsTxt.searchResults.termResults) {
+      result.appAdsTxt.searchResults.termResults.forEach(termResult => {
+        if (termResult.matches) {
+          termResult.matches.forEach(match => uniqueMatches.add(match));
+        }
+      });
+    }
+    
+    // Update the count to the number of unique matches
+    result.appAdsTxt.searchResults.count = uniqueMatches.size;
+  }
+
   // Return true if any parameter set matched (either in entries or raw content)
   return hasAnyMatches;
 }
