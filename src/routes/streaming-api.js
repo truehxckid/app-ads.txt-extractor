@@ -298,11 +298,14 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
   let processedCount = 0;
   
   try {
-    const { bundleIds, searchTerms, structuredParams } = req.body;
+    const { bundleIds, searchTerms, structuredParams, existingResults } = req.body;
     
     if (!bundleIds || !Array.isArray(bundleIds) || bundleIds.length === 0) {
       throw new BadRequestError('Missing or invalid bundle IDs. Please provide an array of bundle IDs.');
     }
+    
+    // Log if we received existing results from the client
+    console.log(`CSV Export: Received ${existingResults?.length || 0} existing results from client`);
     
     // Validate and filter bundle IDs
     // Allow more bundle IDs for CSV export
@@ -331,6 +334,7 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       searchTermsCount: validatedTerms?.length || 0,
       hasStructuredParams: !!validatedStructuredParams,
       isAdvancedSearch,
+      hasExistingResults: existingResults && existingResults.length > 0,
       clientIp: req.ip,
       endpoint: 'stream/export-csv'
     }, 'Streaming CSV export request');
@@ -344,6 +348,42 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     
     // Write header
     res.write(csvHeader);
+    
+    // Check if we have existing results from the client to use
+    if (existingResults && Array.isArray(existingResults) && existingResults.length > 0) {
+      console.log("Using existing results from client for CSV export");
+      
+      // Stream each existing result directly as CSV
+      for (const result of existingResults) {
+        // Ensure the result has the correct structure
+        if (result && result.bundleId) {
+          const csvLine = generateCsvLine(result, validatedTerms);
+          res.write(csvLine);
+          processedCount++;
+          
+          // Flush after each result to ensure immediate transmission
+          if (typeof res.flush === 'function') {
+            res.flush();
+          }
+        }
+      }
+      
+      // End response early since we've processed all existing results
+      res.end();
+      
+      const processingTime = Date.now() - startTime;
+      logger.info({
+        bundleIdsCount: existingResults.length,
+        processedCount,
+        processingTime: `${processingTime}ms`,
+        fromExistingResults: true
+      }, 'Streaming CSV export completed from existing results');
+      
+      return; // Exit early 
+    }
+    
+    // If we don't have existing results, process the bundle IDs from scratch
+    console.log("No existing results available, fetching data from scratch");
     
     // Process bundle IDs in small batches
     const BATCH_SIZE = 10;
@@ -383,16 +423,6 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       
       // Log batch results summary for debugging
       console.log(`CSV Export: Processing batch of ${batchResults.length} results`);
-      
-      // Check if we have matches in these results (for debugging)
-      const batchHasMatches = batchResults.some(res => 
-        res.appAdsTxt?.searchResults?.termResults?.length > 0 || 
-        res.matchesAdvancedSearch === true ||
-        (res.appAdsTxt?.searchResults?.advancedParams && 
-         res.appAdsTxt?.searchResults?.count > 0)
-      );
-      
-      console.log(`CSV Export: Batch has matches: ${batchHasMatches}`);
       
       // Extra processing step to ensure search results are properly formatted
       const processedResults = batchResults.map(result => {

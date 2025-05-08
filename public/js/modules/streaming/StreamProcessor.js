@@ -1185,6 +1185,13 @@ class StreamProcessor {
       });
       this.progressUI.setStatusMessage('Connecting to server...', 'info');
       
+      // Get the existing results that already have matches from AppState
+      const existingResults = window.AppState?.results || this.results || [];
+
+      // Log for debugging
+      console.log('Using existing results for CSV export:', existingResults.length);
+      console.log('Sample result:', existingResults[0]);
+      
       // Set up fetch for streaming response with a unique cache buster
       const response = await fetch(`/api/stream/export-csv?nocache=${timestamp}`, {
         method: 'POST',
@@ -1196,7 +1203,8 @@ class StreamProcessor {
           bundleIds, 
           structuredParams,
           mode: searchMode, // Include the search mode explicitly
-          timestamp // Include timestamp in request to prevent duplicate processing
+          timestamp, // Include timestamp in request to prevent duplicate processing
+          existingResults // Include the existing results with their matches
         })
       });
       
