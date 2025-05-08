@@ -279,7 +279,7 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
   let processedCount = 0;
   
   try {
-    const { bundleIds, searchTerms } = req.body;
+    const { bundleIds, searchTerms, structuredParams } = req.body;
     
     if (!bundleIds || !Array.isArray(bundleIds) || bundleIds.length === 0) {
       throw new BadRequestError('Missing or invalid bundle IDs. Please provide an array of bundle IDs.');
@@ -297,12 +297,21 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       });
     }
     
+    // Determine if we have advanced search parameters
+    const isAdvancedSearch = structuredParams && (
+      Array.isArray(structuredParams) ? structuredParams.length > 0 : Object.keys(structuredParams).length > 0
+    );
+    
     // Validate search terms
     const validatedTerms = validateSearchTerms(searchTerms);
+    // Also validate structured params if provided (pass through as is)
+    const validatedStructuredParams = isAdvancedSearch ? structuredParams : null;
     
     logger.info({
       bundleIdsCount: validation.validIds.length,
       searchTermsCount: validatedTerms?.length || 0,
+      hasStructuredParams: !!validatedStructuredParams,
+      isAdvancedSearch,
       clientIp: req.ip,
       endpoint: 'stream/export-csv'
     }, 'Streaming CSV export request');
@@ -314,8 +323,11 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     // Create CSV header
     let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
     
-    // Add search columns if needed
-    if (validatedTerms && validatedTerms.length > 0) {
+    // Decide on search columns based on whether we have advanced search or simple search
+    if (isAdvancedSearch && validatedStructuredParams) {
+      // For advanced search, use simplified headers
+      csvHeader += ",Advanced Search Results,Match Count,Matching Lines";
+    } else if (validatedTerms && validatedTerms.length > 0) {
       // Create separate column for each search term if multiple terms exist
       if (validatedTerms.length > 1) {
         // Add a column for each search term
@@ -355,7 +367,12 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       // Process batch concurrently
       const batchPromises = batch.map(bundleId => (async () => {
         try {
-          return await getDeveloperInfo(bundleId, validatedTerms);
+          // If we have advanced search, use structured params instead of search terms
+          if (isAdvancedSearch && validatedStructuredParams) {
+            return await getDeveloperInfo(bundleId, [], validatedStructuredParams);
+          } else {
+            return await getDeveloperInfo(bundleId, validatedTerms);
+          }
         } catch (err) {
           return { 
             bundleId, 
@@ -436,6 +453,7 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
  * Helper function to generate CSV line for a result
  * @param {Object} result - Extraction result
  * @param {Array} searchTerms - Search terms if provided
+ * @param {Object|Array} structuredParams - Structured search parameters (optional)
  * @returns {string} - CSV line
  */
 function generateCsvLine(result, searchTerms) {
@@ -452,7 +470,54 @@ function generateCsvLine(result, searchTerms) {
   
   // Search columns
   let searchCols = [];
-  if (searchTerms && searchTerms.length > 0) {
+  
+  // Detect if we're dealing with advanced search parameters
+  const isAdvancedSearch = result && 
+    result.appAdsTxt?.searchResults?.mode === 'advanced' &&
+    result.appAdsTxt?.searchResults?.advancedParams;
+    
+  if (isAdvancedSearch) {
+    // Handle advanced search format
+    const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
+    const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
+    
+    // Format advanced search results
+    let advancedSearchInfo = '';
+    if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
+      const params = result.appAdsTxt.searchResults.advancedParams;
+      
+      // Format each parameter as a readable string
+      if (Array.isArray(params)) {
+        const paramStrings = params.map(param => {
+          const parts = [];
+          if (param.domain) parts.push(`domain: ${param.domain}`);
+          if (param.publisherId) parts.push(`publisherId: ${param.publisherId}`);
+          if (param.relationship) parts.push(`relationship: ${param.relationship}`);
+          if (param.tagId) parts.push(`tagId: ${param.tagId}`);
+          return parts.join(', ');
+        });
+        advancedSearchInfo = paramStrings.join(' | ');
+      } else {
+        // Single parameter object
+        const parts = [];
+        if (params.domain) parts.push(`domain: ${params.domain}`);
+        if (params.publisherId) parts.push(`publisherId: ${params.publisherId}`);
+        if (params.relationship) parts.push(`relationship: ${params.relationship}`);
+        if (params.tagId) parts.push(`tagId: ${params.tagId}`);
+        advancedSearchInfo = parts.join(', ');
+      }
+    }
+    
+    // Limit matching lines for CSV
+    const matchingLinesSummary = hasMatches ? 
+      truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines) : '';
+    
+    searchCols = [
+      `"${advancedSearchInfo}"`,
+      matchCount.toString(),
+      `"${matchingLinesSummary.replace(/"/g, '""')}"`
+    ];
+  } else if (searchTerms && searchTerms.length > 0) {
     const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
     const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
     

@@ -323,6 +323,11 @@ class EventHandlerManager {
           
           // Call export CSV function with streaming capability
           if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
+            // Log the search params we're sending
+            console.log('Calling StreamProcessor.exportCsv with searchParams:', searchParams);
+            
+            // Pass search parameters as a unified object to ensure both simple terms
+            // and structured parameters are correctly handled
             StreamProcessor.exportCsv(bundleIds, searchParams);
             return; // Early return to prevent fallback
           }

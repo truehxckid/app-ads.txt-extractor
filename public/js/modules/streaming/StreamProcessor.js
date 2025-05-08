@@ -1091,10 +1091,9 @@ class StreamProcessor {
   /**
    * Export results to CSV via streaming
    * @param {string[]} bundleIds - Bundle IDs
-   * @param {string[]} searchTerms - Search terms
-   * @param {Object} structuredParams - Structured search parameters (optional)
+   * @param {Object|string[]} searchParams - Search parameters object or legacy search terms
    */
-  async exportCsv(bundleIds, searchTerms = [], structuredParams = null) {
+  async exportCsv(bundleIds, searchParams = {}) {
     // Check if an export was recently triggered (within the last 3 seconds)
     const now = Date.now();
     if (this._lastExportTime && (now - this._lastExportTime < 3000)) {
@@ -1112,6 +1111,34 @@ class StreamProcessor {
       showNotification('No bundle IDs to export', 'error');
       return;
     }
+    
+    // Parse search parameters based on type
+    let searchTerms = [];
+    let structuredParams = null;
+    
+    // Check if searchParams is an object with mode property (unified search format)
+    if (searchParams && typeof searchParams === 'object' && searchParams.mode) {
+      if (searchParams.mode === 'advanced' && searchParams.structuredParams) {
+        // Advanced mode: use structuredParams
+        structuredParams = searchParams.structuredParams;
+        console.log('CSV Export: Using advanced search mode with structuredParams:', structuredParams);
+      } else if (searchParams.mode === 'simple' && searchParams.queries) {
+        // Simple mode: use queries as search terms
+        searchTerms = searchParams.queries;
+        console.log('CSV Export: Using simple search mode with terms:', searchTerms);
+      }
+    } else if (Array.isArray(searchParams)) {
+      // Legacy format: searchParams is just an array of search terms
+      searchTerms = searchParams;
+      console.log('CSV Export: Using legacy search terms format:', searchTerms);
+    }
+    
+    // Log the actual parameters we'll use
+    console.log('CSV Export parameters:', {
+      bundleIds: bundleIds.length,
+      searchTerms: searchTerms,
+      structuredParams: structuredParams
+    });
     
     // Get the results container to show progress
     const resultElement = DOMUtils.getElement('result');
@@ -1157,10 +1184,17 @@ class StreamProcessor {
         },
         body: JSON.stringify({ 
           bundleIds, 
-          searchTerms, 
+          searchTerms,
           structuredParams,
           timestamp // Include timestamp in request to prevent duplicate processing
         })
+      });
+      
+      // Log the request payload for debugging
+      console.log('CSV Export request payload:', { 
+        bundleIds: bundleIds.length, 
+        searchTerms, 
+        structuredParams
       });
       
       if (!response.ok) {
