@@ -8,9 +8,10 @@ import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
 import ThemeManager from '../utils/theme.js';
 import Api from './api.js';
-import CSVExporter from './exporter.js';
+// CSVExporter import removed - replaced by UnifiedExporter
 import StreamProcessor from './streaming/StreamProcessor.js';
 import UnifiedSearch from './unified-search.js';
+import UnifiedExporter from './unified-exporter.js';
 
 /**
  * Event Handler Class
@@ -283,17 +284,15 @@ class EventHandlerManager {
         
         // CSV export triggered
         
-        // Handle all CSV download actions with the streaming method
-        import('./streaming/StreamProcessor.js').then(module => {
-          const StreamProcessor = module.default;
+        // Use the new UnifiedExporter for all CSV export functionality
+        try {
           // Get bundle IDs and search parameters
           const bundleIds = DOMUtils.getTextareaLines('bundleIds');
           
-          // Only advanced mode is supported now
           // Get structured parameters from all possible sources
           let structuredParams = AppState.advancedSearchParams || window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
           
-          // For debugging, log what we have found
+          // For debugging log what we found
           console.log("CSV Export: Using structured params:", structuredParams);
           
           // Ensure structuredParams is always an array
@@ -301,40 +300,63 @@ class EventHandlerManager {
             structuredParams = [structuredParams];
           }
           
-          // Use advanced search mode with properly formatted parameters
+          // Create search parameters object
           const searchParams = {
             mode: 'advanced',
             structuredParams: structuredParams
           };
           
-          // Call export CSV function with streaming capability
-          if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
-            // Call exportCsv with search parameters
+          // Export using the unified exporter
+          // Auto-select client or server-side based on dataset size
+          console.log("CSV Export: Using UnifiedExporter (consolidated export module)");
+          
+          // Determine if this is a large dataset
+          const isLargeDataset = bundleIds.length > 500;
+          
+          // Configure export with options
+          const exportOptions = {
+            // Use server for large datasets
+            useServer: isLargeDataset, 
             
-            // Removed redundant check that was causing issues
-            // The check at the start of this function is sufficient
-            
-            // Pass search parameters as a unified object to ensure both simple terms
-            // and structured parameters are correctly handled
-            // Ensure we're calling the correct method (exportResultsAsCsv instead of exportCsv)
-            if (typeof StreamProcessor.exportResultsAsCsv === 'function') {
-              StreamProcessor.exportResultsAsCsv(bundleIds, searchParams);
-            } else if (typeof StreamProcessor.exportCsv === 'function') {
-              StreamProcessor.exportCsv(bundleIds, searchParams);
-            }
-            return; // Early return to prevent fallback
+            // Configure threshold for client/server transition
+            clientSizeLimit: 500
+          };
+          
+          // Log export method
+          if (isLargeDataset) {
+            console.log("CSV Export: Large dataset detected, using server-side export");
+          } else {
+            console.log("CSV Export: Standard dataset, using client-side export");
           }
           
-          // If StreamProcessor exists but the export method doesn't exist, fall back
-          CSVExporter.downloadResults(AppState.results);
-        }).catch(error => {
-          // Fall back to regular download if streaming fails
-          CSVExporter.downloadResults(AppState.results);
+          // Execute the export with appropriate options
+          UnifiedExporter.exportToCSV(bundleIds, searchParams, exportOptions);
+        } catch (error) {
+          console.error("Error using unified exporter:", error);
+          
+          // FALLBACK PATH: Use legacy exporters if unified exporter fails
+          console.log("CSV Export: Falling back to legacy export methods");
+          
+          // Fall back to legacy methods in order of preference
+          const bundleIds = DOMUtils.getTextareaLines('bundleIds');
+          let structuredParams = AppState.advancedSearchParams || window.AppState?.advancedSearchParams || null;
+          
+          // Use StreamProcessor directly as fallback
+          if (StreamProcessor && typeof StreamProcessor.exportResultsAsCsv === 'function') {
+            if (structuredParams && !Array.isArray(structuredParams)) {
+              structuredParams = [structuredParams];
+            }
+            const searchParams = { mode: 'advanced', structuredParams };
+            StreamProcessor.exportResultsAsCsv(bundleIds, searchParams);
+          } else {
+            // No fallbacks left - notify user that export failed
+            showNotification('Export failed - please try again', 'error');
+          }
           
           // Make sure to clear global timestamp if there was an error
           window._lastGlobalExportTime = null;
           this._lastExportTime = null;
-        });
+        }
         break;
       case 'add-structured-search':
         this.handleAddStructuredSearch(target);

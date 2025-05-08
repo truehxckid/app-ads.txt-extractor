@@ -10,6 +10,7 @@ import DOMUtils from './modules/dom-utils.js';
 import StreamingIntegration from './modules/streaming-integration.js';
 import StreamProgressUI from './modules/streaming/StreamProgressUI.js';
 import UnifiedSearch from './modules/unified-search.js';
+import UnifiedExporter from './modules/unified-exporter.js'; // Preload the unified exporter
 
 /**
  * Initialize the application
@@ -81,5 +82,16 @@ window.AppUtilities = {
   resetApp: () => {
     AppState.reset();
     window.location.reload();
+  },
+  // Export for debugging and testing
+  exportCSV: (bundleIds, params, useServer = false) => {
+    return UnifiedExporter.exportToCSV(
+      bundleIds || DOMUtils.getTextareaLines('bundleIds'),
+      params || { 
+        mode: 'advanced', 
+        structuredParams: AppState.advancedSearchParams 
+      },
+      { useServer: useServer }
+    );
   }
 };

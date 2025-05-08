@@ -1039,6 +1039,9 @@ class StreamProcessor {
    * Export results to CSV via client-side processing (faster, no server overhead)
    * @param {string[]} bundleIds - Bundle IDs
    * @param {Object|string[]} searchParams - Search parameters object or legacy search terms
+   * @description PREFERRED METHOD - This is the primary and recommended CSV export function.
+   * It performs all processing client-side, avoiding extra server requests and
+   * supporting all advanced features including structured search parameters.
    */
   async exportResultsAsCsv(bundleIds, searchParams = {}) {
     // Global export tracking timestamp - use a window property to synchronize between modules
@@ -1301,7 +1304,7 @@ class StreamProcessor {
     
     // Also check for matchInfo format (used in some implementations)
     if (result.matchInfo) {
-      if (result.matchInfo.count) {
+      if (typeof result.matchInfo.count !== 'undefined') {
         matchCount = String(result.matchInfo.count);
       }
       
@@ -1315,6 +1318,18 @@ class StreamProcessor {
           })
           .join(' | ');
       }
+    }
+    
+    // Last resort - if structured params exists but no matching info was found,
+    // add placeholder data to ensure columns appear
+    if (isAdvancedSearch && !advancedSearchInfo) {
+      const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
+      let searchDescription = '';
+      if (params.domain) searchDescription += `${params.domain}`;
+      if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
+      if (params.relationship) searchDescription += `${searchDescription ? " | " : ""}rel: ${params.relationship}`;
+      if (params.tagId) searchDescription += `${searchDescription ? " | " : ""}tagId: ${params.tagId}`;
+      advancedSearchInfo = searchDescription || "Advanced search parameters";
     }
     
     // Build and return CSV row

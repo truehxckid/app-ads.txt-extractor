@@ -605,6 +605,13 @@ function generateCsvLine(result, searchTerms) {
     `"${(hasAppAds && result.appAdsTxt?.url ? result.appAdsTxt.url : '').replace(/"/g, '""')}"`
   ];
   
+  // IMPORTANT: This variable 'isAdvancedSearch' is undefined so we need to define it properly
+  // Determine if this is an advanced search based on the presence of structured parameters
+  const isAdvancedSearch = validatedStructuredParams && (
+    Array.isArray(validatedStructuredParams) ? validatedStructuredParams.length > 0 : 
+    Object.keys(validatedStructuredParams).length > 0
+  );
+  
   // Check for any search results - include new matchInfo format from StreamProcessor
   // For advanced search, we want to show search parameters even if there's no match
   const hasSearchResults = isAdvancedSearch || 
@@ -722,6 +729,20 @@ function generateCsvLine(result, searchTerms) {
     result.success ? "Yes" : "No",
     `"${(result.error || '').replace(/"/g, '""')}"`
   ];
+  
+  // If this is an advanced search but we have no info in the search columns,
+  // add placeholder data to ensure columns appear
+  if (isAdvancedSearch && advancedSearchInfo === '' && structuredParams) {
+    // Force the search columns to contain at least parameter info
+    const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
+    let searchDescription = "";
+    if (params.domain) searchDescription += `${params.domain}`;
+    if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
+    if (params.relationship) searchDescription += `${searchDescription ? " | " : ""}rel: ${params.relationship}`;
+    if (params.tagId) searchDescription += `${searchDescription ? " | " : ""}tagId: ${params.tagId}`;
+    
+    searchCols[0] = `"${searchDescription || "Advanced search parameters"}"`;
+  }
   
   return basicCols.concat(searchCols, statusCols).join(',') + '\n';
 }
