@@ -111,56 +111,8 @@
           <div class="input-group search-options">
             <label id="search-options-label">Search in app-ads.txt files (optional):</label>
             
-            <div class="search-modes">
-              <div class="search-mode-toggle">
-                <button
-                  type="button"
-                  class="search-mode-btn active"
-                  data-mode="simple"
-                  data-action="switch-search-mode"
-                  aria-pressed="true"
-                  data-text="Simple"
-                >
-                  Simple
-                </button>
-                <button
-                  type="button"
-                  class="search-mode-btn"
-                  data-mode="advanced"
-                  data-action="switch-search-mode"
-                  aria-pressed="false"
-                  data-text="Advanced"
-                >
-                  Advanced
-                </button>
-              </div>
-            </div>
-            
-            <!-- Simple search mode (visible by default) -->
-            <div id="simpleSearchContainer" class="search-container">
-              <div class="simple-search-field">
-                <label for="searchTermsContainer">Search for:</label>
-                <div id="searchTermsContainer" class="search-terms-container">
-                  <!-- Search terms will be added here dynamically -->
-                </div>
-                <div class="search-terms-actions">
-                  <button 
-                    type="button" 
-                    class="add-term-btn" 
-                    data-action="add-term"
-                    aria-label="Add another search term"
-                  >
-                    + Add another term
-                  </button>
-                </div>
-              </div>
-              <p class="helper-text">
-                Enter one or more search terms to look for in app-ads.txt files. Each term will be searched exactly as entered (e.g., "google.com, 12447" will search for that exact combination).
-              </p>
-            </div>
-            
-            <!-- Advanced search mode (hidden by default) -->
-            <div id="advancedSearchContainer" class="search-container" style="display: none;">
+            <!-- Advanced search only (removed toggle buttons) -->
+            <div id="advancedSearchContainer" class="search-container">
               <p class="helper-text">
                 Fill in the fields below to find specific entries in app-ads.txt files regardless of spacing.
               </p>
@@ -215,8 +167,8 @@
             
             <div class="search-help-text">
               <small class="helper-text">
-                <strong>Simple Search:</strong> Searches for terms exactly as entered. Example: Entering "appnexus.com, 12447" will find only lines containing that exact text.<br>
-                <strong>Advanced Search:</strong> Matches detailed criteria based on the structure of app-ads.txt entries.
+                <strong>Search Help:</strong> Fill in fields like domain (e.g., "appnexus.com") and publisher ID (e.g., "12447") 
+                to match specific entries in app-ads.txt files. You can use multiple criteria to refine your search.
               </small>
             </div>
           </div>
@@ -249,22 +201,6 @@
   </footer>
   
   <!-- Templates for dynamic content -->
-  <template id="search-term-template">
-    <div class="search-term-row">
-      <input 
-        type="text" 
-        class="search-term-input" 
-        placeholder="Enter keyword or domain to search for"
-        aria-label="Search term"
-      >
-      <button 
-        type="button" 
-        class="remove-search-term" 
-        data-action="remove-term" 
-        aria-label="Remove search term"
-      >−</button>
-    </div>
-  </template>
   
   <template id="empty-state-template">
     <div class="empty-state">

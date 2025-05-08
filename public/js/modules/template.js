@@ -41,8 +41,7 @@ class TemplateEngineManager {
     html += `
         </div>
         <div class="action-buttons">
-          <button class="download-btn" data-action="download-all-csv">Download All Results</button>
-          <button class="download-btn" data-action="download-csv">Download Current Page</button>
+          <button class="download-btn" data-action="download-csv">Download CSV Results</button>
         </div>
       </div>
     `;

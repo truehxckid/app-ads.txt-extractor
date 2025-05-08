@@ -76,26 +76,13 @@ async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams
     console.log('Worker sending to API - searchTerms:', JSON.stringify(searchTerms));
     console.log('Worker sending to API - structuredParams:', JSON.stringify(structuredParams));
     
-    // Create proper payload based on whether we have structuredParams or searchTerms
-    let payload;
-    
-    if (structuredParams) {
-      // Using advanced search mode
-      payload = {
-        bundleIds,
-        mode: 'advanced',
-        searchTerms: [], // Empty for advanced mode
-        structuredParams: structuredParams
-      };
-    } else {
-      // Using simple search mode
-      payload = {
-        bundleIds,
-        mode: 'simple',
-        searchTerms: searchTerms || [],
-        structuredParams: null
-      };
-    }
+    // Create payload with structured parameters - always in advanced mode now
+    const payload = {
+      bundleIds,
+      mode: 'advanced',
+      searchTerms: [], // Empty for advanced mode
+      structuredParams: structuredParams || [] // Empty array if no structured params provided
+    };
     
     console.log('Worker finalized API payload:', JSON.stringify(payload));
     
@@ -297,10 +284,25 @@ function processResult(result) {
   // Log the result for debugging (only in dev mode)
   console.log('Processing result:', result.bundleId, result);
   
-  // Update statistics
+  // Update statistics for all processed items
   processedCount++;
   
   if (result.success) {
+    // Check if this result matches structured parameters if we're using advanced search
+    if (structuredParams && Array.isArray(structuredParams) && structuredParams.length > 0) {
+      if (!matchesStructuredParams(result, structuredParams)) {
+        // Result doesn't match the advanced search criteria, don't count it as success
+        // and don't add it to results
+        console.log('Result excluded by advanced search:', result.bundleId);
+        errorCount++; // Count as error for stats
+        return; // Skip storing and sending this result
+      }
+      
+      // If we get here, it matches the advanced search criteria
+      console.log('Result matched advanced search criteria:', result.bundleId);
+    }
+    
+    // Count as success
     successCount++;
     if (result.appAdsTxt?.exists) {
       withAppAdsTxtCount++;
@@ -324,6 +326,85 @@ function processResult(result) {
       result
     }
   });
+}
+
+/**
+ * Check if a result matches structured parameters
+ * @param {Object} result - Result object
+ * @param {Array} params - Structured parameters array
+ * @returns {boolean} - True if result matches parameters
+ */
+function matchesStructuredParams(result, params) {
+  // If no app-ads.txt, it can't match any parameters
+  if (!result.appAdsTxt || !result.appAdsTxt.exists) {
+    return false;
+  }
+  
+  // Get app-ads.txt entries
+  const entries = result.appAdsTxt.entries || [];
+  if (!entries.length) {
+    return false;
+  }
+  
+  // For each parameter set, check if any entry matches all criteria
+  for (const paramSet of params) {
+    // Check for empty param set
+    if (!paramSet || Object.keys(paramSet).length === 0) {
+      continue;
+    }
+    
+    console.log(`Checking entries against paramSet:`, paramSet);
+    
+    // Find matches for this parameter set
+    const matchesForThisParamSet = entries.some(entry => {
+      // Match domain if specified
+      if (paramSet.domain && entry.domain) {
+        const domainMatches = entry.domain.toLowerCase() === paramSet.domain.toLowerCase();
+        if (!domainMatches) return false;
+      }
+      
+      // Match publisherId if specified
+      if (paramSet.publisherId && entry.publisherId) {
+        // Handle both single publisherId and multiple (+ separated)
+        let publisherIdMatches = false;
+        
+        if (paramSet.publisherId.includes('+')) {
+          // Multiple publisher IDs in the parameter
+          const paramPublisherIds = paramSet.publisherId.split('+').map(id => id.trim());
+          publisherIdMatches = paramPublisherIds.includes(entry.publisherId.trim());
+        } else {
+          // Single publisher ID comparison
+          publisherIdMatches = entry.publisherId.trim() === paramSet.publisherId.trim();
+        }
+        
+        if (!publisherIdMatches) return false;
+      }
+      
+      // Match relationship if specified
+      if (paramSet.relationship && entry.relationship) {
+        const relationshipMatches = entry.relationship.toUpperCase() === paramSet.relationship.toUpperCase();
+        if (!relationshipMatches) return false;
+      }
+      
+      // Match tagId if specified
+      if (paramSet.tagId && entry.tagId) {
+        const tagIdMatches = entry.tagId.trim() === paramSet.tagId.trim();
+        if (!tagIdMatches) return false;
+      }
+      
+      // If we got here, all specified parameters matched
+      return true;
+    });
+    
+    // If any parameter set matches, the result is included
+    if (matchesForThisParamSet) {
+      console.log('Found matching entry for paramSet:', paramSet);
+      return true;
+    }
+  }
+  
+  // If we get here, none of the parameter sets matched any entries
+  return false;
 }
 
 /**

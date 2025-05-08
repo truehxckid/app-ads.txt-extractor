@@ -48,11 +48,7 @@ class EventHandlerManager {
       });
     }
     
-    // Search term add button
-    const addTermBtn = document.querySelector('[data-action="add-term"]');
-    if (addTermBtn) {
-      addTermBtn.addEventListener('click', this.handleAddSearchTerm);
-    }
+    // We no longer have search term add button (removed simple search)
     
     // Global click handler for dynamic elements
     document.addEventListener('click', this.handleDocumentClick);
@@ -209,14 +205,7 @@ class EventHandlerManager {
     reader.readAsText(file);
   }
   
-  /**
-   * Handle add search term button click
-   * @param {Event} event - Click event
-   */
-  handleAddSearchTerm = (event) => {
-    event.preventDefault();
-    UnifiedSearch.addSearchTerm();
-  }
+  // Search term handling removed (simple search mode no longer supported)
   
   /**
    * Handle document click events (delegation)
@@ -305,33 +294,20 @@ class EventHandlerManager {
           // Get bundle IDs and search parameters
           const bundleIds = DOMUtils.getTextareaLines('bundleIds');
           
-          // Choose parameters based on current search mode
-          const currentSearchMode = window.currentSearchMode || 'simple';
-          let searchParams;
+          // Only advanced mode is supported now
+          // Get structured parameters
+          let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
           
-          if (currentSearchMode === 'advanced') {
-            // For advanced mode, create params object with structured params
-            let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
-            
-            // Ensure structuredParams is always an array
-            if (structuredParams && !Array.isArray(structuredParams)) {
-              structuredParams = [structuredParams];
-            }
-            
-            console.log('📊 CSV Export: Using ADVANCED search mode:', structuredParams);
-            searchParams = {
-              mode: 'advanced',
-              structuredParams: structuredParams
-            };
-          } else {
-            // For simple mode, create params object with search terms
-            const searchTerms = AppState.searchTerms.length > 0 ? AppState.searchTerms : DOMUtils.getSearchTerms();
-            console.log('📊 CSV Export: Using SIMPLE search mode:', searchTerms);
-            searchParams = {
-              mode: 'simple',
-              queries: searchTerms
-            };
+          // Ensure structuredParams is always an array
+          if (structuredParams && !Array.isArray(structuredParams)) {
+            structuredParams = [structuredParams];
           }
+          
+          console.log('📊 CSV Export: Using advanced search mode:', structuredParams);
+          const searchParams = {
+            mode: 'advanced',
+            structuredParams: structuredParams
+          };
           
           // Call export CSV function with streaming capability
           if (StreamProcessor && typeof StreamProcessor.exportCsv === 'function') {
@@ -361,12 +337,8 @@ class EventHandlerManager {
           this._lastExportTime = null;
         });
         break;
-      case 'download-all-csv':
-        this.handleDownloadAllCSV();
-        break;
-      case 'remove-term':
-        this.handleRemoveSearchTerm(target);
-        break;
+      // download-all-csv action removed
+      // Simple search removed, no more remove-term actions
       case 'add-structured-search':
         this.handleAddStructuredSearch(target);
         break;
@@ -379,9 +351,7 @@ class EventHandlerManager {
       case 'close-error':
         DOMUtils.hideErrorBoundary();
         break;
-      case 'switch-search-mode':
-        this.handleSwitchSearchMode(target);
-        break;
+      // Search mode switching removed (only advanced mode is supported now)
       case 'hide-results':
         // Hide the results display but keep completion banner visible
         const hideResultsDisplay = document.querySelector('.stream-results-display');
@@ -583,47 +553,9 @@ class EventHandlerManager {
   }
   
   
-  /**
-   * Handle download all CSV button click
-   */
-  handleDownloadAllCSV() {
-    // Get bundle IDs
-    const bundleIds = DOMUtils.getTextareaLines('bundleIds');
-    
-    // Choose parameters based on current search mode
-    const currentSearchMode = window.currentSearchMode || 'simple';
-    
-    if (currentSearchMode === 'advanced') {
-      // For advanced mode, use structured params
-      let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
-      
-      // Ensure structuredParams is always an array
-      if (structuredParams && !Array.isArray(structuredParams)) {
-        structuredParams = [structuredParams];
-      }
-      
-      console.log('📊 CSV Export All: Using ADVANCED search mode:', structuredParams);
-      
-      // Download with structured params and empty search terms
-      CSVExporter.downloadAllResults(bundleIds, [], structuredParams);
-    } else {
-      // For simple mode, use search terms
-      const searchTerms = AppState.searchTerms.length > 0 ? 
-        AppState.searchTerms : DOMUtils.getSearchTerms();
-      console.log('📊 CSV Export All: Using SIMPLE search mode:', searchTerms);
-      
-      // Download with search terms and no structured params
-      CSVExporter.downloadAllResults(bundleIds, searchTerms);
-    }
-  }
+  // handleDownloadAllCSV removed - no longer needed
   
-  /**
-   * Handle remove search term button click
-   * @param {HTMLElement} button - Remove button
-   */
-  handleRemoveSearchTerm(button) {
-    UnifiedSearch.removeSearchTerm(button);
-  }
+  // Remove search term handler removed (simple search mode no longer supported)
   
   /**
    * Handle pagination button click
@@ -703,13 +635,7 @@ class EventHandlerManager {
     showNotification('An error occurred. Check console for details.', 'error');
   }
   
-  /**
-   * Handle search mode switch
-   * @param {HTMLElement} button - Mode toggle button
-   */
-  handleSwitchSearchMode(button) {
-    UnifiedSearch.handleModeSwitch({ target: button });
-  }
+  // Search mode switch handler removed (only advanced mode is supported now)
   
   /**
    * Handle add structured search button click

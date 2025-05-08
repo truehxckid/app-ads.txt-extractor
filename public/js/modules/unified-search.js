@@ -1,6 +1,6 @@
 /**
  * Unified Search Module
- * Handles both simple and advanced structured search for app-ads.txt files
+ * Handles advanced structured search for app-ads.txt files
  */
 
 import DOMUtils from './dom-utils.js';
@@ -11,7 +11,7 @@ import { showNotification } from '../utils/notification.js';
  */
 class UnifiedSearchManager {
   constructor() {
-    this.activeMode = 'simple'; // Default mode
+    this.activeMode = 'advanced'; // Only one mode now
     this.handlersAdded = false;
   }
   
@@ -21,37 +21,7 @@ class UnifiedSearchManager {
   initialize() {
     console.log('🔍 Initializing UnifiedSearchManager');
     
-    // Add event listeners for search mode toggle buttons
     if (!this.handlersAdded) {
-      const modeButtons = document.querySelectorAll('[data-action="switch-search-mode"]');
-      if (modeButtons.length) {
-        modeButtons.forEach(button => {
-          button.addEventListener('click', this.handleModeSwitch.bind(this));
-        });
-      }
-      
-      // Initialize search terms container if empty
-      const searchTermsContainer = document.getElementById('searchTermsContainer');
-      if (searchTermsContainer && searchTermsContainer.children.length === 0) {
-        // Add one search term to start (limit will be enforced in addSearchTerm)
-        this.addSearchTerm();
-      }
-      
-      // Ensure existing search terms don't exceed the limit of 5
-      if (searchTermsContainer && searchTermsContainer.children.length > 5) {
-        // Remove excess terms
-        while (searchTermsContainer.children.length > 5) {
-          searchTermsContainer.removeChild(searchTermsContainer.lastChild);
-        }
-        // Show notification
-        showNotification('Limited to 5 search terms', 'info');
-      }
-      
-      // Update the Add Term button state
-      if (searchTermsContainer) {
-        this._updateAddTermButtonState(searchTermsContainer);
-      }
-      
       // Initialize structured search container if empty
       const structuredSearchContainer = document.getElementById('structuredSearchContainer');
       if (structuredSearchContainer && structuredSearchContainer.children.length === 0) {
@@ -59,97 +29,37 @@ class UnifiedSearchManager {
         this._updateStructuredSearchFormsUI();
       }
       
+      // Hide simple search container if it exists
+      const simpleContainer = document.getElementById('simpleSearchContainer');
+      if (simpleContainer) {
+        simpleContainer.style.display = 'none';
+      }
+      
+      // Show advanced search container
+      const advancedContainer = document.getElementById('advancedSearchContainer');
+      if (advancedContainer) {
+        advancedContainer.style.display = 'block';
+      }
+      
+      // Hide search mode toggle buttons if they exist
+      const modeButtons = document.querySelectorAll('[data-action="switch-search-mode"]');
+      if (modeButtons.length) {
+        modeButtons.forEach(button => {
+          button.style.display = 'none';
+        });
+      }
+      
       this.handlersAdded = true;
     }
   }
   
   /**
-   * Handle search mode switch
-   * @param {Event} event - Click event
-   */
-  handleModeSwitch(event) {
-    const button = event.target;
-    const mode = button.dataset.mode;
-    
-    if (!mode || mode === this.activeMode) return;
-    
-    // Update active mode
-    this.activeMode = mode;
-    
-    // Update UI
-    this.updateModeUI();
-  }
-  
-  /**
-   * Update UI based on active mode
-   */
-  updateModeUI() {
-    // Update mode toggle buttons
-    const modeButtons = document.querySelectorAll('[data-action="switch-search-mode"]');
-    modeButtons.forEach(button => {
-      const isActive = button.dataset.mode === this.activeMode;
-      button.classList.toggle('active', isActive);
-      button.setAttribute('aria-pressed', isActive);
-    });
-    
-    // Update visible container
-    const simpleContainer = document.getElementById('simpleSearchContainer');
-    const advancedContainer = document.getElementById('advancedSearchContainer');
-    
-    if (simpleContainer) {
-      simpleContainer.style.display = this.activeMode === 'simple' ? 'block' : 'none';
-    }
-    
-    if (advancedContainer) {
-      advancedContainer.style.display = this.activeMode === 'advanced' ? 'block' : 'none';
-    }
-  }
-  
-  /**
-   * Get the current search parameters based on active mode
+   * Get the current search parameters
    * @returns {Object} Search parameters object
    */
   getSearchParams() {
-    // Get parameters based on active mode
-    if (this.activeMode === 'simple') {
-      return this.getSimpleSearchParams();
-    } else {
-      return this.getAdvancedSearchParams();
-    }
-  }
-  
-  /**
-   * Get search parameters from simple mode
-   * @returns {Object} Simple search parameters
-   */
-  getSimpleSearchParams() {
-    // Get all search terms from the search terms container
-    const inputValues = Array.from(document.querySelectorAll('.search-term-input'))
-      .map(input => input.value.trim())
-      .filter(Boolean);
-    
-    if (!inputValues.length) {
-      return null; // No search parameters
-    }
-    
-    // Use each input value as an exact search term without splitting
-    const searchTerms = inputValues;
-    
-    // Create array of structured params for each term
-    const structuredParams = searchTerms.map(term => {
-      const params = {};
-      
-      // Treat the entire term as one entity
-      params.exactMatch = term;
-      
-      return params;
-    });
-    
-    return {
-      mode: 'simple',
-      queries: searchTerms, // Array of all search terms
-      structuredParams: structuredParams
-    };
+    // Only advanced search is available
+    return this.getAdvancedSearchParams();
   }
   
   /**
@@ -233,44 +143,8 @@ class UnifiedSearchManager {
   setSearchParams(params) {
     if (!params) return;
     
-    if (params.mode === 'simple') {
-      // Set simple mode parameters
-      this.activeMode = 'simple';
-      
-      // Handle multiple search terms
-      if (params.queries && Array.isArray(params.queries)) {
-        // Clear existing search terms
-        const container = document.getElementById('searchTermsContainer');
-        if (container) {
-          container.innerHTML = '';
-          
-          // Add each search term (up to 5)
-          params.queries.slice(0, 5).forEach(query => {
-            this._addSearchTermToUI(container, query);
-          });
-          
-          // Show notification if we limited the number of terms
-          if (params.queries.length > 5) {
-            showNotification('Limited to 5 search terms', 'info');
-          }
-          
-          // Update the Add Term button state
-          this._updateAddTermButtonState(container);
-        }
-      } 
-      // Handle backward compatibility with single query
-      else if (params.query) {
-        const container = document.getElementById('searchTermsContainer');
-        if (container) {
-          container.innerHTML = '';
-          this._addSearchTermToUI(container, params.query);
-        }
-      }
-    } 
-    else if (params.structuredParams) {
-      // Set advanced mode parameters
-      this.activeMode = 'advanced';
-      
+    // We only support advanced mode now
+    if (params.structuredParams) {
       // Clear existing structured search forms
       const container = document.getElementById('structuredSearchContainer');
       if (container) {
@@ -290,54 +164,38 @@ class UnifiedSearchManager {
         // Update remove buttons visibility
         this._updateStructuredSearchFormsUI();
       }
-    }
-    
-    // Update UI to reflect current mode
-    this.updateModeUI();
-  }
-  
-  /**
-   * Add a search term to the UI
-   * @param {HTMLElement} container - Container element
-   * @param {string} value - Search term value
-   * @private
-   */
-  _addSearchTermToUI(container, value = '') {
-    // Use template if available
-    const template = document.getElementById('search-term-template');
-    if (template) {
-      const clone = document.importNode(template.content, true);
-      const input = clone.querySelector('.search-term-input');
-      if (input && value) {
-        input.value = value;
+    } 
+    // Convert simple mode params to advanced if they exist
+    else if (params.mode === 'simple' && params.queries && Array.isArray(params.queries)) {
+      // For backward compatibility - convert simple search terms to domain searches
+      const container = document.getElementById('structuredSearchContainer');
+      if (container) {
+        container.innerHTML = '';
+        
+        // Convert each term to a domain search
+        params.queries.slice(0, 5).forEach((query, index) => {
+          const advancedParam = {
+            domain: query.trim() // Use the search term as a domain search
+          };
+          this._addStructuredSearchFormToUI(container, advancedParam, index);
+        });
+        
+        // Update remove buttons visibility
+        this._updateStructuredSearchFormsUI();
       }
-      container.appendChild(clone);
-      return;
     }
     
-    // Fallback: create elements manually
-    const row = document.createElement('div');
-    row.className = 'search-term-row';
-    
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'search-term-input';
-    input.placeholder = 'Enter keyword or domain to search for';
-    input.setAttribute('aria-label', 'Search term');
-    if (value) {
-      input.value = value;
+    // Show advanced container
+    const advancedContainer = document.getElementById('advancedSearchContainer');
+    if (advancedContainer) {
+      advancedContainer.style.display = 'block';
     }
     
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'remove-search-term';
-    button.dataset.action = 'remove-term';
-    button.setAttribute('aria-label', 'Remove search term');
-    button.textContent = '−';
-    
-    row.appendChild(input);
-    row.appendChild(button);
-    container.appendChild(row);
+    // Hide simple container
+    const simpleContainer = document.getElementById('simpleSearchContainer');
+    if (simpleContainer) {
+      simpleContainer.style.display = 'none';
+    }
   }
   
   /**
@@ -496,94 +354,13 @@ class UnifiedSearchManager {
    * Reset search form
    */
   resetSearch() {
-    // Reset simple mode
-    const searchTermsContainer = document.getElementById('searchTermsContainer');
-    if (searchTermsContainer) {
-      searchTermsContainer.innerHTML = '';
-      // Add one empty search term
-      this._addSearchTermToUI(searchTermsContainer);
-    }
-    
-    // Reset advanced mode
+    // Reset advanced mode only
     const structuredSearchContainer = document.getElementById('structuredSearchContainer');
     if (structuredSearchContainer) {
       structuredSearchContainer.innerHTML = '';
       // Add one empty structured search form
       this._addStructuredSearchFormToUI(structuredSearchContainer);
       this._updateStructuredSearchFormsUI();
-    }
-    
-    // Default to simple mode
-    this.activeMode = 'simple';
-    this.updateModeUI();
-  }
-  
-  /**
-   * Add a new empty search term
-   * Maximum of 5 search terms allowed
-   */
-  addSearchTerm() {
-    const container = document.getElementById('searchTermsContainer');
-    if (container) {
-      // Limit to maximum 5 search terms
-      if (container.children.length >= 5) {
-        // Show notification if available
-        if (window.showNotification) {
-          window.showNotification('Maximum of 5 search terms allowed', 'info');
-        } else {
-          console.info('Maximum of 5 search terms allowed');
-        }
-        return;
-      }
-      this._addSearchTermToUI(container);
-      
-      // Update the Add Term button state
-      this._updateAddTermButtonState(container);
-    }
-  }
-  
-  /**
-   * Update the Add Term button state based on the number of search terms
-   * @param {HTMLElement} container - Search terms container
-   * @private
-   */
-  _updateAddTermButtonState(container) {
-    if (!container) return;
-    
-    const addTermButton = document.querySelector('[data-action="add-term"]');
-    if (addTermButton) {
-      // Disable button if 5 terms are reached
-      const isDisabled = container.children.length >= 5;
-      addTermButton.disabled = isDisabled;
-      
-      // Add/remove a visual class to indicate disabled state
-      if (isDisabled) {
-        addTermButton.classList.add('disabled');
-        addTermButton.setAttribute('title', 'Maximum of 5 search terms allowed');
-      } else {
-        addTermButton.classList.remove('disabled');
-        addTermButton.setAttribute('title', 'Add another search term');
-      }
-    }
-  }
-  
-  /**
-   * Remove a search term
-   * @param {HTMLElement} button - Remove button
-   */
-  removeSearchTerm(button) {
-    const row = button.closest('.search-term-row');
-    if (row) {
-      row.remove();
-      
-      // Ensure at least one search term exists
-      const container = document.getElementById('searchTermsContainer');
-      if (container && container.children.length === 0) {
-        this.addSearchTerm();
-      } else if (container) {
-        // Update the Add Term button state
-        this._updateAddTermButtonState(container);
-      }
     }
   }
   

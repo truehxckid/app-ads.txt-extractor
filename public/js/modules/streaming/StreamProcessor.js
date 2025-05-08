@@ -203,42 +203,27 @@ class StreamProcessor {
   async processBundleIds(bundleIds, searchParams = null) {
     console.log('🚀 StreamProcessor.processBundleIds called with', bundleIds.length, 'bundle IDs');
     
-    // Handle both unified search params and legacy search terms
-    let searchTerms = [];
+    // We only use structured params now - always in advanced mode
     let structuredParams = null;
-    let searchMode = 'simple'; // Default mode
+    let searchMode = 'advanced'; // Always advanced mode now
     
     if (Array.isArray(searchParams)) {
-      // Legacy format - just search terms array
-      // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
-      searchTerms = searchParams.map(term => 
-        typeof term === 'string' ? { exactMatch: term.trim() } : term
-      );
-      structuredParams = null; // Explicitly set to null for simple mode
-      console.log('🚀 Legacy search terms (fixed for multi-term OR logic):', searchTerms);
+      // Legacy format - convert search terms array to structured parameters
+      // For backward compatibility, treat each term as a domain search
+      structuredParams = searchParams.map(term => {
+        return { domain: typeof term === 'string' ? term.trim() : term };
+      });
+      console.log('🚀 Legacy search terms converted to structured params:', structuredParams);
     } else if (searchParams && typeof searchParams === 'object') {
-      // Store the search mode for later reference
-      searchMode = searchParams.mode || 'simple';
-      
-      // New unified format - STRICT SEPARATION between modes
+      // Support legacy simple mode by converting to advanced mode
       if (searchParams.mode === 'simple' && searchParams.queries) {
-        // ONLY use search terms from simple mode, explicitly clear structured params
-        // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
-        // Make sure each term is explicitly an object with exactMatch property to ensure proper handling
-        searchTerms = searchParams.queries.map(term => ({ exactMatch: term.trim() }));
-        structuredParams = null; // Explicitly clear any structured params
-        console.log('🚀 Simple search mode with queries (fixed for multi-term OR logic):', searchTerms);
-        
-        // Clear any previously stored advanced search params
-        if (AppState && typeof AppState.setAdvancedSearchParams === 'function') {
-          AppState.setAdvancedSearchParams(null);
-        }
-        window.advancedSearchParams = null;
-        
-      } else if (searchParams.mode === 'advanced' && searchParams.structuredParams) {
-        // ONLY use structured params from advanced mode, explicitly clear search terms
-        searchTerms = []; // Clear simple search terms when using advanced mode
-        
+        // Convert simple mode queries to advanced mode domain searches
+        structuredParams = searchParams.queries.map(term => {
+          return { domain: term.trim() };
+        });
+        console.log('🚀 Simple search mode converted to structured params:', structuredParams);
+      } else if (searchParams.structuredParams) {
+        // Use advanced mode structured params
         // Ensure structuredParams is always an array for consistency
         if (Array.isArray(searchParams.structuredParams)) {
           structuredParams = searchParams.structuredParams;
@@ -246,24 +231,22 @@ class StreamProcessor {
           // Convert single object to array with one item
           structuredParams = [searchParams.structuredParams];
         }
-        
         console.log('🚀 Advanced search mode with params:', structuredParams);
-        
-        // Store the advanced search params in AppState so they're available throughout
-        if (AppState && typeof AppState.setAdvancedSearchParams === 'function') {
-          AppState.setAdvancedSearchParams(structuredParams);
-        } else {
-          // If AppState doesn't have this method, store directly
-          window.advancedSearchParams = structuredParams;
-        }
       }
+    }
+    
+    // Store the advanced search params in AppState so they're available throughout
+    if (AppState && typeof AppState.setAdvancedSearchParams === 'function') {
+      AppState.setAdvancedSearchParams(structuredParams);
+    } else {
+      // If AppState doesn't have this method, store directly
+      window.advancedSearchParams = structuredParams;
     }
     
     // Store search mode in a global property for reference elsewhere
     window.currentSearchMode = searchMode;
     
     // For debugging
-    console.log('🚀 Using search terms:', searchTerms);
     console.log('🚀 Using structured params:', structuredParams);
     
     // First, remove any stray progress bars from previous exports or interruptions
