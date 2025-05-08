@@ -387,14 +387,22 @@ class StreamProcessor {
           }
         }, 5000);
         
-        // Send message to worker with structured parameters
-        this.worker.postMessage({
-          type: 'processBundleIds',
-          bundleIds,
-          searchTerms,
-          structuredParams,
-          totalBundleIds: bundleIds.length
-        });
+        // Enhanced logging before sending to worker
+      console.log('🚀 StreamProcessor: About to send to worker - searchTerms:', searchTerms);
+      console.log('🚀 StreamProcessor: About to send to worker - structuredParams:', structuredParams);
+      console.log('🚀 StreamProcessor: Structured params type:', structuredParams ? typeof structuredParams : 'null');
+      if (structuredParams) {
+        console.log('🚀 StreamProcessor: Is structuredParams array?', Array.isArray(structuredParams));
+      }
+        
+      // Send message to worker with structured parameters - ensure we're sending complete data
+      this.worker.postMessage({
+        type: 'processBundleIds',
+        bundleIds,
+        searchTerms: searchTerms || [],
+        structuredParams: structuredParams,
+        totalBundleIds: bundleIds.length
+      });
         
         // Update debug information with worker status
         const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');

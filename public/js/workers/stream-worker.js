@@ -28,6 +28,9 @@ self.onmessage = function(e) {
     structuredParams = params || null;
     processingStartTime = Date.now();
     
+    // Debug logging for structured params
+    console.log('Worker received structuredParams:', JSON.stringify(structuredParams));
+    
     // Initialize UI in main thread with total count
     self.postMessage({
       type: 'initialize',
@@ -69,6 +72,33 @@ function resetState() {
  */
 async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams = null) {
   try {
+    // Debug the data we're about to send to API
+    console.log('Worker sending to API - searchTerms:', JSON.stringify(searchTerms));
+    console.log('Worker sending to API - structuredParams:', JSON.stringify(structuredParams));
+    
+    // Create proper payload based on whether we have structuredParams or searchTerms
+    let payload;
+    
+    if (structuredParams) {
+      // Using advanced search mode
+      payload = {
+        bundleIds,
+        mode: 'advanced',
+        searchTerms: [], // Empty for advanced mode
+        structuredParams: structuredParams
+      };
+    } else {
+      // Using simple search mode
+      payload = {
+        bundleIds,
+        mode: 'simple',
+        searchTerms: searchTerms || [],
+        structuredParams: null
+      };
+    }
+    
+    console.log('Worker finalized API payload:', JSON.stringify(payload));
+    
     // Start fetch request
     const response = await fetch('/api/stream/extract-multiple', {
       method: 'POST',
@@ -76,7 +106,7 @@ async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify({ bundleIds, searchTerms, structuredParams })
+      body: JSON.stringify(payload)
     });
     
     if (!response.ok) {
@@ -246,6 +276,21 @@ function processBuffer() {
  * @param {Object} result - Result object from API
  */
 function processResult(result) {
+  // Skip invalid results
+  if (!result || typeof result !== 'object') {
+    console.error('Invalid result received:', result);
+    return;
+  }
+  
+  // Ensure result has bundleId (critical field)
+  if (!result.bundleId) {
+    console.error('Result missing bundleId:', result);
+    return;
+  }
+  
+  // Log the result for debugging (only in dev mode)
+  console.log('Processing result:', result.bundleId, result);
+  
   // Update statistics
   processedCount++;
   
@@ -256,6 +301,11 @@ function processResult(result) {
     }
   } else {
     errorCount++;
+  }
+  
+  // Check if result has search match data for structured search
+  if (result.appAdsTxt && result.appAdsTxt.structuredMatches) {
+    console.log('Structured matches found for', result.bundleId, result.appAdsTxt.structuredMatches);
   }
   
   // Store result

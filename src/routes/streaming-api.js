@@ -464,20 +464,22 @@ function generateCsvLine(result, searchTerms) {
     if (searchTerms.length > 1) {
       // Add individual term match columns
       searchTerms.forEach((term, index) => {
+        // Properly format the term string (handle both string and object formats)
         const termStr = typeof term === 'object' ? 
-          (term.exactMatch || Object.values(term).join('+')) : term;
+          (term.exactMatch || Object.values(term).filter(Boolean).join('+')) : term;
           
         // Find term-specific matches
         let termMatchCount = 0;
-        if (hasMatches && result.appAdsTxt.searchResults.termResults) {
+        if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
           const termResult = result.appAdsTxt.searchResults.termResults[index];
           if (termResult) {
-            termMatchCount = termResult.count;
+            termMatchCount = termResult.count || 0;
           }
         }
         
+        // Add term and its match count
         searchCols.push(
-          `"${termStr.replace(/"/g, '""')}"`,
+          `"${(termStr || '').replace(/"/g, '""')}"`,
           termMatchCount.toString()
         );
       });
@@ -489,9 +491,16 @@ function generateCsvLine(result, searchTerms) {
       );
     } else {
       // Single search term - use simpler format
-      const searchTermText = searchTerms.join(', ');
+      const searchTermText = Array.isArray(searchTerms) && searchTerms.length > 0 ? 
+        searchTerms[0] : (searchTerms || '');
+      
+      // Format the term properly
+      const termStr = typeof searchTermText === 'object' ?
+        (searchTermText.exactMatch || Object.values(searchTermText).filter(Boolean).join('+')) :
+        searchTermText;
+      
       searchCols = [
-        `"${searchTermText.replace(/"/g, '""')}"`,
+        `"${(termStr || '').replace(/"/g, '""')}"`,
         matchCount.toString(),
         `"${matchingLinesSummary.replace(/"/g, '""')}"`
       ];

@@ -117,9 +117,20 @@ class CSVExporter {
       csvHeader += ",Advanced Search Results,Match Count,Matching Lines";
     } 
     else if (searchTerms && searchTerms.length > 0) {
-      // For simple search, use a consolidated format
-      // Instead of separate term columns, just add search-related columns
-      csvHeader += ",Matches,Details";
+      // For simple search with multiple terms, use separate columns for each term
+      if (Array.isArray(searchTerms) && searchTerms.length > 1) {
+        // Add a column for each search term
+        searchTerms.forEach((term, index) => {
+          const termStr = typeof term === 'object' ? 
+            (term.exactMatch || Object.values(term).join('+')) : term;
+          csvHeader += `,Term ${index+1}: ${termStr},Matches ${index+1}`;
+        });
+        // Add a total matches column
+        csvHeader += `,Total Matches,Matching Lines`;
+      } else {
+        // Single search term - use simpler format
+        csvHeader += ",Search Term,Search Matches,Matching Lines";
+      }
     }
     
     // Complete the header
@@ -213,56 +224,83 @@ class CSVExporter {
           searchCols += `,${`"${matchingLinesText}"`}`;
         }
         else if (searchTerms && searchTerms.length > 0) {
-          // Simplified logic for simple search
           const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
           const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // Add match count
-          searchCols += `,${matchCount}`;
-          
-          // Add matching details in one column
-          let matchDetails = '';
-          if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
-            // Collect matches for each term into a summary string
-            const termMatches = [];
-            
-            if (Array.isArray(result.appAdsTxt.searchResults.termResults)) {
-              result.appAdsTxt.searchResults.termResults.forEach((termResult, index) => {
-                if (termResult && termResult.count > 0 && searchTerms[index]) {
-                  // Get the term display name
-                  const term = typeof searchTerms[index] === 'object' ? 
-                    searchTerms[index].exactMatch : searchTerms[index];
-                    
-                  termMatches.push(`"${term}": ${termResult.count} matches`);
-                }
+          // Handle multiple search terms separately for better CSV organization
+          if (Array.isArray(searchTerms) && searchTerms.length > 1) {
+            // Add individual columns for each search term's matches
+            if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
+              const termResults = result.appAdsTxt.searchResults.termResults;
+              
+              // Add each term's match count in its own column
+              searchTerms.forEach((_, index) => {
+                const termMatchCount = (termResults && termResults[index]) ? 
+                  termResults[index].count : 0;
+                  
+                searchCols += `,${`"${searchTerms[index]}"`},${termMatchCount}`;
+              });
+            } else {
+              // No matches - add empty columns for each term
+              searchTerms.forEach(() => {
+                searchCols += `,"",-`;
               });
             }
             
-            // Create summary text of term matches
-            if (termMatches.length > 0) {
-              matchDetails = termMatches.join(' | ');
-            }
+            // Add total matches column
+            searchCols += `,${matchCount}`;
             
-            // Add sample matching lines if available
-            if (matchDetails && result.appAdsTxt.searchResults.matchingLines?.length > 0) {
+            // Add matching lines summary column
+            let matchingLinesText = '';
+            if (hasMatches && result.appAdsTxt.searchResults.matchingLines?.length > 0) {
               const lines = result.appAdsTxt.searchResults.matchingLines;
               const lineSamples = lines.slice(0, 3).map(line => 
                 `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`
               ).join(' | ');
               
               if (lineSamples) {
-                matchDetails += ` | ${lineSamples}`;
+                matchingLinesText = lineSamples;
                 
                 // Add indication if there are more lines
                 if (lines.length > 3) {
-                  matchDetails += ` (+ ${lines.length - 3} more lines)`;
+                  matchingLinesText += ` (+ ${lines.length - 3} more lines)`;
                 }
               }
             }
+            
+            // Add matching lines column
+            searchCols += `,${`"${matchingLinesText}"`}`;
+          } else {
+            // Single search term format - more compact
+            const searchTermText = Array.isArray(searchTerms) ? searchTerms[0] : searchTerms;
+            
+            // Add search term column
+            searchCols += `,${`"${searchTermText}"`}`;
+            
+            // Add match count column
+            searchCols += `,${matchCount}`;
+            
+            // Add matching lines summary column
+            let matchingLinesText = '';
+            if (hasMatches && result.appAdsTxt.searchResults.matchingLines?.length > 0) {
+              const lines = result.appAdsTxt.searchResults.matchingLines;
+              const lineSamples = lines.slice(0, 3).map(line => 
+                `Line ${line.lineNumber}: ${line.content.replace(/"/g, '""')}`
+              ).join(' | ');
+              
+              if (lineSamples) {
+                matchingLinesText = lineSamples;
+                
+                // Add indication if there are more lines
+                if (lines.length > 3) {
+                  matchingLinesText += ` (+ ${lines.length - 3} more lines)`;
+                }
+              }
+            }
+            
+            // Add matching lines column
+            searchCols += `,${`"${matchingLinesText}"`}`;
           }
-          
-          // Add matching details
-          searchCols += `,${`"${matchDetails}"`}`;
         }
         
         // Status columns

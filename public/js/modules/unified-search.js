@@ -198,6 +198,9 @@ class UnifiedSearchManager {
       return null;
     }
     
+    // Debug log the structured parameters
+    console.log('UnifiedSearch: Advanced search parameters:', structuredParamsArray);
+    
     return {
       mode: 'advanced',
       structuredParams: structuredParamsArray, // Always return array even with one item
