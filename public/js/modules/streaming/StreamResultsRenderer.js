@@ -799,6 +799,11 @@ class StreamResultsRenderer {
             
             // For multi-term search, show color-coded indicators
             if (result.appAdsTxt.searchResults.termResults) {
+              // Create a container div to hold the indicators
+              const indicatorsContainer = Sanitizer.createSafeElement('div', {
+                style: 'display: flex; gap: 8px; flex-wrap: wrap;'
+              });
+              
               // Generate colored indicators for each term - showing term numbers (1-based index)
               result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
                 if (termResult.count > 0) {
@@ -812,10 +817,13 @@ class StreamResultsRenderer {
                     class: `term-match-indicator ${colorClass}`,
                     title: `${termResult.term || `Term ${termIndex + 1}`} found ${termResult.count} time(s)`
                   }, displayText);
-                  matchesSpan.appendChild(termIndicator);
-                  matchesSpan.appendChild(document.createTextNode(' '));
+                  
+                  indicatorsContainer.appendChild(termIndicator);
                 }
               });
+              
+              // Add indicators container to matches span
+              matchesSpan.appendChild(indicatorsContainer);
             } else if (searchMatchCount > 0) {
               // Fallback for single-term search
               matchesSpan.appendChild(document.createTextNode(`${searchMatchCount} matches`));
