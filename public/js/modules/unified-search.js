@@ -13,6 +13,40 @@ class UnifiedSearchManager {
   constructor() {
     this.activeMode = 'advanced'; // Only one mode now
     this.handlersAdded = false;
+    
+    // Cache DOM references
+    this.domCache = {
+      structuredSearchContainer: null,
+      simpleSearchContainer: null,
+      advancedSearchContainer: null,
+      modeButtons: null,
+      addButton: null
+    };
+  }
+  
+  /**
+   * Get cached DOM element or query and cache it
+   * @param {string} key - Cache key
+   * @param {string|function} selector - Element selector or function to get element
+   * @param {boolean} queryAll - Whether to use querySelectorAll instead of single element
+   * @returns {HTMLElement|NodeList} - Cached element
+   */
+  _getElement(key, selector, queryAll = false) {
+    // Return cached element if available
+    if (this.domCache[key]) {
+      return this.domCache[key];
+    }
+    
+    // Query element if not cached
+    if (typeof selector === 'string') {
+      this.domCache[key] = queryAll 
+        ? document.querySelectorAll(selector)
+        : document.getElementById(selector) || document.querySelector(selector);
+    } else if (typeof selector === 'function') {
+      this.domCache[key] = selector();
+    }
+    
+    return this.domCache[key];
   }
   
   /**
@@ -23,27 +57,27 @@ class UnifiedSearchManager {
     
     if (!this.handlersAdded) {
       // Initialize structured search container if empty
-      const structuredSearchContainer = document.getElementById('structuredSearchContainer');
+      const structuredSearchContainer = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (structuredSearchContainer && structuredSearchContainer.children.length === 0) {
         this._addStructuredSearchFormToUI(structuredSearchContainer);
         this._updateStructuredSearchFormsUI();
       }
       
       // Hide simple search container if it exists
-      const simpleContainer = document.getElementById('simpleSearchContainer');
+      const simpleContainer = this._getElement('simpleSearchContainer', 'simpleSearchContainer');
       if (simpleContainer) {
         simpleContainer.style.display = 'none';
       }
       
       // Show advanced search container
-      const advancedContainer = document.getElementById('advancedSearchContainer');
+      const advancedContainer = this._getElement('advancedSearchContainer', 'advancedSearchContainer');
       if (advancedContainer) {
         advancedContainer.style.display = 'block';
       }
       
       // Hide search mode toggle buttons if they exist
-      const modeButtons = document.querySelectorAll('[data-action="switch-search-mode"]');
-      if (modeButtons.length) {
+      const modeButtons = this._getElement('modeButtons', '[data-action="switch-search-mode"]', true);
+      if (modeButtons && modeButtons.length) {
         modeButtons.forEach(button => {
           button.style.display = 'none';
         });
@@ -67,10 +101,16 @@ class UnifiedSearchManager {
    * @returns {Object} Advanced search parameters
    */
   getAdvancedSearchParams() {
-    // Get all structured search forms
-    const forms = document.querySelectorAll('#structuredSearchContainer .structured-search-form');
+    // Get all structured search forms - this is a dynamic query so we don't cache
+    const forms = this._getElement('searchForms', 
+      () => document.querySelectorAll('#structuredSearchContainer .structured-search-form'),
+      false
+    );
     
-    if (!forms.length) {
+    // Clear this cache entry so it will be refreshed next time
+    this.domCache['searchForms'] = null;
+    
+    if (!forms || !forms.length) {
       return null; // No search forms found
     }
     
@@ -79,10 +119,18 @@ class UnifiedSearchManager {
     
     // Process each form
     forms.forEach((form, index) => {
-      const domain = form.querySelector(`.structured-domain`)?.value?.trim() || '';
-      const publisherId = form.querySelector(`.structured-publisher-id`)?.value?.trim() || '';
-      const relationship = form.querySelector(`.structured-relationship`)?.value?.trim() || '';
-      const tagId = form.querySelector(`.structured-tag-id`)?.value?.trim() || '';
+      // Cache form field elements within each form
+      const formFields = form._cachedFields = form._cachedFields || {
+        domain: form.querySelector('.structured-domain'),
+        publisherId: form.querySelector('.structured-publisher-id'),
+        relationship: form.querySelector('.structured-relationship'),
+        tagId: form.querySelector('.structured-tag-id')
+      };
+      
+      const domain = formFields.domain?.value?.trim() || '';
+      const publisherId = formFields.publisherId?.value?.trim() || '';
+      const relationship = formFields.relationship?.value?.trim() || '';
+      const tagId = formFields.tagId?.value?.trim() || '';
       
       // Skip if both domain and publisherId are empty
       if (!domain && !publisherId) {
@@ -146,7 +194,7 @@ class UnifiedSearchManager {
     // We only support advanced mode now
     if (params.structuredParams) {
       // Clear existing structured search forms
-      const container = document.getElementById('structuredSearchContainer');
+      const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container) {
         container.innerHTML = '';
         
@@ -168,7 +216,7 @@ class UnifiedSearchManager {
     // Convert simple mode params to advanced if they exist
     else if (params.mode === 'simple' && params.queries && Array.isArray(params.queries)) {
       // For backward compatibility - convert simple search terms to domain searches
-      const container = document.getElementById('structuredSearchContainer');
+      const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container) {
         container.innerHTML = '';
         
@@ -186,13 +234,13 @@ class UnifiedSearchManager {
     }
     
     // Show advanced container
-    const advancedContainer = document.getElementById('advancedSearchContainer');
+    const advancedContainer = this._getElement('advancedSearchContainer', 'advancedSearchContainer');
     if (advancedContainer) {
       advancedContainer.style.display = 'block';
     }
     
     // Hide simple container
-    const simpleContainer = document.getElementById('simpleSearchContainer');
+    const simpleContainer = this._getElement('simpleSearchContainer', 'simpleSearchContainer');
     if (simpleContainer) {
       simpleContainer.style.display = 'none';
     }
@@ -245,7 +293,7 @@ class UnifiedSearchManager {
     publisherIdInput.type = 'text';
     publisherIdInput.id = `structuredPublisherId_${index}`;
     publisherIdInput.className = 'structured-publisher-id';
-    publisherIdInput.placeholder = 'e.g., 12447 (searches for exact publisher ID)';
+    publisherIdInput.placeholder = 'e.g., 12447 (searches for exact ID)';
     if (publisherId) {
       publisherIdInput.value = publisherId;
     }
@@ -338,14 +386,24 @@ class UnifiedSearchManager {
    * @private
    */
   _updateStructuredSearchFormsUI() {
-    const forms = document.querySelectorAll('#structuredSearchContainer .structured-search-form');
+    const forms = this._getElement('searchForms', 
+      () => document.querySelectorAll('#structuredSearchContainer .structured-search-form'),
+      false
+    );
+    
+    // Clear this cache entry so it will be refreshed next time
+    this.domCache['searchForms'] = null;
+    
+    if (!forms) return;
     
     // Show/hide remove buttons based on number of forms
     forms.forEach((form, index) => {
-      const removeButton = form.querySelector('.remove-structured-search-btn');
-      if (removeButton) {
+      // Cache the remove button reference within the form
+      form._removeButton = form._removeButton || form.querySelector('.remove-structured-search-btn');
+      
+      if (form._removeButton) {
         // Only show remove button if there's more than one form
-        removeButton.style.display = forms.length > 1 ? 'block' : 'none';
+        form._removeButton.style.display = forms.length > 1 ? 'block' : 'none';
       }
     });
   }
@@ -355,12 +413,19 @@ class UnifiedSearchManager {
    */
   resetSearch() {
     // Reset advanced mode only
-    const structuredSearchContainer = document.getElementById('structuredSearchContainer');
+    const structuredSearchContainer = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
     if (structuredSearchContainer) {
       structuredSearchContainer.innerHTML = '';
       // Add one empty structured search form
       this._addStructuredSearchFormToUI(structuredSearchContainer);
       this._updateStructuredSearchFormsUI();
+      
+      // Clear cached form elements since DOM was modified
+      Object.keys(this.domCache).forEach(key => {
+        if (key.startsWith('form_') || key === 'searchForms') {
+          this.domCache[key] = null;
+        }
+      });
     }
   }
   
@@ -369,7 +434,7 @@ class UnifiedSearchManager {
    * Maximum of 5 forms allowed
    */
   addStructuredSearchForm() {
-    const container = document.getElementById('structuredSearchContainer');
+    const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
     if (container) {
       // Limit to maximum 5 structured search forms
       if (container.children.length >= 5) {
@@ -388,7 +453,7 @@ class UnifiedSearchManager {
       
       // Disable add button if limit reached
       if (container.children.length >= 5) {
-        const addButton = document.querySelector('[data-action="add-structured-search"]');
+        const addButton = this._getElement('addButton', '[data-action="add-structured-search"]');
         if (addButton) {
           addButton.disabled = true;
           addButton.classList.add('disabled');
@@ -407,8 +472,14 @@ class UnifiedSearchManager {
     if (form) {
       form.remove();
       
+      // Clear any cached references to this form
+      const formId = form.dataset.index;
+      if (formId && this.domCache[`form_${formId}`]) {
+        this.domCache[`form_${formId}`] = null;
+      }
+      
       // Ensure at least one form exists
-      const container = document.getElementById('structuredSearchContainer');
+      const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container && container.children.length === 0) {
         this.addStructuredSearchForm();
       }
@@ -418,13 +489,16 @@ class UnifiedSearchManager {
       
       // Re-enable add button if below the limit
       if (container && container.children.length < 5) {
-        const addButton = document.querySelector('[data-action="add-structured-search"]');
+        const addButton = this._getElement('addButton', '[data-action="add-structured-search"]');
         if (addButton) {
           addButton.disabled = false;
           addButton.classList.remove('disabled');
           addButton.setAttribute('title', 'Add another search criteria');
         }
       }
+      
+      // Clear the forms cache to ensure we get fresh forms on next query
+      this.domCache['searchForms'] = null;
     }
   }
 }

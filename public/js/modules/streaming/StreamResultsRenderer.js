@@ -16,6 +16,24 @@ class StreamResultsRenderer {
     this.animationFrameId = null;
     this.resultElement = null;
     
+    // DOM caching to reduce redundant queries
+    this.domCache = {
+      // Result elements
+      resultElement: null,
+      resultsContainer: null,
+      resultsTable: null,
+      resultsTableContainer: null,
+      resultsTableBody: null,
+      
+      // Indicators and banners
+      progressIndicators: null,
+      workerIndicator: null,
+      completionBanner: null,
+      
+      // Pagination
+      paginationControls: null
+    };
+    
     // Listen for stream completion events to show results
     window.addEventListener('streaming-show-results', (event) => {
       console.log('🔄 StreamResultsRenderer: Received show-results event');
@@ -28,6 +46,56 @@ class StreamResultsRenderer {
   }
   
   /**
+   * Get a cached DOM element or query and cache it
+   * @param {string} key - Cache key for the element
+   * @param {string|Function} selector - CSS selector or selector function
+   * @param {boolean} queryAll - Whether to use querySelectorAll
+   * @param {Element} context - Optional parent element for scoped queries
+   * @returns {Element|NodeList|null} - The requested element(s)
+   */
+  _getElement(key, selector, queryAll = false, context = document) {
+    // Return cached element if available
+    if (this.domCache[key] !== undefined && this.domCache[key] !== null) {
+      return this.domCache[key];
+    }
+    
+    // Query element based on selector type
+    if (typeof selector === 'string') {
+      if (selector.startsWith('#') && !queryAll && context === document) {
+        // Optimize for ID selectors
+        this.domCache[key] = document.getElementById(selector.substring(1));
+      } else {
+        // Use standard query methods
+        this.domCache[key] = queryAll 
+          ? context.querySelectorAll(selector)
+          : context.querySelector(selector);
+      }
+    } else if (typeof selector === 'function') {
+      // Execute selector function
+      this.domCache[key] = selector();
+    }
+    
+    return this.domCache[key];
+  }
+  
+  /**
+   * Clear specific DOM cache entries
+   * @param {Array} keys - Keys to clear (or all if not specified)
+   */
+  _clearCache(keys = null) {
+    if (keys) {
+      keys.forEach(key => {
+        this.domCache[key] = null;
+      });
+    } else {
+      // Clear all cache entries
+      Object.keys(this.domCache).forEach(key => {
+        this.domCache[key] = null;
+      });
+    }
+  }
+  
+  /**
    * Initialize UI for displaying results
    * @param {HTMLElement} container - Container element
    * @param {number} totalItems - Total items to process
@@ -36,11 +104,18 @@ class StreamResultsRenderer {
   initializeUI(container, totalItems, hasSearchTerms) {
     this.hasSearchTerms = hasSearchTerms;
     
-    // Get or find container element
-    const resultElement = container || document.getElementById('result');
-    if (!resultElement) return;
+    // Clear cache for a fresh start
+    this._clearCache();
     
-    this.resultElement = resultElement;
+    // Get or find container element using caching
+    if (container) {
+      this.domCache.resultElement = container;
+      this.resultElement = container;
+    } else {
+      this.resultElement = this._getElement('resultElement', '#result');
+    }
+    
+    if (!this.resultElement) return;
     
     // Perform thorough cleanup of all existing elements
     this._cleanupPreviousElements();
@@ -49,12 +124,16 @@ class StreamResultsRenderer {
     
     // First check if we already have any progress indicators
     // Remove all existing visual-indicators-container to avoid overlap
-    const existingProgressIndicators = document.querySelectorAll('.visual-indicators-container');
-    existingProgressIndicators.forEach(indicator => {
-      if (indicator && indicator.parentNode) {
-        indicator.parentNode.removeChild(indicator);
-      }
-    });
+    const existingProgressIndicators = this._getElement('progressIndicators', 
+      '.visual-indicators-container', true);
+    
+    if (existingProgressIndicators) {
+      Array.from(existingProgressIndicators).forEach(indicator => {
+        if (indicator && indicator.parentNode) {
+          indicator.parentNode.removeChild(indicator);
+        }
+      });
+    }
     
     // Create worker processing indicator div
     const workerIndicator = document.createElement('div');
@@ -69,37 +148,46 @@ class StreamResultsRenderer {
       </div>
     `;
     
+    // Cache the worker indicator
+    this.domCache.workerIndicator = workerIndicator;
+    
     // Create results container
     const resultsContainer = document.createElement('div');
     resultsContainer.id = 'results-container';
     resultsContainer.style.display = 'none';
     
+    // Cache the results container
+    this.domCache.resultsContainer = resultsContainer;
+    
     // Clear the result element's existing content
-    resultElement.innerHTML = '';
+    this.resultElement.innerHTML = '';
     
     // Add our new elements
-    resultElement.appendChild(workerIndicator);
-    resultElement.appendChild(resultsContainer);
+    this.resultElement.appendChild(workerIndicator);
+    this.resultElement.appendChild(resultsContainer);
     
-    // Add animation styles
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-      @keyframes streaming-animation {
-        0% { background-position: 100% 0; }
-        100% { background-position: 0 0; }
-      }
-    `;
-    document.head.appendChild(style);
+    // Add animation styles (only once)
+    if (!document.getElementById('stream-renderer-styles')) {
+      const style = document.createElement('style');
+      style.id = 'stream-renderer-styles';
+      style.textContent = `
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes streaming-animation {
+          0% { background-position: 100% 0; }
+          100% { background-position: 0 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
     
     // Show the result element
-    resultElement.style.display = 'block';
+    this.resultElement.style.display = 'block';
     
     // Add event listeners for toggles
-    this._setupEventListeners(resultElement);
+    this._setupEventListeners(this.resultElement);
   }
   
   /**
@@ -123,32 +211,49 @@ class StreamResultsRenderer {
       '#streamProgress'
     ];
     
-    // Find and remove all these elements
-    elementsToRemove.forEach(selector => {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach(element => {
-        if (element && element.parentNode) {
-          console.log(`🔄 StreamResultsRenderer: Removing ${selector} element`);
-          element.parentNode.removeChild(element);
-        }
-      });
+    // Create a selector for all elements to remove at once (more efficient)
+    const combinedSelector = elementsToRemove.join(', ');
+    
+    // Use a single query to find all elements to remove (faster than multiple queries)
+    const elements = document.querySelectorAll(combinedSelector);
+    
+    // Keep count for logging
+    let removedCount = 0;
+    
+    // Remove all matched elements
+    elements.forEach(element => {
+      if (element && element.parentNode) {
+        element.parentNode.removeChild(element);
+        removedCount++;
+      }
     });
+    
+    console.log(`🔄 StreamResultsRenderer: Removed ${removedCount} elements`);
     
     // Clear any progress messages or indicators without specific classes
     if (this.resultElement) {
       // Find any elements that might contain progress-related text
-      const allElements = this.resultElement.querySelectorAll('*');
-      allElements.forEach(element => {
-        if (element.textContent && (
-          element.textContent.includes('Processing') || 
-          element.textContent.includes('Sending request') ||
-          element.textContent.includes('Worker')) &&
-          !element.classList.contains('stream-results-display')) {
-          console.log('🔄 StreamResultsRenderer: Removing text-matched element');
-          element.remove();
-        }
+      const textQuery = element => 
+        element.textContent && 
+        (element.textContent.includes('Processing') || 
+         element.textContent.includes('Sending request') ||
+         element.textContent.includes('Worker')) &&
+        !element.classList.contains('stream-results-display');
+      
+      // Use more efficient approach - collect elements first, then remove
+      const textElements = Array.from(this.resultElement.querySelectorAll('*'))
+        .filter(textQuery);
+      
+      // Remove collected elements
+      textElements.forEach(element => {
+        element.remove();
       });
+      
+      console.log(`🔄 StreamResultsRenderer: Removed ${textElements.length} text-matched elements`);
     }
+    
+    // Clear the DOM cache after cleanup
+    this._clearCache();
   }
   
   /**
@@ -175,39 +280,57 @@ class StreamResultsRenderer {
    * @private
    */
   updateSummaryStats(stats) {
-  if (!this.resultElement) return;
-  
-  // Update worker processing indicator
-  const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator h3');
-  if (workerIndicator) {
-    // Fix for NaN% issue - ensure both values are valid numbers
-    let percent = 0;
-    const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
-    const totalCount = typeof stats.total === 'number' && stats.total > 0 ? stats.total : this.stats?.totalBundleIds || 0;
+    if (!this.resultElement) return;
     
-    // Only calculate percent if total is valid
-    if (totalCount > 0) {
-      percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
+    // Store stats for reference
+    this.stats = this.stats || {};
+    Object.assign(this.stats, stats);
+    
+    // Get cached indicator header or query it once
+    const workerIndicator = this._getElement('workerIndicatorHeader', 
+      () => {
+        const indicator = this.domCache.workerIndicator;
+        return indicator ? indicator.querySelector('h3') : 
+          this.resultElement.querySelector('.worker-processing-indicator h3');
+      });
       
-      // Only update the text if we have valid data
-      // Check if we're not going backwards from a previous valid state
-      if (!workerIndicator.textContent.includes('initializing')) {
-        workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+    if (workerIndicator) {
+      // Fix for NaN% issue - ensure both values are valid numbers
+      let percent = 0;
+      const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
+      const totalCount = typeof stats.total === 'number' && stats.total > 0 ? 
+        stats.total : this.stats?.totalBundleIds || 0;
+      
+      // Only calculate percent if total is valid
+      if (totalCount > 0) {
+        percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
+        
+        // Only update the text if we have valid data
+        // Check if we're not going backwards from a previous valid state
+        if (!workerIndicator.textContent.includes('initializing')) {
+          workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+        }
+      }
+      // Don't revert to "initializing" once we've started showing progress
+      else if (!workerIndicator.textContent.includes('%')) {
+        // Only show initializing if we haven't started showing percentages yet
+        workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
+      }
+      
+      // Get cached progress bar or query it once
+      const progressBar = this._getElement('workerProgressBar', 
+        () => {
+          const indicator = this.domCache.workerIndicator;
+          return indicator ? indicator.querySelector('.progress-bar') : 
+            this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
+        });
+        
+      // Always update the progress bar if it exists
+      if (progressBar && percent > 0) {
+        progressBar.style.width = `${percent}%`;
       }
     }
-    // Don't revert to "initializing" once we've started showing progress
-    else if (!workerIndicator.textContent.includes('%')) {
-      // Only show initializing if we haven't started showing percentages yet
-      workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
-    }
-    
-    // Always update the progress bar if it exists
-    const progressBar = this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
-    if (progressBar && percent > 0) {
-      progressBar.style.width = `${percent}%`;
-    }
   }
-}
 
   /**
    * Render a batch of results
@@ -263,13 +386,14 @@ class StreamResultsRenderer {
   showResults(results) {
     if (!this.resultElement) return;
     
-    // Make sure completion banner stays visible when showing results
-    const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
+    // Make sure completion banner stays visible when showing results - use cached version if available
+    const completionBanner = this._getElement('completionBanner', '.streaming-completion-banner');
     if (completionBanner) {
       completionBanner.style.display = 'block';
       
-      // Update Show Results button text
-      const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+      // Update Show Results button text - cache the button too for potential future use
+      const showResultsBtn = this._getElement('showResultsBtn', 
+        () => completionBanner.querySelector('[data-action="show-results"]'));
       if (showResultsBtn) {
         showResultsBtn.textContent = 'Hide Results';
       }
@@ -341,6 +465,9 @@ class StreamResultsRenderer {
     const resultsDisplay = document.createElement('div');
     resultsDisplay.className = 'stream-results-display';
     
+    // Cache the results display
+    this.domCache.resultsDisplay = resultsDisplay;
+    
     // Add results header with search-styled UI
     resultsDisplay.innerHTML = `
       <div class="stream-results-header search-container">
@@ -376,8 +503,14 @@ class StreamResultsRenderer {
       </div>
     `;
     
+    // Get references to the table elements and cache them for future use
+    this.domCache.resultsTableContainer = resultsDisplay.querySelector('.results-table-container');
+    this.domCache.resultsTable = resultsDisplay.querySelector('.results-table');
+    this.domCache.resultsTableBody = resultsDisplay.querySelector('#results-final-tbody');
+    this.domCache.paginationControls = resultsDisplay.querySelector('#pagination-controls');
+    
     // Replace any existing results section or add to the page
-    const existingResults = this.resultElement.querySelector('.stream-results-display');
+    const existingResults = this._getElement('existingResultsDisplay', '.stream-results-display');
     if (existingResults) {
       existingResults.parentNode.replaceChild(resultsDisplay, existingResults);
     } else {
@@ -388,7 +521,7 @@ class StreamResultsRenderer {
     this._setupEventListeners(resultsDisplay);
     
     // Render the first page of results
-    this._renderPage(results, 1);
+    this._renderPage(filteredResults, 1);
     
     // Scroll to the results
     resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -413,8 +546,8 @@ class StreamResultsRenderer {
     // Get results for this page
     const pageResults = results.slice(startIndex, endIndex);
     
-    // Get the tbody element
-    const tbody = document.getElementById('results-final-tbody');
+    // Get the tbody element using our caching method
+    const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
     if (!tbody) return;
     
     // Clear existing rows
@@ -489,8 +622,8 @@ class StreamResultsRenderer {
       tbody.appendChild(row);
     });
     
-    // Update pagination controls
-    const paginationControls = document.getElementById('pagination-controls');
+    // Update pagination controls using our caching method
+    const paginationControls = this._getElement('paginationControls', '#pagination-controls');
     if (paginationControls) {
       paginationControls.innerHTML = this._generatePaginationControls(
         results.length, 
@@ -631,8 +764,21 @@ class StreamResultsRenderer {
    * @private
    */
   _createCompletionBanner() {
+    // Check if we already have a cached banner
+    if (this.domCache.completionBanner) {
+      // If the banner exists but was removed from DOM, we can reuse it
+      if (!this.domCache.completionBanner.isConnected) {
+        this.resultElement.prepend(this.domCache.completionBanner);
+        return;
+      }
+    }
+    
+    // Create a new banner if needed
     const completionBanner = document.createElement('div');
     completionBanner.className = 'streaming-completion-message streaming-completion-banner';
+    
+    // Cache the completion banner for future reference
+    this.domCache.completionBanner = completionBanner;
     
     completionBanner.innerHTML = `
       <div class="completion-banner-content">
@@ -649,9 +795,6 @@ class StreamResultsRenderer {
     
     // Add to the result element
     this.resultElement.prepend(completionBanner);
-    
-    // Add event listener for show results button
-    const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
     
     // Set up styles to match other buttons
     const actionButtons = completionBanner.querySelectorAll('button');
@@ -698,6 +841,9 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
   const completionBanner = document.createElement('div');
   completionBanner.className = 'streaming-completion-message streaming-completion-banner';
   
+  // Cache the completion banner for future reference
+  this.domCache.completionBanner = completionBanner;
+  
   // Format time in a readable way
   const timeInSeconds = stats.elapsedTime / 1000;
   const timeDisplay = timeInSeconds >= 60 
@@ -720,8 +866,8 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     </div>
   `;
   
-  // First hide the worker processing indicator
-  const workerIndicator = this.resultElement.querySelector('.worker-processing-indicator');
+  // First hide the worker processing indicator using cached element
+  const workerIndicator = this._getElement('workerIndicator', '.worker-processing-indicator');
   if (workerIndicator) {
     // Replace it with the completion banner
     workerIndicator.parentNode.replaceChild(completionBanner, workerIndicator);
@@ -729,9 +875,6 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     // If for some reason we can't find it, just append the banner
     this.resultElement.appendChild(completionBanner);
   }
-  
-  // Add event listeners for buttons
-  const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
   
   // Set up styles to match other buttons
   const actionButtons = completionBanner.querySelectorAll('button');

@@ -162,7 +162,7 @@ class StreamProcessor {
     
     if (this.resultsRenderer) {
       // Clear existing results elements thoroughly to prevent DOM conflicts
-      const resultContainer = document.getElementById('result');
+      const resultContainer = DOMUtils.getElement('result');
       if (resultContainer) {
         // Save any progress indicators that might be active
         const progressIndicator = resultContainer.querySelector('.visual-indicators-container');
@@ -176,13 +176,17 @@ class StreamProcessor {
           resultsTable.remove();
         }
         
-        // Remove any worker indicators
-        const workerIndicators = document.querySelectorAll('.worker-processing-indicator, .worker-indicator');
-        workerIndicators.forEach(indicator => indicator.remove());
+        // Remove elements more efficiently using combined selectors
+        const indicatorsToRemove = [
+          '.worker-processing-indicator',
+          '.worker-indicator',
+          '.streaming-mode-indicator', 
+          '.streaming-info-banner'
+        ].join(', ');
         
-        // Remove any streaming banners
-        const streamingBanners = document.querySelectorAll('.streaming-mode-indicator, .streaming-info-banner');
-        streamingBanners.forEach(banner => banner.remove());
+        const elementsToRemove = document.querySelectorAll(indicatorsToRemove);
+        console.log(`🚀 StreamProcessor: Removing ${elementsToRemove.length} elements during reset`);
+        elementsToRemove.forEach(element => element.remove());
       }
     }
     
@@ -752,7 +756,7 @@ class StreamProcessor {
    * @private
    */
   _finalizeUI() {
-    // Enable download button
+    // Enable download button - using direct query since this is not cached elsewhere
     const downloadBtn = document.querySelector('[data-action="download-csv"]');
     if (downloadBtn) {
       downloadBtn.disabled = false;
@@ -772,24 +776,44 @@ class StreamProcessor {
       elapsedTime: processingTime
     };
     
-    // Remove ALL progress UI elements completely 
-    const allProgressElements = document.querySelectorAll(
-      '.visual-indicators-container, .stats-container, .progress-bar-container, .counter, .rate-indicator, .time-remaining, .progress-indicator, #streamProgress'
-    );
+    // Remove ALL progress UI elements more efficiently with a single selector
+    const progressSelectors = [
+      '.visual-indicators-container', 
+      '.stats-container', 
+      '.progress-bar-container', 
+      '.counter', 
+      '.rate-indicator', 
+      '.time-remaining', 
+      '.progress-indicator', 
+      '#streamProgress'
+    ].join(', ');
+    
+    const allProgressElements = document.querySelectorAll(progressSelectors);
+    console.log(`⚡ StreamProcessor: Removing ${allProgressElements.length} progress elements`);
     allProgressElements.forEach(element => {
       if (element && element.parentNode) {
         element.parentNode.removeChild(element);
       }
     });
     
-    // Remove the worker message about "Using Web Worker for processing!" that persists after completion
-    const workerMessages = document.querySelectorAll('#debug-information, #debugInfo, .debug-info');
+    // Check and remove worker messages more efficiently
+    const workerMessageSelectors = ['#debug-information', '#debugInfo', '.debug-info'].join(', ');
+    const workerMessages = document.querySelectorAll(workerMessageSelectors);
+    
+    // Create a list of elements to remove, then remove them all at once
+    const messagesToRemove = [];
     workerMessages.forEach(element => {
-      // Only remove it if it contains the worker message
+      // Only add it to the removal list if it contains the worker message
       if (element && element.textContent && element.textContent.includes('Using Web Worker for processing')) {
-        if (element.parentNode) {
-          element.parentNode.removeChild(element);
-        }
+        messagesToRemove.push(element);
+      }
+    });
+    
+    // Now remove all collected elements
+    console.log(`⚡ StreamProcessor: Removing ${messagesToRemove.length} worker message elements`);
+    messagesToRemove.forEach(element => {
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
       }
     });
     
@@ -798,7 +822,7 @@ class StreamProcessor {
       this.resultsRenderer.updateCompletionStatus(stats);
     }
     
-    // Hide any worker progress indicators
+    // Hide any worker progress indicators - use DOMUtils since this is repeatedly accessed
     const workerIndicator = document.querySelector('.worker-processing-indicator');
     if (workerIndicator) {
       console.log('⚡ StreamProcessor: Hiding worker processing indicator');
@@ -826,16 +850,17 @@ class StreamProcessor {
       window.AppState.setProcessing(false);
     }
     
-    // Hide any remaining "Processing..." indicators
-    const processingIndicators = document.querySelectorAll('.processing-indicator, [data-status="processing"]');
+    // Hide any remaining "Processing..." indicators with a combined query
+    const processingIndicatorSelectors = ['.processing-indicator', '[data-status="processing"]'].join(', ');
+    const processingIndicators = document.querySelectorAll(processingIndicatorSelectors);
     processingIndicators.forEach(indicator => {
       if (indicator.style) {
         indicator.style.display = 'none';
       }
     });
     
-    // Enable extract button
-    const extractBtn = document.getElementById('extractBtn');
+    // Enable extract button - use DOMUtils for cached access
+    const extractBtn = DOMUtils.getElement('extractBtn');
     if (extractBtn) {
       extractBtn.disabled = false;
       extractBtn.textContent = 'Extract All Developer Domains';
@@ -1034,8 +1059,8 @@ class StreamProcessor {
   _clearAllProcessingIndicators() {
     console.log('🚀 StreamProcessor: Clearing all processing indicators');
     
-    // Get the result container
-    const resultElement = document.getElementById('result');
+    // Get the result container using DOMUtils for caching
+    const resultElement = DOMUtils.getElement('result');
     if (!resultElement) return;
     
     // Clear progress indicators
@@ -1057,15 +1082,18 @@ class StreamProcessor {
       '#streamProgress'
     ];
     
-    // Find and remove all elements
-    elementsToRemove.forEach(selector => {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach(element => {
-        console.log(`🚀 StreamProcessor: Removing ${selector} element`);
-        if (element.parentNode) {
-          element.parentNode.removeChild(element);
-        }
-      });
+    // Create a combined selector for a single query - more efficient
+    const combinedSelector = elementsToRemove.join(', ');
+    const elements = document.querySelectorAll(combinedSelector);
+    
+    // Log removal count for debugging
+    console.log(`🚀 StreamProcessor: Removing ${elements.length} indicator elements`);
+    
+    // Remove all matched elements
+    elements.forEach(element => {
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
     });
     
     // We want to keep the results display visible
@@ -1078,16 +1106,23 @@ class StreamProcessor {
     }
     */
     
-    // Clear any processing messages
+    // Clear any processing messages with a more efficient approach
     const staticIndicators = resultElement.querySelectorAll(':not(.stream-results-display)');
+    
+    // Build a list first, then remove all together (more efficient than removing during iteration)
+    const indicatorsToRemove = [];
     staticIndicators.forEach(element => {
       if (element.textContent && (
           element.textContent.includes('Processing') || 
           element.textContent.includes('Sending request') ||
           element.textContent.includes('Worker'))) {
-        element.remove();
+        indicatorsToRemove.push(element);
       }
     });
+    
+    // Now remove all at once
+    indicatorsToRemove.forEach(element => element.remove());
+    console.log(`🚀 StreamProcessor: Removed ${indicatorsToRemove.length} message elements`);
   }
   
   /**

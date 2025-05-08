@@ -358,10 +358,11 @@ class EventHandlerManager {
         if (hideResultsDisplay) {
           hideResultsDisplay.style.display = 'none';
           
-          // Update button text if it exists
-          const showResultsBtn = document.querySelector('[data-action="show-results"]');
-          if (showResultsBtn) {
-            showResultsBtn.textContent = 'Show Results';
+          // Update all buttons at once for better efficiency
+          const showResultsBtns = document.querySelectorAll('[data-action="show-results"]');
+          if (showResultsBtns.length > 0) {
+            // Update all matching buttons in a single iteration
+            showResultsBtns.forEach(btn => { btn.textContent = 'Show Results'; });
           }
         }
         break;
@@ -374,35 +375,39 @@ class EventHandlerManager {
           showResultsDisplay.style.display = 'block';
           showResultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
           
-          // Update button text
-          const hideResultsBtn = document.querySelector('[data-action="hide-results"]');
-          if (hideResultsBtn) {
-            hideResultsBtn.textContent = 'Hide Results';
+          // Update all matching buttons at once using querySelectorAll for better efficiency
+          const hideResultsBtns = document.querySelectorAll('[data-action="hide-results"]');
+          if (hideResultsBtns.length > 0) {
+            hideResultsBtns.forEach(btn => { btn.textContent = 'Hide Results'; });
           }
         } else {
-          // Results need to be generated - use the StreamResultsRenderer
-          import('./streaming/StreamResultsRenderer.js').then(module => {
-            const streamResultsRenderer = module.default;
+          // Use Promise.all to load modules in parallel for better performance
+          Promise.all([
+            import('./streaming/StreamResultsRenderer.js'),
+            import('./app-state.js')
+          ]).then(([rendererModule, appStateModule]) => {
+            const streamResultsRenderer = rendererModule.default;
+            const appState = appStateModule.default;
             
-            // Try to get AppState via import
-            import('./app-state.js').then(appStateModule => {
-              const appState = appStateModule.default;
-              
-              // Show the results
-              streamResultsRenderer.showResults(appState?.results || []);
-              
-              // Update button text
-              const showBtn = target.closest('[data-action="show-results"]');
-              if (showBtn) {
-                showBtn.textContent = 'Hide Results';
-              }
-            }).catch(error => {
-              console.error('Error importing AppState:', error);
+            // Show the results
+            streamResultsRenderer.showResults(appState?.results || []);
+            
+            // Cache the button reference
+            const showBtn = target.closest('[data-action="show-results"]');
+            if (showBtn) {
+              showBtn.textContent = 'Hide Results';
+            }
+          }).catch(error => {
+            console.error('Error importing modules:', error);
+            
+            // Fallback to a single import if parallel loading fails
+            import('./streaming/StreamResultsRenderer.js').then(module => {
+              const streamResultsRenderer = module.default;
               // Fallback to window.AppState
               streamResultsRenderer.showResults(window.AppState?.results || []);
+            }).catch(fallbackError => {
+              console.error('Error in fallback code path:', fallbackError);
             });
-          }).catch(error => {
-            console.error('Error importing StreamResultsRenderer:', error);
           });
         }
         break;
