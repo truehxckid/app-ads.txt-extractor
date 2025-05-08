@@ -48,11 +48,19 @@ export function checkBrowserSupport() {
   }
   
   // Check for Modules - using a safer approach without eval
-  // We can check for basic dynamic import support by looking at browser capabilities
-  if (typeof import !== 'function' && 
-      !(window.chrome || window.safari || window.firefox || window.edge)) {
-    // If import is not a function and we're not in a modern browser, 
-    // it's likely ES modules are not supported
+  // Dynamic import check needs to be done carefully to avoid syntax errors
+  try {
+    // Check if we're in a modern browser with module support
+    const isModernBrowser = !!(window.chrome || window.safari || 
+                             typeof firefox !== 'undefined' || 
+                             typeof edge !== 'undefined');
+    
+    // If not in a modern browser, check for basic module features
+    if (!isModernBrowser && typeof importScripts === 'undefined') {
+      missingFeatures.push('ES Modules');
+    }
+  } catch (e) {
+    // If any error occurs, we assume modules are not supported
     missingFeatures.push('ES Modules');
   }
   

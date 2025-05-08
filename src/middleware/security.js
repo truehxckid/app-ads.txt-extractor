@@ -18,24 +18,32 @@ const helmetConfig = {
   contentSecurityPolicy: {
     useDefaults: false,
     directives: {
-      defaultSrc: ["'self'"],
-      // Remove unsafe-inline by using nonces
-      scriptSrc: [
-        "'self'", 
-        "https://cdnjs.cloudflare.com",
-        // Allow scripts with nonces - security improvement over unsafe-inline
-        (req, res) => `'nonce-${res.locals.cspNonce}'`,
-        // Temporarily include unsafe-inline as a fallback during testing
-        process.env.NODE_ENV === 'development' ? "'unsafe-inline'" : null
-      ].filter(Boolean),
-      // Allow styles from trusted sources
-      styleSrc: [
-        "'self'", 
-        "https://fonts.googleapis.com",
-        // Keeping unsafe-inline for styles since it's hard to nonce all styles
-        // This can be improved further by migrating to CSS modules
-        "'unsafe-inline'"
-      ],
+      // In development mode, use a more permissive CSP to simplify debugging
+      ...(config.server.isDev ? {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdnjs.cloudflare.com"],
+        scriptSrcElem: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      } : {
+        // Production mode uses strict CSP with nonces
+        defaultSrc: ["'self'"],
+        // Remove unsafe-inline by using nonces
+        scriptSrc: [
+          "'self'", 
+          "https://cdnjs.cloudflare.com",
+          // Allow scripts with nonces - security improvement over unsafe-inline
+          (req, res) => `'nonce-${res.locals.cspNonce}'`
+        ]
+      }),
+      ...(config.server.isDev ? {} : {
+        // Production-only styles
+        styleSrc: [
+          "'self'", 
+          "https://fonts.googleapis.com",
+          // Keeping unsafe-inline for styles since it's hard to nonce all styles
+          "'unsafe-inline'"
+        ]
+      }),
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
       // Allow connections only to self
@@ -44,15 +52,15 @@ const helmetConfig = {
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
       formAction: ["'self'"],
-      // Prevent eval and similar dynamic code execution
-      scriptSrcAttr: ["'none'"],
-      scriptSrcElem: [
-        "'self'", 
-        "https://cdnjs.cloudflare.com",
-        (req, res) => `'nonce-${res.locals.cspNonce}'`,
-        // Temporarily include unsafe-inline as a fallback during testing
-        process.env.NODE_ENV === 'development' ? "'unsafe-inline'" : null
-      ].filter(Boolean),
+      // Prevent eval and similar dynamic code execution in production
+      ...(config.server.isDev ? {} : {
+        scriptSrcAttr: ["'none'"],
+        scriptSrcElem: [
+          "'self'", 
+          "https://cdnjs.cloudflare.com",
+          (req, res) => `'nonce-${res.locals.cspNonce}'`
+        ]
+      }),
       // Add base-uri to prevent base tag hijacking
       baseUri: ["'self'"],
       // Enable upgradeInsecureRequests in production
@@ -135,18 +143,19 @@ function securityMiddleware(req, res, next) {
   const nonce = generateNonce();
   res.locals.cspNonce = nonce;
   
+  // Log nonce generation for debugging
+  console.log(`Generated CSP nonce: ${nonce} for request to ${req.path}`);
+  
   // Set X-Content-Type-Options header
   res.setHeader('X-Content-Type-Options', 'nosniff');
   
   // Set Permissions-Policy header (modern version of Feature-Policy)
+  // Use only widely supported features to avoid warnings
   res.setHeader('Permissions-Policy', 
     'camera=(), microphone=(), geolocation=(), interest-cohort=(), accelerometer=(), ' +
-    'ambient-light-sensor=(), autoplay=(), battery=(), display-capture=(), ' +
-    'document-domain=(), encrypted-media=(), execution-while-not-rendered=(), ' +
-    'execution-while-out-of-viewport=(), fullscreen=(), gyroscope=(), ' +
-    'layout-animations=(), legacy-image-formats=(), magnetometer=(), midi=(), ' +
-    'navigation-override=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), ' +
-    'screen-wake-lock=(), sync-xhr=(), usb=(), web-share=(), xr-spatial-tracking=()'
+    'autoplay=(), display-capture=(), encrypted-media=(), fullscreen=(), ' +
+    'gyroscope=(), payment=(), picture-in-picture=(), sync-xhr=(), ' +
+    'usb=(), web-share=()'
   );
   
   // Allow long connections for streaming
@@ -183,7 +192,15 @@ function securityMiddleware(req, res, next) {
     if (typeof body === 'string' && 
         (res.get('Content-Type') || '').includes('html')) {
       // Add nonce to all script tags - make sure we don't duplicate nonce attributes
+      const originalBody = body;
       body = body.replace(/<script(?![^>]*\snonce=)/gi, `<script nonce="${nonce}"`);
+      
+      // Log for debugging if nonce was applied
+      if (body !== originalBody) {
+        console.log(`Applied nonce to ${(body.match(/<script\s+nonce=/g) || []).length} script tags`);
+      } else {
+        console.log('Warning: No script tags were updated with nonces');
+      }
     }
     return originalSend.call(this, body);
   };
