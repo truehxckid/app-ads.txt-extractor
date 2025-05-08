@@ -500,7 +500,7 @@ function generateCsvLine(result, searchTerms) {
   if (isAdvancedSearch) {
     // Handle advanced search format
     const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
-    const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
+    let matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
     
     // Format advanced search results
     let advancedSearchInfo = '';
@@ -509,6 +509,9 @@ function generateCsvLine(result, searchTerms) {
     if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
       const termResults = result.appAdsTxt.searchResults.termResults;
       advancedSearchInfo = termResults.map(termResult => termResult.term || '').join(' | ');
+      
+      // Also update the matchCount to reflect the actual number of term results
+      matchCount = termResults.length;
     }
     // Fall back to traditional advancedParams if termResults not available
     else if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
@@ -537,8 +540,26 @@ function generateCsvLine(result, searchTerms) {
     }
     
     // Limit matching lines for CSV
-    const matchingLinesSummary = hasMatches ? 
-      truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines) : '';
+    let matchingLinesSummary = '';
+    
+    // First try to get matches from termResults if available
+    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
+      const termMatches = result.appAdsTxt.searchResults.termResults
+        .map(termResult => {
+          // Include both the term description and the actual matched entries
+          if (termResult.matches && termResult.matches.length > 0) {
+            return `${termResult.term}: ${termResult.matches.join(', ')}`;
+          }
+          return termResult.term;
+        })
+        .join(' | ');
+      
+      matchingLinesSummary = termMatches;
+    }
+    // Fall back to traditional matchingLines if available
+    else if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
+      matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
+    }
     
     searchCols = [
       `"${advancedSearchInfo}"`,
@@ -547,11 +568,30 @@ function generateCsvLine(result, searchTerms) {
     ];
   } else if (searchTerms && searchTerms.length > 0) {
     const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
-    const matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
+    let matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
     
     // Limit matching lines for CSV
-    const matchingLinesSummary = hasMatches ? 
-      truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines) : '';
+    let matchingLinesSummary = '';
+    
+    // First try to get matches from termResults if available
+    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
+      const termResults = result.appAdsTxt.searchResults.termResults;
+      matchCount = termResults.length; // Update match count
+      
+      // Format term matches
+      const termMatches = termResults.map(termResult => {
+        if (termResult.matches && termResult.matches.length > 0) {
+          return `${termResult.term}: ${termResult.matches.join(', ')}`;
+        }
+        return termResult.term;
+      }).join(' | ');
+      
+      matchingLinesSummary = termMatches;
+    } 
+    // Fall back to traditional matchingLines if available
+    else if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
+      matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
+    }
     
     // Handle multiple search terms with separate columns
     if (searchTerms.length > 1) {

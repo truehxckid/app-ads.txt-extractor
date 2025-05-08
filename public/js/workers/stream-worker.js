@@ -393,6 +393,17 @@ function matchesStructuredParams(result, params) {
   }
   
   // For each parameter set, check if any entry matches all criteria
+  let hasAnyMatches = false;
+  
+  // Initialize the search results structure if it doesn't exist yet
+  if (!result.appAdsTxt.searchResults) {
+    result.appAdsTxt.searchResults = {
+      count: 0,
+      termResults: []
+    };
+  }
+  
+  // Process each parameter set independently
   for (const paramSet of params) {
     // Check for empty param set
     if (!paramSet || Object.keys(paramSet).length === 0) {
@@ -484,17 +495,9 @@ function matchesStructuredParams(result, params) {
       return true;
     });
     
-    // If any parameter set matches, the result is included
+    // If this parameter set matches, add it to the results
     if (matchesForThisParamSet) {
       console.log('Found matching entry for paramSet:', paramSet);
-      
-      // Store the matched terms in the result object for UI display
-      if (!result.appAdsTxt.searchResults) {
-        result.appAdsTxt.searchResults = {
-          count: 1,
-          termResults: []
-        };
-      }
       
       // Create a formatted term result that the UI can display
       const termResult = {
@@ -506,29 +509,57 @@ function matchesStructuredParams(result, params) {
       // Add to termResults array
       result.appAdsTxt.searchResults.termResults.push(termResult);
       
-      return true;
-    }
-    
-    // Last resort - do raw string content search if parameters are simple
-    if (result.appAdsTxt.content && paramSet.domain && paramSet.publisherId) {
-      console.log('Trying raw content search as last resort');
-      const searchDomain = paramSet.domain.toLowerCase();
-      const searchPublisherId = paramSet.publisherId.trim();
-      const content = result.appAdsTxt.content.toLowerCase();
+      // Increment the overall count
+      result.appAdsTxt.searchResults.count += 1;
       
-      // Try to find a line with both domain and publisherId
-      const lines = content.split(/\r?\n/);
-      for (const line of lines) {
-        if (line.includes(searchDomain) && line.includes(searchPublisherId)) {
-          console.log('Found potential match in raw content:', line);
-          return true;
+      // Set the flag that we found at least one match
+      hasAnyMatches = true;
+    }
+  }
+  
+  // Try raw string content search as a last resort if no matches found yet
+  if (!hasAnyMatches && result.appAdsTxt.content) {
+    for (const paramSet of params) {
+      if (paramSet.domain && paramSet.publisherId) {
+        console.log('Trying raw content search as last resort for:', paramSet);
+        const searchDomain = paramSet.domain.toLowerCase();
+        const searchPublisherId = paramSet.publisherId.trim();
+        const content = result.appAdsTxt.content.toLowerCase();
+        
+        // Try to find a line with both domain and publisherId
+        const lines = content.split(/\r?\n/);
+        for (const line of lines) {
+          if (line.includes(searchDomain) && line.includes(searchPublisherId)) {
+            console.log('Found potential match in raw content:', line);
+            
+            // Create a formatted term result for this match
+            const termResult = {
+              term: `${paramSet.domain || ''}${paramSet.publisherId ? ', ' + paramSet.publisherId : ''}`,
+              count: 1,
+              matches: [`${paramSet.domain || ''}${paramSet.publisherId ? ':' + paramSet.publisherId : ''}`]
+            };
+            
+            // Initialize search results if needed
+            if (!result.appAdsTxt.searchResults) {
+              result.appAdsTxt.searchResults = {
+                count: 0,
+                termResults: []
+              };
+            }
+            
+            // Add to termResults array
+            result.appAdsTxt.searchResults.termResults.push(termResult);
+            result.appAdsTxt.searchResults.count += 1;
+            hasAnyMatches = true;
+            break; // Found a match for this paramSet, move to next one
+          }
         }
       }
     }
   }
   
-  // If we get here, none of the parameter sets matched any entries
-  return false;
+  // Return true if any parameter set matched (either in entries or raw content)
+  return hasAnyMatches;
 }
 
 /**
