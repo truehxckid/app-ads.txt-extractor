@@ -267,19 +267,32 @@ class EventHandlerManager {
         break;
       case 'download-csv':
       case 'stream-download-csv':
-        // Prevent multiple execution by using a debounce mechanism
-        // Instead of just a flag, use a timestamp for better prevention
+        // Use global export timestamp to synchronize with StreamProcessor
         const currentTime = Date.now();
-        if (this._lastExportTime && (currentTime - this._lastExportTime < 5000)) {
-          console.log('CSV export recently triggered, ignoring duplicate request');
+        
+        // Check global timestamp first (takes precedence)
+        if (window._lastGlobalExportTime && (currentTime - window._lastGlobalExportTime < 5000)) {
+          console.log('CSV export recently triggered (global tracking), ignoring duplicate request');
+          showNotification('Export already in progress, please wait a few seconds', 'info');
           // Prevent event propagation
           event.preventDefault();
           event.stopPropagation();
           return;
         }
         
-        // Set timestamp
+        // Also check local timestamp as fallback
+        if (this._lastExportTime && (currentTime - this._lastExportTime < 5000)) {
+          console.log('CSV export recently triggered (local tracking), ignoring duplicate request');
+          showNotification('Export already in progress, please wait a few seconds', 'info');
+          // Prevent event propagation
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        
+        // Set both local and global timestamps
         this._lastExportTime = currentTime;
+        window._lastGlobalExportTime = currentTime;
         
         // Stop click event propagation to prevent any duplicate triggers
         event.preventDefault();
@@ -340,6 +353,10 @@ class EventHandlerManager {
           
           // Fall back to regular download if streaming fails
           CSVExporter.downloadResults(AppState.results);
+          
+          // Make sure to clear global timestamp if there was an error
+          window._lastGlobalExportTime = null;
+          this._lastExportTime = null;
         });
         break;
       case 'download-all-csv':

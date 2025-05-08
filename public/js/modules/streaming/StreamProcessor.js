@@ -1094,15 +1094,19 @@ class StreamProcessor {
    * @param {Object|string[]} searchParams - Search parameters object or legacy search terms
    */
   async exportCsv(bundleIds, searchParams = {}) {
-    // Check if an export was recently triggered (within the last 3 seconds)
+    // Global export tracking timestamp - use a window property to synchronize between modules
     const now = Date.now();
-    if (this._lastExportTime && (now - this._lastExportTime < 3000)) {
+    
+    // Check if an export was recently triggered from any module (within the last 5 seconds)
+    if (window._lastGlobalExportTime && (now - window._lastGlobalExportTime < 5000)) {
       console.log('CSV export already in progress or recently triggered, ignoring duplicate request');
+      showNotification('Export already in progress, please wait a few seconds', 'info');
       return;
     }
     
-    // Set timestamp to prevent duplicate exports
+    // Set both module-specific and global timestamp to prevent duplicate exports
     this._lastExportTime = now;
+    window._lastGlobalExportTime = now;
     
     // Log export attempt
     console.log('CSV export initiated at', new Date().toISOString());
@@ -1115,13 +1119,23 @@ class StreamProcessor {
     // Parse search parameters based on type
     let searchTerms = [];
     let structuredParams = null;
+    let searchMode = 'simple'; // Default mode
     
     // Check if searchParams is an object with mode property (unified search format)
     if (searchParams && typeof searchParams === 'object' && searchParams.mode) {
+      // Store the search mode
+      searchMode = searchParams.mode;
+      
       if (searchParams.mode === 'advanced' && searchParams.structuredParams) {
         // Advanced mode: use structuredParams
         structuredParams = searchParams.structuredParams;
         console.log('CSV Export: Using advanced search mode with structuredParams:', structuredParams);
+        
+        // Ensure structuredParams is an array
+        if (!Array.isArray(structuredParams)) {
+          structuredParams = [structuredParams];
+          console.log('CSV Export: Converted structuredParams to array:', structuredParams);
+        }
       } else if (searchParams.mode === 'simple' && searchParams.queries) {
         // Simple mode: use queries as search terms
         searchTerms = searchParams.queries;
@@ -1132,6 +1146,13 @@ class StreamProcessor {
       searchTerms = searchParams;
       console.log('CSV Export: Using legacy search terms format:', searchTerms);
     }
+    
+    // Debug check the variables
+    console.log('CSV Export: Final parameters:', {
+      mode: searchMode,
+      searchTerms,
+      structuredParams
+    });
     
     // Log the actual parameters we'll use
     console.log('CSV Export parameters:', {
@@ -1186,6 +1207,7 @@ class StreamProcessor {
           bundleIds, 
           searchTerms,
           structuredParams,
+          mode: searchMode, // Include the search mode explicitly
           timestamp // Include timestamp in request to prevent duplicate processing
         })
       });
@@ -1194,7 +1216,8 @@ class StreamProcessor {
       console.log('CSV Export request payload:', { 
         bundleIds: bundleIds.length, 
         searchTerms, 
-        structuredParams
+        structuredParams,
+        mode: searchMode // Show the search mode in logs
       });
       
       if (!response.ok) {
@@ -1275,6 +1298,11 @@ class StreamProcessor {
             }
           });
         }
+        
+        // Clear the global export timestamp after UI cleanup is complete
+        window._lastGlobalExportTime = null;
+        this._lastExportTime = null;
+        console.log('Export timestamps cleared, ready for next export');
       }, 3000);
       
       showNotification('CSV export complete', 'success');
@@ -1282,8 +1310,9 @@ class StreamProcessor {
       console.error('CSV export error:', err);
       showNotification(`Export error: ${err.message}`, 'error');
       this.progressUI.showError(`Export error: ${err.message}`);
-      // Reset the export timestamp on error
+      // Reset both local and global export timestamps on error
       this._lastExportTime = null;
+      window._lastGlobalExportTime = null;
     }
   }
 }
