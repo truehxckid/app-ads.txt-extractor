@@ -712,7 +712,7 @@ class StreamResultsRenderer {
           'There was an error displaying the results. You can try downloading the CSV instead.');
         
         const downloadButton = Sanitizer.createSafeElement('button', {
-          class: 'download-btn extract-btn',
+          class: 'primary-btn extract-btn download-csv-btn',
           'data-action': 'download-csv'
         }, 'Download CSV Results');
         
@@ -804,12 +804,22 @@ class StreamResultsRenderer {
                 if (termResult.count > 0) {
                   // Limit to 5 color classes (0-4) to match search highlighting
                   const colorClass = `term-match-${termIndex % 5}`;
-                  // Note: termResult.count may include duplicate matches if the same line
-                  // matches multiple search terms. When exporting to CSV, we deduplicate these.
+                  // Try to extract the publisher ID from the term for display
+                  let displayText = String(termIndex + 1);
+                  
+                  // Check if the term contains structured params info
+                  if (termResult.term && termResult.term.includes('publisherId:')) {
+                    const publisherIdMatch = termResult.term.match(/publisherId:\s*(\d+)/);
+                    if (publisherIdMatch && publisherIdMatch[1]) {
+                      // Use the publisher ID instead of the index
+                      displayText = publisherIdMatch[1];
+                    }
+                  }
+                  
                   const termIndicator = Sanitizer.createSafeElement('span', { 
                     class: `term-match-indicator ${colorClass}`,
-                    title: `Term ${termIndex + 1} found ${termResult.count} time(s) - may include duplicates`
-                  }, String(termIndex + 1));
+                    title: `${termResult.term || `Term ${termIndex + 1}`} found ${termResult.count} time(s)`
+                  }, displayText);
                   matchesSpan.appendChild(termIndicator);
                   matchesSpan.appendChild(document.createTextNode(' '));
                 }
@@ -1134,7 +1144,7 @@ class StreamResultsRenderer {
     });
     
     const showResultsButton = Sanitizer.createSafeElement('button', {
-      class: 'extract-btn',
+      class: 'primary-btn extract-btn',
       'data-action': 'show-results'
     }, 'Show Results');
     
@@ -1264,13 +1274,13 @@ streamResultsRenderer._updateCompletionStatus = function(stats) {
     });
     
     const downloadButton = Sanitizer.createSafeElement('button', {
-      class: 'download-btn extract-btn',
+      class: 'primary-btn extract-btn download-csv-btn',
       'data-action': 'download-csv',
       id: 'main-download-csv-btn'
     }, 'Download CSV Results');
     
     const showResultsButton = Sanitizer.createSafeElement('button', {
-      class: 'extract-btn',
+      class: 'primary-btn extract-btn',
       'data-action': 'show-results'
     }, 'Show Results');
     
