@@ -26,12 +26,12 @@ class StreamProcessor {
     this.progressUI = StreamProgressUI;
     this.dataParser = StreamDataParser;
     this.resultsRenderer = StreamResultsRenderer;
-    // Minimal no-op debugger
+    // Simple error logger
     this.debugger = {
       initialize: () => true,
       logStatus: () => {},
       logChunk: () => {},
-      logError: (err) => console.error('Error:', err), // Keep error logging
+      logError: (err) => console.error('Error:', err),
       logConnectionInfo: () => {},
       logSummary: () => {},
       clear: () => {},
@@ -390,8 +390,8 @@ class StreamProcessor {
         `;
       }
       
-      // Create debug panel
-      this.debugger.initialize('Stream Debug');
+      // Initialize error logger
+      this.debugger.initialize('Stream');
       
       // Force UI update now that we have a stream
       this.progressUI.forceUpdate(this.stats);
@@ -664,7 +664,7 @@ class StreamProcessor {
       elapsedTime: processingTime
     };
     
-    // Remove ALL progress UI elements more efficiently with a single selector
+    // Remove ALL progress UI elements efficiently with a single selector
     const progressSelectors = [
       '.visual-indicators-container', 
       '.stats-container', 
@@ -680,7 +680,7 @@ class StreamProcessor {
     ].join(', ');
     
     const allProgressElements = document.querySelectorAll(progressSelectors);
-    console.log(`⚡ StreamProcessor: Removing ${allProgressElements.length} progress and debug elements`);
+    console.log(`⚡ StreamProcessor: Removing ${allProgressElements.length} UI elements`);
     allProgressElements.forEach(element => {
       if (element && element.parentNode) {
         element.parentNode.removeChild(element);
@@ -1254,7 +1254,7 @@ class StreamProcessor {
     }
     
     // Last resort - if structured params exists but no matching info was found,
-    // add placeholder data to ensure columns appear
+    // add data to ensure columns appear correctly in CSV export
     if (isAdvancedSearch && !advancedSearchInfo) {
       const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
       let searchDescription = '';

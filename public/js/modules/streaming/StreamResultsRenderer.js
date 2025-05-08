@@ -1209,19 +1209,6 @@ class StreamResultsRenderer {
     return false;
   }
   
-  /**
-   * Placeholder for the removed real-time rendering functionality
-   * These methods have been removed as we're no longer rendering results in real-time
-   * 
-   * The following methods were part of the real-time rendering:
-   * - _createResultRow: Created HTML for a single result row
-   * - _addAppAdsDetails: Added app-ads.txt details to the DOM
-   * - _highlightSearchTerms: Highlighted search terms in content
-   * - _generateSearchTermLegend: Generated a legend for search terms
-   * 
-   * Now we just accumulate results and update counters, with full display handled
-   * after all processing is complete.
-   */
 }
 
 // Create and export a singleton instance

@@ -259,9 +259,7 @@ class StreamingIntegration {
         console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
         console.log('⚡⚡⚡ ENTRY POINT: COMPLETELY BYPASSING ORIGINAL HANDLER');
         
-        // No longer creating fixed element to avoid duplicates - StreamProcessor now handles this
         
-        // Debug info is no longer shown in the UI
         console.log('⚡⚡⚡ ENTRY POINT: Processing with streaming API, bundle IDs:', bundleIds.length);
         
         try {
