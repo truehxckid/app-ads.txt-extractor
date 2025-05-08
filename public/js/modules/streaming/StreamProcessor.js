@@ -123,7 +123,7 @@ class StreamProcessor {
   /**
    * Reset state for a new streaming job
    */
-  resetState() {
+  reset() {
     this.stats = {
       processedCount: 0,
       successCount: 0,
@@ -193,28 +193,20 @@ class StreamProcessor {
   /**
    * Process bundle IDs using streaming
    * @param {string[]} bundleIds - Bundle IDs to process
-   * @param {Object|string[]} searchParams - Unified search parameters or legacy search terms
+   * @param {Object|string[]} searchParams - Search parameters with structured params
    * @returns {Promise<boolean>} - Success status
    */
   async processBundleIds(bundleIds, searchParams = null) {
-    // We only use structured params now - always in advanced mode
+    // Only use structured params in advanced mode
     let structuredParams = null;
-    let searchMode = 'advanced'; // Always advanced mode now
     
     if (Array.isArray(searchParams)) {
-      // Legacy format - convert search terms array to structured parameters
-      // For backward compatibility, treat each term as a domain search
+      // Convert array of terms to structured parameters for backward compatibility
       structuredParams = searchParams.map(term => {
         return { domain: typeof term === 'string' ? term.trim() : term };
       });
     } else if (searchParams && typeof searchParams === 'object') {
-      // Support legacy simple mode by converting to advanced mode
-      if (searchParams.mode === 'simple' && searchParams.queries) {
-        // Convert simple mode queries to advanced mode domain searches
-        structuredParams = searchParams.queries.map(term => {
-          return { domain: term.trim() };
-        });
-      } else if (searchParams.structuredParams) {
+      if (searchParams.structuredParams) {
         // Use advanced mode structured params
         // Ensure structuredParams is always an array for consistency
         if (Array.isArray(searchParams.structuredParams)) {
@@ -234,9 +226,6 @@ class StreamProcessor {
       window.advancedSearchParams = structuredParams;
     }
     
-    // Store search mode in a global property for reference elsewhere
-    window.currentSearchMode = searchMode;
-    
     // First, remove any stray progress bars from previous exports or interruptions
     const extraProgressBars = document.querySelectorAll('.progress-indicator, #streamProgress');
     if (extraProgressBars.length > 0) {
@@ -247,8 +236,8 @@ class StreamProcessor {
       });
     }
     
-    // Clear any existing processing indicators from previous runs
-    this._clearAllProcessingIndicators();
+    // Clear any existing UI elements from previous runs
+    this._cleanupUIElements();
     
     // Initialize if not already
     if (!this.initialized) {
@@ -269,7 +258,7 @@ class StreamProcessor {
     }
     
     // Reset state
-    this.resetState();
+    this.reset();
     this.stats.startTime = Date.now();
     this.stats.totalBundleIds = bundleIds.length;
     
@@ -395,10 +384,7 @@ class StreamProcessor {
       
       return await this._processBundleIdsMainThread(bundleIds, [], structuredParams);
     } catch (err) {
-      console.error('Error starting streaming process:', err);
-      showNotification(`Streaming error: ${err.message}`, 'error');
-      this.progressUI.showError(`Streaming error: ${err.message}`);
-      return false;
+      return this._handleError(err, 'Streaming error', { showInUI: true });
     }
   }
   
@@ -571,21 +557,14 @@ class StreamProcessor {
         
         return true;
       } catch (err) {
-        console.error('Streaming error:', err);
-        
         // Update debug div with error
         this.debugger.logError(err);
         
-        showNotification(`Streaming error: ${err.message}`, 'error');
-        DOMUtils.showError('result', err.message);
-        return false;
+        return this._handleError(err, 'Stream processing error', { showInUI: true });
       }
     } catch (err) {
-      console.error('Main thread streaming error:', err);
       this.debugger.logError(err);
-      showNotification(`Main thread streaming error: ${err.message}`, 'error');
-      DOMUtils.showError('result', `Main thread streaming error: ${err.message}`);
-      return false;
+      return this._handleError(err, 'Main thread streaming error', { showInUI: true });
     }
   }
   
@@ -682,7 +661,7 @@ class StreamProcessor {
     if (this.lastRenderTime === 0 || (now - this.lastRenderTime) > this.renderThrottleTime) {
       this.isRendering = true;
       this.animationFrameId = requestAnimationFrame(() => {
-        this.resultsRenderer.renderBatch(this.resultBuffer, []);
+        this.resultsRenderer._renderBatch(this.resultBuffer, []);
         
         // Update progress UI
         this.progressUI.updateProgress(this.stats);
@@ -776,8 +755,8 @@ class StreamProcessor {
     });
     
     // Update completion status in the StreamResultsRenderer - this will create the completion banner
-    if (this.resultsRenderer && typeof this.resultsRenderer.updateCompletionStatus === 'function') {
-      this.resultsRenderer.updateCompletionStatus(stats);
+    if (this.resultsRenderer && typeof this.resultsRenderer._updateCompletionStatus === 'function') {
+      this.resultsRenderer._updateCompletionStatus(stats);
     }
     
     // Hide any worker progress indicators - use DOMUtils since this is repeatedly accessed
@@ -892,8 +871,8 @@ class StreamProcessor {
             }
           }));
         } catch (err) {
-          console.warn('Error updating progress UI from worker message:', err);
-          // Don't let progress UI errors stop processing
+          // Log non-critical UI error without notifying user or affecting processing
+          console.warn('Error updating progress UI:', err);
         }
         
         try {
@@ -902,8 +881,8 @@ class StreamProcessor {
             this.resultsRenderer.updateSummaryStats(this.stats);
           }
         } catch (err) {
-          console.warn('Error updating results summary from worker message:', err);
-          // Continue processing even if summary update fails
+          // Log non-critical UI error without notifying user or affecting processing
+          console.warn('Error updating results summary:', err);
         }
         
         // Update status message periodically
@@ -918,8 +897,8 @@ class StreamProcessor {
               'info'
             );
           } catch (err) {
-            console.warn('Error updating status message from worker:', err);
-            // Continue processing even if status update fails
+            // Log non-critical UI error without notifying user or affecting processing
+            console.warn('Error updating status message:', err);
           }
         }
         break;
@@ -933,7 +912,7 @@ class StreamProcessor {
           // Use special direct render method for worker results
           // to avoid double-counting stats
           if (this.resultsRenderer) {
-            this.resultsRenderer.renderBatch([data.result], []);
+            this.resultsRenderer._renderBatch([data.result], []);
           }
         }
         break;
@@ -982,21 +961,22 @@ class StreamProcessor {
         break;
         
       case 'error':
-        console.error('⚡ Worker error:', data.message);
-        showNotification(`Worker error: ${data.message}`, 'error');
-        this.progressUI.showError(`Worker error: ${data.message}`);
+        // Handle worker error with our standardized error handler
+        this._handleError(new Error(data.message), 'Worker error');
         
         // Try to fall back to main thread if worker fails
         try {
-          console.warn('⚡ StreamProcessor: Worker failed, trying to fall back to main thread');
+          // Log attempt to fall back (no user notification needed)
+          console.warn('Worker failed, attempting fallback to main thread');
           this._processBundleIdsMainThread(this.stats.bundleIds || [], [], structuredParams);
         } catch (fallbackError) {
-          console.error('⚡ StreamProcessor: Fallback to main thread also failed:', fallbackError);
+          // Handle fallback error with our standardized error handler
+          this._handleError(fallbackError, 'Main thread fallback error');
         }
         break;
         
       default:
-        console.warn('⚡ StreamProcessor: Unknown worker message type:', type);
+        console.warn('Unknown worker message type:', type);
     }
   }
   
@@ -1004,7 +984,7 @@ class StreamProcessor {
    * Clear all processing indicators and related DOM elements from previous runs
    * @private
    */
-  _clearAllProcessingIndicators() {
+  _cleanupUIElements() {
     
     // Get the result container using DOMUtils for caching
     const resultElement = DOMUtils.getElement('result');
@@ -1060,7 +1040,7 @@ class StreamProcessor {
    * @param {string[]} bundleIds - Bundle IDs
    * @param {Object|string[]} searchParams - Search parameters object or legacy search terms
    */
-  async exportCsv(bundleIds, searchParams = {}) {
+  async exportResultsAsCsv(bundleIds, searchParams = {}) {
     // Global export tracking timestamp - use a window property to synchronize between modules
     const now = Date.now();
     
@@ -1077,26 +1057,13 @@ class StreamProcessor {
     
     // Parse search parameters based on type
     let structuredParams = null;
-    let searchMode = 'advanced'; // Default mode is now always advanced
-    
-    // We only support advanced mode now
-    if (searchParams && typeof searchParams === 'object') {
-      // If there's a mode, store it
-      if (searchParams.mode) {
-        searchMode = searchParams.mode;
-      }
+    // Extract structured search parameters
+    if (searchParams && typeof searchParams === 'object' && searchParams.structuredParams) {
+      structuredParams = searchParams.structuredParams;
       
-      // Get structuredParams from either mode
-      if (searchParams.structuredParams) {
-        // Advanced mode: use structuredParams
-        structuredParams = searchParams.structuredParams;
-        // Using advanced search mode with structured parameters
-        
-        // Ensure structuredParams is an array
-        if (!Array.isArray(structuredParams)) {
-          structuredParams = [structuredParams];
-          // Converted parameters to array format
-        }
+      // Ensure structuredParams is an array
+      if (!Array.isArray(structuredParams)) {
+        structuredParams = [structuredParams];
       }
     }
     
@@ -1107,8 +1074,8 @@ class StreamProcessor {
     if (!resultElement) return;
     
     try {
-      // First clear any existing indicators to prevent duplication
-      this._clearAllProcessingIndicators();
+      // First clear any existing UI elements to prevent duplication
+      this._cleanupUIElements();
       
       // Initialize visual indicators for export
       this.progressUI.initialize({
@@ -1153,7 +1120,7 @@ class StreamProcessor {
         
         // Process this batch
         for (const result of batch) {
-          csvContent += this._generateCsvRow(result, structuredParams);
+          csvContent += this._formatResultAsCsvRow(result, structuredParams);
         }
         
         // Update progress (scale from 10% to 80%)
@@ -1247,9 +1214,8 @@ class StreamProcessor {
       
       showNotification('CSV export complete', 'success');
     } catch (err) {
-      console.error('CSV export error:', err);
-      showNotification(`Export error: ${err.message}`, 'error');
-      this.progressUI.showError(`Export error: ${err.message}`);
+      // Handle export error
+      this._handleError(err, 'CSV export error');
       
       // Clean up any dangling download elements
       const downloadElements = document.querySelectorAll('[id^="csv-download-"]');
@@ -1264,13 +1230,13 @@ class StreamProcessor {
     }
   }
   /**
-   * Generate a CSV row for a single result
+   * Format a result object as a CSV row
    * @param {Object} result - The result object
    * @param {Array} structuredParams - Advanced search parameters
    * @returns {string} - CSV row
    * @private
    */
-  _generateCsvRow(result, structuredParams) {
+  _formatResultAsCsvRow(result, structuredParams) {
     if (!result) return '';
     
     // Helper function to escape CSV fields
@@ -1285,7 +1251,7 @@ class StreamProcessor {
     
     // Extract basic data
     const hasAppAds = result.success && (result.hasAppAds || result.appAdsTxt?.exists);
-    const store = result.storeType ? this._getStoreDisplayName(result.storeType) : '';
+    const store = result.storeType ? this._formatStoreDisplayName(result.storeType) : '';
     const domain = result.domain || '';
     const appAdsTxtUrl = hasAppAds && result.appAdsTxt?.url ? result.appAdsTxt.url : '';
     const success = result.success ? 'Yes' : 'No';
@@ -1341,6 +1307,58 @@ class StreamProcessor {
       escapeCSV(error)
     ].join(',') + '\n';
   }
+
+  /**
+   * Standardized error handling method
+   * @param {Error} error - The error that occurred
+   * @param {string} context - Context description for the error
+   * @param {Object} options - Additional options for error handling
+   * @param {boolean} options.logToConsole - Whether to log to console (default: true)
+   * @param {boolean} options.showNotification - Whether to show UI notification (default: true)
+   * @param {boolean} options.showInUI - Whether to show in result area (default: false)
+   * @param {boolean} options.updateProgressUI - Whether to update progress UI (default: true)
+   * @returns {boolean} Always returns false to indicate error
+   * @private
+   */
+  _handleError(error, context = 'Error', options = {}) {
+    // Set default options
+    const settings = {
+      logToConsole: true,
+      showNotification: true,
+      showInUI: false,
+      updateProgressUI: true,
+      ...options
+    };
+    
+    // Format error message
+    const errorMessage = `${context}: ${error.message || String(error)}`;
+    
+    // Log to console if enabled
+    if (settings.logToConsole) {
+      console.error(errorMessage, error);
+    }
+    
+    // Show notification if enabled
+    if (settings.showNotification) {
+      showNotification(errorMessage, 'error');
+    }
+    
+    // Show in result area if enabled
+    if (settings.showInUI) {
+      DOMUtils.showError('result', errorMessage);
+    }
+    
+    // Update progress UI if enabled
+    if (settings.updateProgressUI && this.progressUI) {
+      this.progressUI.showError(errorMessage);
+    }
+    
+    // Reset processing state in AppState
+    AppState.setProcessing(false);
+    
+    // Always return false to indicate error
+    return false;
+  }
   
   /**
    * Helper to get store display name
@@ -1348,7 +1366,7 @@ class StreamProcessor {
    * @returns {string} - Store display name
    * @private
    */
-  _getStoreDisplayName(storeType) {
+  _formatStoreDisplayName(storeType) {
     const storeMap = {
       'googleplay': 'Google Play',
       'appstore': 'App Store',

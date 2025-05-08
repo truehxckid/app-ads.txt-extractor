@@ -5,6 +5,7 @@
 
 import DOMUtils from '../dom-utils.js';
 import { formatNumber, getStoreDisplayName } from '../../utils/formatting.js';
+import { showNotification } from '../../utils/notification.js';
 
 /**
  * Stream Results Renderer Class
@@ -44,21 +45,10 @@ class StreamResultsRenderer {
     };
     
     // Listen for stream completion events to show results
-    window.addEventListener('streaming-show-results', (event) => {
-      const appState = window.AppState || {};
-      const results = appState.results || [];
-      
-      // Show the results UI
-      this.showResults(results);
-    });
+    window.addEventListener('streaming-show-results', this._handleStreamingShowResults.bind(this));
     
     // Listen for progress updates from StreamProcessor
-    window.addEventListener('streaming-progress-update', (event) => {
-      if (event.detail && event.detail.stats) {
-        // Sync our stats with StreamProcessor's stats
-        this.syncWithProcessorStats(event.detail.stats);
-      }
-    });
+    window.addEventListener('streaming-progress-update', this._handleStreamingProgressUpdate.bind(this));
   }
   
   /**
@@ -68,6 +58,7 @@ class StreamResultsRenderer {
    * @param {boolean} queryAll - Whether to use querySelectorAll
    * @param {Element} context - Optional parent element for scoped queries
    * @returns {Element|NodeList|null} - The requested element(s)
+   * @private
    */
   _getElement(key, selector, queryAll = false, context = document) {
     // Return cached element if available
@@ -97,6 +88,7 @@ class StreamResultsRenderer {
   /**
    * Clear specific DOM cache entries
    * @param {Array} keys - Keys to clear (or all if not specified)
+   * @private
    */
   _clearCache(keys = null) {
     if (keys && Array.isArray(keys) && keys.length > 0) {
@@ -285,12 +277,42 @@ class StreamResultsRenderer {
   _setupEventListeners() {
     // All UI events are centralized in EventHandler.js
   }
+
+  /**
+   * Handle streaming show results event
+   * @param {CustomEvent} event - The event object
+   * @private
+   */
+  _handleStreamingShowResults(event) {
+    const appState = window.AppState || {};
+    const results = appState.results || [];
+    
+    // Show the results UI
+    this.showResults(results);
+  }
+  
+  /**
+   * Handle streaming progress update event
+   * @param {CustomEvent} event - The event object containing progress stats
+   * @private
+   */
+  _handleStreamingProgressUpdate(event) {
+    if (event.detail && event.detail.stats) {
+      // Sync our stats with StreamProcessor's stats
+      this._syncWithProcessorStats(event.detail.stats);
+    }
+  }
+  
+  _setupEventListeners() {
+    // All UI events are centralized in EventHandler.js
+  }
   
   /**
    * Synchronize our stats with StreamProcessor's stats
    * @param {Object} processorStats - Stats from StreamProcessor
+   * @private
    */
-  syncWithProcessorStats(processorStats) {
+  _syncWithProcessorStats(processorStats) {
     if (!processorStats) return;
     
     // Update our cumulative stats with the processor's stats (which are more accurate)
@@ -301,69 +323,87 @@ class StreamResultsRenderer {
     this.cumulativeStats.total = processorStats.totalBundleIds || processorStats.total || this.cumulativeStats.total;
     
     // Update the UI with the synced stats
-    this.updateSummaryStats(this.cumulativeStats);
+    this._updateSummaryStats(this.cumulativeStats);
   }
   
+  /**
+   * Public method to update summary statistics
+   * @param {Object} stats - Statistics object
+   */
+  updateSummaryStats(stats) {
+    // Forward to the private implementation
+    this._updateSummaryStats(stats);
+  }
+
   /**
    * Update the summary statistics in the UI
    * @param {Object} stats - Statistics object
    * @private
    */
-  updateSummaryStats(stats) {
+  _updateSummaryStats(stats) {
     if (!this.resultElement) return;
     
-    // Store stats for reference
-    this.stats = this.stats || {};
-    Object.assign(this.stats, stats);
-    
-    // Also update cumulative total if provided
-    if (stats.total && stats.total > 0) {
-      this.cumulativeStats.total = stats.total;
-    }
-    
-    // Get cached indicator header or query it once
-    const workerIndicator = this._getElement('workerIndicatorHeader', 
-      () => {
-        const indicator = this.domCache.workerIndicator;
-        return indicator ? indicator.querySelector('h3') : 
-          this.resultElement.querySelector('.worker-processing-indicator h3');
-      });
+    try {
+      // Store stats for reference
+      this.stats = this.stats || {};
+      Object.assign(this.stats, stats);
       
-    if (workerIndicator) {
-      // Fix for NaN% issue - ensure both values are valid numbers
-      let percent = 0;
-      // Use cumulative stats or provided stats, preferring cumulative
-      const processedCount = this.cumulativeStats.processed || stats.processed || 0;
-      const totalCount = this.cumulativeStats.total || stats.total || this.stats?.totalBundleIds || 0;
-      
-      // Only calculate percent if total is valid
-      if (totalCount > 0) {
-        percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
-        
-        // Only update the text if we have valid data
-        // Check if we're not going backwards from a previous valid state
-        if (!workerIndicator.textContent.includes('initializing')) {
-          workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
-        }
-      }
-      // Don't revert to "initializing" once we've started showing progress
-      else if (!workerIndicator.textContent.includes('%')) {
-        // Only show initializing if we haven't started showing percentages yet
-        workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
+      // Also update cumulative total if provided
+      if (stats.total && stats.total > 0) {
+        this.cumulativeStats.total = stats.total;
       }
       
-      // Get cached progress bar or query it once
-      const progressBar = this._getElement('workerProgressBar', 
+      // Get cached indicator header or query it once
+      const workerIndicator = this._getElement('workerIndicatorHeader', 
         () => {
           const indicator = this.domCache.workerIndicator;
-          return indicator ? indicator.querySelector('.progress-bar') : 
-            this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
+          return indicator ? indicator.querySelector('h3') : 
+            this.resultElement.querySelector('.worker-processing-indicator h3');
         });
         
-      // Always update the progress bar if it exists
-      if (progressBar && percent > 0) {
-        progressBar.style.width = `${percent}%`;
+      if (workerIndicator) {
+        // Fix for NaN% issue - ensure both values are valid numbers
+        let percent = 0;
+        // Use cumulative stats or provided stats, preferring cumulative
+        const processedCount = this.cumulativeStats.processed || stats.processed || 0;
+        const totalCount = this.cumulativeStats.total || stats.total || this.stats?.totalBundleIds || 0;
+        
+        // Only calculate percent if total is valid
+        if (totalCount > 0) {
+          percent = Math.min(100, Math.round((processedCount / totalCount) * 100));
+          
+          // Only update the text if we have valid data
+          // Check if we're not going backwards from a previous valid state
+          if (!workerIndicator.textContent.includes('initializing')) {
+            workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+          }
+        }
+        // Don't revert to "initializing" once we've started showing progress
+        else if (!workerIndicator.textContent.includes('%')) {
+          // Only show initializing if we haven't started showing percentages yet
+          workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
+        }
+        
+        // Get cached progress bar or query it once
+        const progressBar = this._getElement('workerProgressBar', 
+          () => {
+            const indicator = this.domCache.workerIndicator;
+            return indicator ? indicator.querySelector('.progress-bar') : 
+              this.resultElement.querySelector('.worker-processing-indicator .progress-bar');
+          });
+          
+        // Always update the progress bar if it exists
+        if (progressBar && percent > 0) {
+          progressBar.style.width = `${percent}%`;
+        }
       }
+    } catch (err) {
+      // Use standardized error handling with options appropriate for progress updates
+      this._handleError(err, 'Error updating summary statistics', {
+        // This is a non-critical UI update, so don't show notifications or UI errors
+        showNotification: false,
+        showInUI: false
+      });
     }
   }
 
@@ -371,8 +411,9 @@ class StreamResultsRenderer {
    * Render a batch of results
    * @param {Array} results - Results to render
    * @param {Array} searchTerms - Search terms for highlighting (no longer used)
+   * @private
    */
-  renderBatch(results, searchTerms = []) {
+  _renderBatch(results, searchTerms = []) {
     if (!results || !results.length) return;
     
     // Accumulate results and update counter statistics
@@ -401,7 +442,7 @@ class StreamResultsRenderer {
       };
       
       // Update summary stats with cumulative counts
-      this.updateSummaryStats(updatedStats);
+      this._updateSummaryStats(updatedStats);
       
       // Dispatch a custom event to notify that results were processed
       if (window.dispatchEvent) {
@@ -416,7 +457,12 @@ class StreamResultsRenderer {
         }));
       }
     } catch (err) {
-      // Silent error handling for non-critical batch processing
+      // Use the standardized error handler with options appropriate for batch processing
+      this._handleError(err, 'Error processing results batch', {
+        // This is non-critical UI functionality, so don't show notifications to users
+        showNotification: false,
+        showInUI: false
+      });
     }
   }
   
@@ -459,6 +505,13 @@ class StreamResultsRenderer {
           }
         }
       }).catch(error => {
+        // Handle error with our standardized error handler
+        this._handleError(error, 'Failed to load results from AppState', {
+          // Don't show notification to user since we'll fall back to empty results
+          showNotification: false
+        });
+        
+        // Use provided results or empty array as fallback
         this._renderResults(results || []);
       });
     } else {
@@ -473,86 +526,113 @@ class StreamResultsRenderer {
    * @private
    */
   _renderResults(results) {
-    // Filter results for advanced search if needed
-    const filteredResults = results.filter(result => {
-      // Keep results if:
-      // 1. Not using advanced search (no matchesAdvancedSearch property), or
-      // 2. Result matches advanced search criteria, or
-      // 3. Result doesn't have the matchesAdvancedSearch property (backward compatibility)
-      return !('matchesAdvancedSearch' in result) || result.matchesAdvancedSearch === true;
-    });
-    // Store the full results for pagination
-    this.allResults = filteredResults;
-    
-    // Set up pagination variables
-    this.pageSize = 50;
-    this.currentPage = 1;
-    this.totalPages = Math.ceil(filteredResults.length / this.pageSize);
-    
-    // Create a results display element
-    const resultsDisplay = document.createElement('div');
-    resultsDisplay.className = 'stream-results-display';
-    
-    // Cache the results display
-    this.domCache.resultsDisplay = resultsDisplay;
-    
-    // Add results header with search-styled UI
-    resultsDisplay.innerHTML = `
-      <div class="stream-results-header search-container">
-        <div class="results-summary">
-          <div class="summary-text">
-            <h3>Processing Results</h3>
-            <p>Showing ${results.length} extracted results from your bundle IDs.</p>
+    try {
+      // Filter results for advanced search if needed
+      const filteredResults = results.filter(result => {
+        // Keep results if:
+        // 1. Not using advanced search (no matchesAdvancedSearch property), or
+        // 2. Result matches advanced search criteria, or
+        // 3. Result doesn't have the matchesAdvancedSearch property (backward compatibility)
+        return !('matchesAdvancedSearch' in result) || result.matchesAdvancedSearch === true;
+      });
+      // Store the full results for pagination
+      this.allResults = filteredResults;
+      
+      // Set up pagination variables
+      this.pageSize = 50;
+      this.currentPage = 1;
+      this.totalPages = Math.ceil(filteredResults.length / this.pageSize);
+      
+      // Create a results display element
+      const resultsDisplay = document.createElement('div');
+      resultsDisplay.className = 'stream-results-display';
+      
+      // Cache the results display
+      this.domCache.resultsDisplay = resultsDisplay;
+      
+      // Add results header with search-styled UI
+      resultsDisplay.innerHTML = `
+        <div class="stream-results-header search-container">
+          <div class="results-summary">
+            <div class="summary-text">
+              <h3>Processing Results</h3>
+              <p>Showing ${results.length} extracted results from your bundle IDs.</p>
+            </div>
+          </div>
+          
+          <div class="stream-results-table-container results-table-container">
+            <table class="results-table">
+              <thead>
+                <tr>
+                  <th>Bundle ID</th>
+                  <th>Store</th>
+                  <th>Domain</th>
+                  <th>app-ads.txt</th>
+                  <th>Matched Terms</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="results-final-tbody">
+                ${results.length === 0 ? '<tr><td colspan="6" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Pagination Controls -->
+          <div id="pagination-controls" class="pagination-wrapper">
+            ${this._generatePaginationControls(results.length, this.pageSize, 1)}
           </div>
         </div>
+      `;
+      
+      // Get references to the table elements and cache them for future use
+      this.domCache.resultsTableContainer = resultsDisplay.querySelector('.results-table-container');
+      this.domCache.resultsTable = resultsDisplay.querySelector('.results-table');
+      this.domCache.resultsTableBody = resultsDisplay.querySelector('#results-final-tbody');
+      this.domCache.paginationControls = resultsDisplay.querySelector('#pagination-controls');
+      
+      // Replace any existing results section or add to the page
+      const existingResults = this._getElement('existingResultsDisplay', '.stream-results-display');
+      if (existingResults) {
+        existingResults.parentNode.replaceChild(resultsDisplay, existingResults);
+      } else {
+        this.resultElement.appendChild(resultsDisplay);
+      }
+      
+      // Set up event listeners for pagination and back button
+      this._setupEventListeners(resultsDisplay);
+      
+      // Render the first page of results
+      this._renderPage(filteredResults, 1);
+      
+      // Scroll to the results
+      resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      // Use standardized error handler for rendering results
+      this._handleError(err, 'Failed to render results', {
+        // This is a critical UI function, so show notification and UI error
+        showNotification: true,
+        showInUI: true
+      });
+      
+      // Create a minimal fallback results display in case of error
+      if (this.resultElement) {
+        const errorDisplay = document.createElement('div');
+        errorDisplay.className = 'stream-results-display error-state';
+        errorDisplay.innerHTML = `
+          <div class="error-message-container">
+            <h3>Error Displaying Results</h3>
+            <p>There was an error displaying the results. You can try downloading the CSV instead.</p>
+            <button class="download-btn extract-btn" data-action="download-csv">
+              Download CSV Results
+            </button>
+          </div>
+        `;
         
-        <div class="stream-results-table-container results-table-container">
-          <table class="results-table">
-            <thead>
-              <tr>
-                <th>Bundle ID</th>
-                <th>Store</th>
-                <th>Domain</th>
-                <th>app-ads.txt</th>
-                <th>Matched Terms</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="results-final-tbody">
-              ${results.length === 0 ? '<tr><td colspan="6" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
-            </tbody>
-          </table>
-        </div>
-        
-        <!-- Pagination Controls -->
-        <div id="pagination-controls" class="pagination-wrapper">
-          ${this._generatePaginationControls(results.length, this.pageSize, 1)}
-        </div>
-      </div>
-    `;
-    
-    // Get references to the table elements and cache them for future use
-    this.domCache.resultsTableContainer = resultsDisplay.querySelector('.results-table-container');
-    this.domCache.resultsTable = resultsDisplay.querySelector('.results-table');
-    this.domCache.resultsTableBody = resultsDisplay.querySelector('#results-final-tbody');
-    this.domCache.paginationControls = resultsDisplay.querySelector('#pagination-controls');
-    
-    // Replace any existing results section or add to the page
-    const existingResults = this._getElement('existingResultsDisplay', '.stream-results-display');
-    if (existingResults) {
-      existingResults.parentNode.replaceChild(resultsDisplay, existingResults);
-    } else {
-      this.resultElement.appendChild(resultsDisplay);
+        // Add to the page
+        this.resultElement.appendChild(errorDisplay);
+      }
     }
-    
-    // Set up event listeners for pagination and back button
-    this._setupEventListeners(resultsDisplay);
-    
-    // Render the first page of results
-    this._renderPage(filteredResults, 1);
-    
-    // Scroll to the results
-    resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   
   /**
@@ -564,108 +644,134 @@ class StreamResultsRenderer {
   _renderPage(results, page) {
     if (!results || !results.length) return;
     
-    // Update current page
-    this.currentPage = page;
-    
-    // Calculate slice indices
-    const startIndex = (page - 1) * this.pageSize;
-    const endIndex = Math.min(startIndex + this.pageSize, results.length);
-    
-    // Get results for this page
-    const pageResults = results.slice(startIndex, endIndex);
-    
-    // Get the tbody element using our caching method
-    const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
-    if (!tbody) return;
-    
-    // Performance optimization: Use DocumentFragment for batch DOM operations
-    const fragment = document.createDocumentFragment();
-    
-    // Clear existing rows more efficiently
-    while (tbody.firstChild) {
-      tbody.removeChild(tbody.firstChild);
-    }
-    
-    // Add results for this page to the fragment
-    pageResults.forEach(result => {
-      if (!result) return; // Skip null/undefined results
+    try {
+      // Update current page
+      this.currentPage = page;
       
-      const row = document.createElement('tr');
-      row.className = result.success ? 'success-row' : 'error-row';
+      // Calculate slice indices
+      const startIndex = (page - 1) * this.pageSize;
+      const endIndex = Math.min(startIndex + this.pageSize, results.length);
       
-      if (result.success) {
-        const hasAppAds = result.appAdsTxt?.exists;
-        const hasSearchMatches = hasAppAds && result.appAdsTxt.searchResults && result.appAdsTxt.searchResults.count > 0;
-        const searchMatchCount = hasSearchMatches ? result.appAdsTxt.searchResults.count : 0;
-        
-        // Create matched terms cell content
-        let matchedTermsHtml = '';
-        if (hasSearchMatches) {
-          matchedTermsHtml += '<span class="search-matches-found">';
-          
-          // For multi-term search, show color-coded indicators
-          if (result.appAdsTxt.searchResults.termResults) {
-            // Generate colored indicators for each term - showing term numbers (1-based index)
-            result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
-              if (termResult.count > 0) {
-                const colorClass = `term-match-${termIndex % 5}`;
-                matchedTermsHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
-              }
-            });
-          } else if (searchMatchCount > 0) {
-            // Fallback for single-term search
-            matchedTermsHtml += `${searchMatchCount} matches`;
-          } else {
-            matchedTermsHtml += 'None';
-          }
-          
-          matchedTermsHtml += '</span>';
-        } else {
-          matchedTermsHtml = '<span class="search-matches-missing">None</span>';
-        }
-        
-        row.innerHTML = `
-          <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-          <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
-          <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
-          <td class="app-ads-cell">
-            ${hasAppAds 
-              ? '<span class="app-ads-found">Found</span>' 
-              : '<span class="app-ads-missing">Not found</span>'}
-          </td>
-          <td class="search-matches-cell">
-            ${matchedTermsHtml}
-          </td>
-          <td>
-            <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
-              type="button" title="Copy domain to clipboard">Copy</button>
-          </td>
-        `;
-      } else {
-        row.innerHTML = `
-          <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-          <td colspan="3" class="error-message">
-            Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
-          </td>
-          <td>N/A</td>
-          <td></td>
-        `;
+      // Get results for this page
+      const pageResults = results.slice(startIndex, endIndex);
+      
+      // Get the tbody element using our caching method
+      const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
+      if (!tbody) return;
+      
+      // Performance optimization: Use DocumentFragment for batch DOM operations
+      const fragment = document.createDocumentFragment();
+      
+      // Clear existing rows more efficiently
+      while (tbody.firstChild) {
+        tbody.removeChild(tbody.firstChild);
       }
       
-      fragment.appendChild(row);
-    });
-    
-    // Append the fragment to the DOM (single reflow)
-    tbody.appendChild(fragment);
-    
-    // Update pagination controls using our caching method
-    const paginationControls = this._getElement('paginationControls', '#pagination-controls');
-    if (paginationControls) {
-      paginationControls.innerHTML = this._generatePaginationControls(
-        results.length, 
-        this.pageSize, 
-        page
-      );
+      // Add results for this page to the fragment
+      pageResults.forEach(result => {
+        if (!result) return; // Skip null/undefined results
+        
+        const row = document.createElement('tr');
+        row.className = result.success ? 'success-row' : 'error-row';
+        
+        if (result.success) {
+          const hasAppAds = result.appAdsTxt?.exists;
+          const hasSearchMatches = hasAppAds && result.appAdsTxt.searchResults && result.appAdsTxt.searchResults.count > 0;
+          const searchMatchCount = hasSearchMatches ? result.appAdsTxt.searchResults.count : 0;
+          
+          // Create matched terms cell content
+          let matchedTermsHtml = '';
+          if (hasSearchMatches) {
+            matchedTermsHtml += '<span class="search-matches-found">';
+            
+            // For multi-term search, show color-coded indicators
+            if (result.appAdsTxt.searchResults.termResults) {
+              // Generate colored indicators for each term - showing term numbers (1-based index)
+              result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
+                if (termResult.count > 0) {
+                  const colorClass = `term-match-${termIndex % 5}`;
+                  matchedTermsHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
+                }
+              });
+            } else if (searchMatchCount > 0) {
+              // Fallback for single-term search
+              matchedTermsHtml += `${searchMatchCount} matches`;
+            } else {
+              matchedTermsHtml += 'None';
+            }
+            
+            matchedTermsHtml += '</span>';
+          } else {
+            matchedTermsHtml = '<span class="search-matches-missing">None</span>';
+          }
+          
+          row.innerHTML = `
+            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
+            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
+            <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
+            <td class="app-ads-cell">
+              ${hasAppAds 
+                ? '<span class="app-ads-found">Found</span>' 
+                : '<span class="app-ads-missing">Not found</span>'}
+            </td>
+            <td class="search-matches-cell">
+              ${matchedTermsHtml}
+            </td>
+            <td>
+              <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
+                type="button" title="Copy domain to clipboard">Copy</button>
+            </td>
+          `;
+        } else {
+          row.innerHTML = `
+            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
+            <td colspan="3" class="error-message">
+              Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
+            </td>
+            <td>N/A</td>
+            <td></td>
+          `;
+        }
+        
+        fragment.appendChild(row);
+      });
+      
+      // Append the fragment to the DOM (single reflow)
+      tbody.appendChild(fragment);
+      
+      // Update pagination controls using our caching method
+      const paginationControls = this._getElement('paginationControls', '#pagination-controls');
+      if (paginationControls) {
+        paginationControls.innerHTML = this._generatePaginationControls(
+          results.length, 
+          this.pageSize, 
+          page
+        );
+      }
+    } catch (err) {
+      // Use standardized error handling for pagination rendering
+      this._handleError(err, 'Error rendering results page', {
+        // Only show notification for this since it's a user-initiated action
+        showNotification: true,
+        showInUI: false
+      });
+      
+      // Try to provide a simplified fallback view if possible
+      try {
+        const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
+        if (tbody) {
+          // Clear existing content and add a simple error message
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="6" class="error-message" style="text-align: center; padding: 20px;">
+                Error rendering results. Please try changing pages or refreshing.
+              </td>
+            </tr>
+          `;
+        }
+      } catch (fallbackError) {
+        console.error('Error creating fallback UI:', fallbackError);
+      }
     }
   }
   
@@ -847,6 +953,48 @@ class StreamResultsRenderer {
   }
   
   /**
+   * Standardized error handling method
+   * @param {Error} error - The error that occurred
+   * @param {string} context - Context description for the error
+   * @param {Object} options - Additional options for error handling
+   * @param {boolean} options.logToConsole - Whether to log to console (default: true)
+   * @param {boolean} options.showNotification - Whether to show UI notification (default: true)
+   * @param {boolean} options.showInUI - Whether to show in result area (default: false)
+   * @returns {boolean} Always returns false to indicate error
+   * @private
+   */
+  _handleError(error, context = 'Error', options = {}) {
+    // Set default options
+    const settings = {
+      logToConsole: true,
+      showNotification: true,
+      showInUI: false,
+      ...options
+    };
+    
+    // Format error message
+    const errorMessage = `${context}: ${error.message || String(error)}`;
+    
+    // Log to console if enabled
+    if (settings.logToConsole) {
+      console.error(errorMessage, error);
+    }
+    
+    // Show notification if enabled
+    if (settings.showNotification) {
+      showNotification(errorMessage, 'error');
+    }
+    
+    // Show in result area if enabled
+    if (settings.showInUI && this.resultElement) {
+      DOMUtils.showError('result', errorMessage);
+    }
+    
+    // Always return false to indicate error
+    return false;
+  }
+  
+  /**
    * Placeholder for the removed real-time rendering functionality
    * These methods have been removed as we're no longer rendering results in real-time
    * 
@@ -866,61 +1014,70 @@ const streamResultsRenderer = new StreamResultsRenderer();
 /**
  * Update UI to reflect streaming completion
  * @param {Object} stats - Final statistics object
+ * @private
  */
-streamResultsRenderer.updateCompletionStatus = function(stats) {
+streamResultsRenderer._updateCompletionStatus = function(stats) {
   if (!this.resultElement) return;
   
-  // Create a streaming completion banner
-  const completionBanner = document.createElement('div');
-  completionBanner.className = 'streaming-completion-message streaming-completion-banner';
-  
-  // Cache the completion banner for future reference
-  this.domCache.completionBanner = completionBanner;
-  
-  // Format time in a readable way
-  const timeInSeconds = stats.elapsedTime / 1000;
-  const timeDisplay = timeInSeconds >= 60 
-    ? `${(timeInSeconds / 60).toFixed(1)} minutes` 
-    : `${timeInSeconds.toFixed(1)} seconds`;
+  try {
+    // Create a streaming completion banner
+    const completionBanner = document.createElement('div');
+    completionBanner.className = 'streaming-completion-message streaming-completion-banner';
     
-  completionBanner.innerHTML = `
-    <div class="completion-banner-content">
-      <div class="completion-message">
-        <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
+    // Cache the completion banner for future reference
+    this.domCache.completionBanner = completionBanner;
+    
+    // Format time in a readable way
+    const timeInSeconds = stats.elapsedTime / 1000;
+    const timeDisplay = timeInSeconds >= 60 
+      ? `${(timeInSeconds / 60).toFixed(1)} minutes` 
+      : `${timeInSeconds.toFixed(1)} seconds`;
+      
+    completionBanner.innerHTML = `
+      <div class="completion-banner-content">
+        <div class="completion-message">
+          <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
+        </div>
+        <div class="action-buttons">
+          <button class="download-btn extract-btn" data-action="download-csv" id="main-download-csv-btn">
+            Download CSV Results
+          </button>
+          <button class="extract-btn" data-action="show-results">
+            Show Results
+          </button>
+        </div>
       </div>
-      <div class="action-buttons">
-        <button class="download-btn extract-btn" data-action="download-csv" id="main-download-csv-btn">
-          Download CSV Results
-        </button>
-        <button class="extract-btn" data-action="show-results">
-          Show Results
-        </button>
-      </div>
-    </div>
-  `;
-  
-  // First hide the worker processing indicator using cached element
-  const workerIndicator = this._getElement('workerIndicator', '.worker-processing-indicator');
-  if (workerIndicator) {
-    // Replace it with the completion banner
-    workerIndicator.parentNode.replaceChild(completionBanner, workerIndicator);
-  } else {
-    // If for some reason we can't find it, just append the banner
-    this.resultElement.appendChild(completionBanner);
+    `;
+    
+    // First hide the worker processing indicator using cached element
+    const workerIndicator = this._getElement('workerIndicator', '.worker-processing-indicator');
+    if (workerIndicator) {
+      // Replace it with the completion banner
+      workerIndicator.parentNode.replaceChild(completionBanner, workerIndicator);
+    } else {
+      // If for some reason we can't find it, just append the banner
+      this.resultElement.appendChild(completionBanner);
+    }
+    
+    // Set up styles to match other buttons
+    const actionButtons = completionBanner.querySelectorAll('button');
+    actionButtons.forEach(button => {
+      button.style.marginLeft = '5px';
+      button.style.marginRight = '5px';
+    });
+    
+    // NOTE: We're not directly attaching an event listener to show/hide buttons anymore.
+    // Instead, the buttons have data-action="show-results" or data-action="hide-results"
+    // which are handled by the global event handler in event-handler.js
+    
+    // CSV export event handling is centralized in EventHandler
+  } catch (err) {
+    // Use standardized error handling for completion status updates
+    this._handleError(err, 'Failed to update completion status', {
+      // This is visible to users but not critical to functionality
+      showInUI: false
+    });
   }
-  
-  // Set up styles to match other buttons
-  const actionButtons = completionBanner.querySelectorAll('button');
-  actionButtons.forEach(button => {
-    button.style.marginLeft = '5px';
-    button.style.marginRight = '5px';
-  });
-  
-  // NOTE: We're not directly attaching an event listener to show/hide buttons anymore.
-  // Instead, the buttons have data-action="show-results" or data-action="hide-results"
-  // which are handled by the global event handler in event-handler.js
-  
-  // CSV export event handling is centralized in EventHandler
 };
 
 export default streamResultsRenderer;

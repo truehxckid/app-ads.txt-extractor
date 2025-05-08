@@ -30,33 +30,18 @@ class ApiService {
       // Check if streaming is enabled in localStorage
       const streamingEnabled = localStorage.getItem('streamingEnabled') === 'true';
       
-      // Get the current search mode if it exists
-      const currentSearchMode = window.currentSearchMode || 'simple';
-      
-      // Process parameters based on search mode
+      // Process parameters
       let finalSearchTerms = searchTerms;
-      let finalStructuredParams = null;
       
-      if (currentSearchMode === 'advanced') {
-        // For advanced mode: Use both structured params AND search terms
-        finalSearchTerms = searchTerms; // Keep search terms in advanced mode
-        
-        // Get advanced params either directly or from AppState
-        const advancedSearchParams = 
-          structuredParams || 
-          window.AppState?.advancedSearchParams || 
-          window.advancedSearchParams || 
-          null;
-          
-        finalStructuredParams = advancedSearchParams;
-        console.log('🔍 API: Using ADVANCED search mode with structured params:', finalStructuredParams);
-        console.log('🔍 API: Also including search terms in advanced mode:', finalSearchTerms);
-      } else {
-        // For simple mode: Use search terms, clear structured params
-        finalSearchTerms = searchTerms;
-        finalStructuredParams = null; // No structured params in simple mode
-        console.log('🔍 API: Using SIMPLE search mode with terms:', finalSearchTerms);
-      }
+      // Get structured params either directly or from AppState
+      const finalStructuredParams = 
+        structuredParams || 
+        window.AppState?.advancedSearchParams || 
+        window.advancedSearchParams || 
+        null;
+      
+      console.log('🔍 API: Using structured params:', finalStructuredParams);
+      console.log('🔍 API: Also including search terms:', finalSearchTerms);
       
       // Log what we're sending to the API
       console.log('🔍 API.extractDomains parameters:', {
@@ -182,15 +167,11 @@ class ApiService {
       // Show loading notification
       showNotification('Preparing CSV export...', 'info');
       
-      // Determine search mode based on parameters
-      const isAdvancedMode = structuredParams !== null;
-      
-      // For both modes, include search terms if provided
-      // For advanced mode, also include structured params
+      // Process parameters
       const finalSearchTerms = searchTerms;
-      const finalStructuredParams = isAdvancedMode ? structuredParams : null;
+      const finalStructuredParams = structuredParams;
       
-      console.log('🔍 API.exportCsv: Using ' + (isAdvancedMode ? 'ADVANCED' : 'SIMPLE') + ' mode', {
+      console.log('🔍 API.exportCsv: Using structured params:', {
         searchTerms: finalSearchTerms,
         structuredParams: finalStructuredParams
       });

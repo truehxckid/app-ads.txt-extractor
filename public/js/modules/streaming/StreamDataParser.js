@@ -3,6 +3,9 @@
  * Handles parsing and processing of streaming data
  */
 
+// For error handling
+import { showNotification } from '../../utils/notification.js';
+
 /**
  * Stream Data Parser Class
  * Processes and parses streaming data from server
@@ -14,6 +17,41 @@ class StreamDataParser {
    */
   constructor(decoder) {
     this.decoder = decoder || new TextDecoder();
+  }
+  
+  /**
+   * Standardized error handling method
+   * @param {Error} error - The error that occurred
+   * @param {string} context - Context description for the error
+   * @param {Object} options - Additional options for error handling
+   * @param {boolean} options.logToConsole - Whether to log to console (default: true)
+   * @param {boolean} options.showNotification - Whether to show UI notification (default: false)
+   * @returns {boolean} Always returns false to indicate error
+   * @private
+   */
+  _handleError(error, context = 'Error', options = {}) {
+    // Set default options - we default to not showing notifications for data parser errors
+    const settings = {
+      logToConsole: true,
+      showNotification: false,
+      ...options
+    };
+    
+    // Format error message
+    const errorMessage = `${context}: ${error.message || String(error)}`;
+    
+    // Log to console if enabled
+    if (settings.logToConsole) {
+      console.error(errorMessage, error);
+    }
+    
+    // Show notification if enabled
+    if (settings.showNotification) {
+      showNotification(errorMessage, 'error');
+    }
+    
+    // Always return false to indicate error
+    return false;
   }
   
   /**
@@ -50,7 +88,11 @@ class StreamDataParser {
         }));
       }
     } catch (e) {
-      // Silent error handling for non-critical event
+      // Use standardized error handling for non-critical event 
+      this._handleError(e, 'Failed to dispatch stream-processing-started event', {
+        // This is non-critical so don't show notification
+        showNotification: false
+      });
     }
     
     // Set up heartbeat for progress updates
@@ -74,7 +116,11 @@ class StreamDataParser {
             debugElement.innerHTML += message;
           }
         } catch (err) {
-          // Silent error handling for non-critical UI updates
+          // Use standardized error handling for non-critical UI updates
+          this._handleError(err, 'Debug info update error', {
+            // This is a non-critical UI update, so don't show notification
+            showNotification: false
+          });
         }
       };
       
@@ -131,6 +177,13 @@ class StreamDataParser {
           if (debuggerInstance) {
             debuggerInstance.logError('Error reading chunk: ' + readError.message);
           }
+          
+          // Use standardized error handling for chunk processing errors
+          this._handleError(readError, 'Error reading stream chunk', {
+            // Don't show notification for recoverable errors
+            showNotification: false
+          });
+          
           // Continue trying to read in case of recoverable errors
         }
       }
@@ -268,6 +321,7 @@ class StreamDataParser {
    * Parse a chunk of JSON for quick stats
    * @param {string} chunk - JSON chunk to analyze
    * @returns {Object} Summary stats from the chunk
+   * @private
    */
   analyzeChunk(chunk) {
     const stats = {

@@ -98,11 +98,9 @@ class AppStateManager {
   setSearchTerms(terms) {
     this.searchTerms = Array.isArray(terms) ? terms : [];
     
-    // Also set as simple search for backwards compatibility
+    // Convert to structured params for backward compatibility
     if (terms && terms.length > 0) {
       this.setSearchParams({
-        mode: 'simple',
-        queries: terms,
         structuredParams: terms.map(term => ({
           domain: term.includes('.') ? term : undefined,
           publisherId: !term.includes('.') ? term : undefined
@@ -118,17 +116,13 @@ class AppStateManager {
   setSearchParams(params) {
     this.searchParams = params;
     
-    // Store advanced search params if present
-    if (params && params.mode === 'advanced' && params.structuredParams) {
+    // Store structured params
+    if (params && params.structuredParams) {
       this.setAdvancedSearchParams(params.structuredParams);
     }
     
-    // For backwards compatibility
-    if (params && params.mode === 'simple' && params.queries && params.queries.length > 0) {
-      // Use all queries as separate search terms
-      this.searchTerms = params.queries;
-    } else if (params && params.structuredParams) {
-      // Convert structured params to legacy format
+    // For backwards compatibility - map structured params to searchTerms
+    if (params && params.structuredParams) {
       const structuredParams = params.structuredParams;
       
       // Handle both array and single object cases
@@ -156,6 +150,9 @@ class AppStateManager {
           this.searchTerms = [];
         }
       }
+    } else if (params && params.queries && Array.isArray(params.queries)) {
+      // For the case when we receive just queries array
+      this.searchTerms = params.queries;
     } else {
       this.searchTerms = [];
     }

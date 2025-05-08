@@ -5,6 +5,7 @@
 
 import DOMUtils from '../dom-utils.js';
 import { formatNumber } from '../../utils/formatting.js';
+import { showNotification } from '../../utils/notification.js';
 
 /**
  * Stream Progress UI Class
@@ -26,6 +27,41 @@ class StreamProgressUI {
       withAppAds: 0,
       startTime: 0
     };
+  }
+  
+  /**
+   * Standardized error handling method
+   * @param {Error} error - The error that occurred
+   * @param {string} context - Context description for the error
+   * @param {Object} options - Additional options for error handling
+   * @param {boolean} options.logToConsole - Whether to log to console (default: true)
+   * @param {boolean} options.showNotification - Whether to show UI notification (default: false)
+   * @returns {boolean} Always returns false to indicate error
+   * @private
+   */
+  _handleError(error, context = 'Error', options = {}) {
+    // Set default options - we default to not showing notifications for UI errors
+    const settings = {
+      logToConsole: true,
+      showNotification: false,
+      ...options
+    };
+    
+    // Format error message
+    const errorMessage = `${context}: ${error.message || String(error)}`;
+    
+    // Log to console if enabled
+    if (settings.logToConsole) {
+      console.error(errorMessage, error);
+    }
+    
+    // Show notification if enabled
+    if (settings.showNotification) {
+      showNotification(errorMessage, 'error');
+    }
+    
+    // Always return false to indicate error
+    return false;
   }
   
   /**
@@ -395,7 +431,11 @@ class StreamProgressUI {
         }
       }
     } catch (err) {
-      // Silent error handling for non-critical UI updates
+      // Use standardized error handling for UI updates
+      this._handleError(err, 'Error updating progress UI', {
+        // This is non-critical UI update, don't show notification to user
+        showNotification: false
+      });
     }
   }
   

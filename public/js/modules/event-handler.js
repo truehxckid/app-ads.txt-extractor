@@ -4,7 +4,6 @@
  */
 
 import AppState from './app-state.js';
-import SearchManager from './search.js'; // Legacy - will be phased out
 import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
 import ThemeManager from '../utils/theme.js';
@@ -48,7 +47,6 @@ class EventHandlerManager {
       });
     }
     
-    // We no longer have search term add button (removed simple search)
     
     // Global click handler for dynamic elements
     document.addEventListener('click', this.handleDocumentClick);
@@ -205,7 +203,6 @@ class EventHandlerManager {
     reader.readAsText(file);
   }
   
-  // Search term handling removed (simple search mode no longer supported)
   
   /**
    * Handle document click events (delegation)
@@ -316,11 +313,11 @@ class EventHandlerManager {
             
             // Pass search parameters as a unified object to ensure both simple terms
             // and structured parameters are correctly handled
-            StreamProcessor.exportCsv(bundleIds, searchParams);
+            StreamProcessor.exportResultsAsCsv(bundleIds, searchParams);
             return; // Early return to prevent fallback
           }
           
-          // If StreamProcessor exists but exportCsv method doesn't exist, fall back
+          // If StreamProcessor exists but the export method doesn't exist, fall back
           CSVExporter.downloadResults(AppState.results);
         }).catch(error => {
           // Fall back to regular download if streaming fails
@@ -331,8 +328,6 @@ class EventHandlerManager {
           this._lastExportTime = null;
         });
         break;
-      // download-all-csv action removed
-      // Simple search removed, no more remove-term actions
       case 'add-structured-search':
         this.handleAddStructuredSearch(target);
         break;
@@ -345,7 +340,6 @@ class EventHandlerManager {
       case 'close-error':
         DOMUtils.hideErrorBoundary();
         break;
-      // Search mode switching removed (only advanced mode is supported now)
       case 'hide-results':
         // Hide the results display but keep completion banner visible
         const hideResultsDisplay = document.querySelector('.stream-results-display');

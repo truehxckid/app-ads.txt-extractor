@@ -10,56 +10,10 @@
   box-shadow: 0 4px 12px var(--shadow);
 }
 
-#searchTermsContainer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-}
+/* Modern search styling - no legacy container needed */
 
-/* Unified Search Styles */
-.search-modes {
-  margin-bottom: var(--space-md);
-  display: flex;
-  justify-content: center;
-}
+/* Advanced search is the only mode now */
 
-.search-mode-toggle {
-  display: inline-flex;
-  background-color: var(--bg-main);
-  border-radius: var(--radius-full);
-  padding: 4px;
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.search-mode-btn {
-  padding: 8px 16px;
-  background-color: transparent;
-  color: var(--text-secondary);
-  border: none;
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-md);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: var(--font-weight-semibold); /* Always bold */
-  min-width: 80px; /* Reduced width */
-  text-align: center;
-}
-
-.search-mode-btn.active {
-  background: linear-gradient(to bottom, var(--highlight-500), var(--highlight-600));
-  color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Remove the before pseudo-element since we don't need it anymore */
-
-.search-mode-btn:hover:not(.active) {
-  background-color: var(--bg-accent);
-  color: var(--text-primary);
-  box-shadow: 0 1px 3px var(--shadow);
-}
 
 .search-container {
   margin-top: var(--space-sm);
@@ -70,31 +24,8 @@
   box-shadow: 0 3px 8px var(--shadow);
 }
 
-/* Simple search styles */
-.simple-search-field {
-  margin-bottom: var(--space-sm);
-}
+/* Advanced search styles only */
 
-.simple-search-input-wrapper {
-  display: flex;
-  align-items: center;
-}
-
-.simple-search-input-wrapper input {
-  flex: 1;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  border: 2px solid var(--highlight-200);
-  background-color: var(--bg-main);
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  transition: all 0.2s ease;
-}
-
-.simple-search-input-wrapper input:focus {
-  border-color: var(--highlight);
-  box-shadow: 0 0 0 3px var(--highlight-light);
-}
 
 /* Advanced search styles */
 .structured-search-container {
@@ -152,49 +83,8 @@
   color: var(--text-secondary);
 }
 
-.search-term-row {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: center;
-}
+/* Search row styling for structured search only */
 
-.search-term-input {
-  flex: 1;
-  height: var(--input-height);
-}
-
-.remove-search-term {
-  padding: 0;
-  width: var(--input-height);
-  height: var(--input-height);
-  background: var(--error);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-size-md);
-  border-radius: var(--radius-sm);
-}
-
-.remove-search-term:hover {
-  background: var(--error-hover);
-}
-
-.add-term-btn {
-  display: block;
-  padding: var(--space-sm) var(--space-md);
-  background: var(--highlight);
-  margin-top: var(--space-md);
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-weight: var(--font-weight-medium);
-  transition: background var(--transition-fast);
-}
-
-.add-term-btn:hover {
-  background: var(--highlight-hover);
-}
 
 /* Structured search add/remove buttons */
 .structured-search-actions {

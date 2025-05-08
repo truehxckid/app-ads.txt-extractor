@@ -1,6 +1,6 @@
 /**
  * Unified Search Module
- * Handles advanced structured search for app-ads.txt files
+ * Handles structured search for app-ads.txt files
  */
 
 import DOMUtils from './dom-utils.js';
@@ -11,15 +11,12 @@ import { showNotification } from '../utils/notification.js';
  */
 class UnifiedSearchManager {
   constructor() {
-    this.activeMode = 'advanced'; // Only one mode now
     this.handlersAdded = false;
     
     // Cache DOM references
     this.domCache = {
       structuredSearchContainer: null,
-      simpleSearchContainer: null,
       advancedSearchContainer: null,
-      modeButtons: null,
       addButton: null
     };
   }
@@ -63,24 +60,10 @@ class UnifiedSearchManager {
         this._updateStructuredSearchFormsUI();
       }
       
-      // Hide simple search container if it exists
-      const simpleContainer = this._getElement('simpleSearchContainer', 'simpleSearchContainer');
-      if (simpleContainer) {
-        simpleContainer.style.display = 'none';
-      }
-      
       // Show advanced search container
       const advancedContainer = this._getElement('advancedSearchContainer', 'advancedSearchContainer');
       if (advancedContainer) {
         advancedContainer.style.display = 'block';
-      }
-      
-      // Hide search mode toggle buttons if they exist
-      const modeButtons = this._getElement('modeButtons', '[data-action="switch-search-mode"]', true);
-      if (modeButtons && modeButtons.length) {
-        modeButtons.forEach(button => {
-          button.style.display = 'none';
-        });
       }
       
       this.handlersAdded = true;
@@ -92,15 +75,15 @@ class UnifiedSearchManager {
    * @returns {Object} Search parameters object
    */
   getSearchParams() {
-    // Only advanced search is available
-    return this.getAdvancedSearchParams();
+    return this._getStructuredSearchParams();
   }
   
   /**
-   * Get search parameters from advanced mode
-   * @returns {Object} Advanced search parameters
+   * Get structured search parameters
+   * @returns {Object} Structured search parameters
+   * @private
    */
-  getAdvancedSearchParams() {
+  _getStructuredSearchParams() {
     // Get all structured search forms - this is a dynamic query so we don't cache
     const forms = this._getElement('searchForms', 
       () => document.querySelectorAll('#structuredSearchContainer .structured-search-form'),
@@ -191,7 +174,7 @@ class UnifiedSearchManager {
   setSearchParams(params) {
     if (!params) return;
     
-    // We only support advanced mode now
+    // Handle structured parameters
     if (params.structuredParams) {
       // Clear existing structured search forms
       const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
@@ -213,9 +196,8 @@ class UnifiedSearchManager {
         this._updateStructuredSearchFormsUI();
       }
     } 
-    // Convert simple mode params to advanced if they exist
-    else if (params.mode === 'simple' && params.queries && Array.isArray(params.queries)) {
-      // For backward compatibility - convert simple search terms to domain searches
+    // For backward compatibility - handle queries array if present
+    else if (params.queries && Array.isArray(params.queries)) {
       const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container) {
         container.innerHTML = '';
@@ -237,12 +219,6 @@ class UnifiedSearchManager {
     const advancedContainer = this._getElement('advancedSearchContainer', 'advancedSearchContainer');
     if (advancedContainer) {
       advancedContainer.style.display = 'block';
-    }
-    
-    // Hide simple container
-    const simpleContainer = this._getElement('simpleSearchContainer', 'simpleSearchContainer');
-    if (simpleContainer) {
-      simpleContainer.style.display = 'none';
     }
   }
   

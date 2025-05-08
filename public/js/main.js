@@ -61,12 +61,11 @@ function initApp() {
  * Setup initial form state
  */
 function setupInitialForm() {
-  // Initialize search terms container
-  const searchContainer = document.getElementById('searchTermsContainer');
-  if (searchContainer && searchContainer.children.length === 0) {
-    const searchModule = import('./modules/search.js').then(module => {
-      module.default.addSearchTerm();
-    });
+  // Initialize the advanced search form if needed
+  const advancedSearchContainer = document.getElementById('advancedSearchContainer');
+  if (advancedSearchContainer && advancedSearchContainer.children.length === 0) {
+    // UnifiedSearch is already imported at the top, no need for a dynamic import
+    UnifiedSearch.addStructuredSearchForm();
   }
 }
 
