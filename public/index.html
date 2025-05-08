@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="styles/main.css">
   <!-- Apply theme immediately to prevent flash -->
-  <script>
+  <script id="theme-script">
     (function() {
       const savedTheme = localStorage.getItem('theme');
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -229,9 +229,9 @@
   </div>
   
   <!-- Load modular JavaScript with ES modules -->
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js" id="main-script"></script>
   
   <!-- Event monitoring -->
-  <script src="js/event-monitor.js?v=3"></script>
+  <script src="js/event-monitor.js?v=3" id="event-monitor-script"></script>
 </body>
 </html>

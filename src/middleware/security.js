@@ -24,8 +24,10 @@ const helmetConfig = {
         "'self'", 
         "https://cdnjs.cloudflare.com",
         // Allow scripts with nonces - security improvement over unsafe-inline
-        (req, res) => `'nonce-${res.locals.cspNonce}'`
-      ],
+        (req, res) => `'nonce-${res.locals.cspNonce}'`,
+        // Temporarily include unsafe-inline as a fallback during testing
+        process.env.NODE_ENV === 'development' ? "'unsafe-inline'" : null
+      ].filter(Boolean),
       // Allow styles from trusted sources
       styleSrc: [
         "'self'", 
@@ -47,8 +49,10 @@ const helmetConfig = {
       scriptSrcElem: [
         "'self'", 
         "https://cdnjs.cloudflare.com",
-        (req, res) => `'nonce-${res.locals.cspNonce}'`
-      ],
+        (req, res) => `'nonce-${res.locals.cspNonce}'`,
+        // Temporarily include unsafe-inline as a fallback during testing
+        process.env.NODE_ENV === 'development' ? "'unsafe-inline'" : null
+      ].filter(Boolean),
       // Add base-uri to prevent base tag hijacking
       baseUri: ["'self'"],
       // Enable upgradeInsecureRequests in production
@@ -178,8 +182,8 @@ function securityMiddleware(req, res, next) {
     // Only process HTML responses
     if (typeof body === 'string' && 
         (res.get('Content-Type') || '').includes('html')) {
-      // Add nonce to all script tags
-      body = body.replace(/<script/gi, `<script nonce="${nonce}"`);
+      // Add nonce to all script tags - make sure we don't duplicate nonce attributes
+      body = body.replace(/<script(?![^>]*\snonce=)/gi, `<script nonce="${nonce}"`);
     }
     return originalSend.call(this, body);
   };

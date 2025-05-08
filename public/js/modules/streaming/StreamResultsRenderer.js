@@ -1147,8 +1147,8 @@ class StreamResultsRenderer {
     this.resultElement.prepend(completionBanner);
     
     // Set up styles to match other buttons
-    const actionButtons = completionBanner.querySelectorAll('button');
-    actionButtons.forEach(button => {
+    const buttonElements = completionBanner.querySelectorAll('button');
+    buttonElements.forEach(button => {
       button.style.marginLeft = '5px';
       button.style.marginRight = '5px';
     });
@@ -1292,8 +1292,8 @@ streamResultsRenderer._updateCompletionStatus = function(stats) {
     }
     
     // Set up styles to match other buttons
-    const actionButtons = completionBanner.querySelectorAll('button');
-    actionButtons.forEach(button => {
+    const buttonElements = completionBanner.querySelectorAll('button');
+    buttonElements.forEach(button => {
       button.style.marginLeft = '5px';
       button.style.marginRight = '5px';
     });
