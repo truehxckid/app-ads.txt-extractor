@@ -339,32 +339,8 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="developer_domains_${new Date().toISOString().slice(0, 10)}.csv"`);
     
-    // Create CSV header
-    let csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL";
-    
-    // Decide on search columns based on whether we have advanced search or simple search
-    if (isAdvancedSearch && validatedStructuredParams) {
-      // For advanced search, use simplified headers
-      csvHeader += ",Advanced Search Results,Match Count,Matching Lines";
-    } else if (validatedTerms && validatedTerms.length > 0) {
-      // Create separate column for each search term if multiple terms exist
-      if (validatedTerms.length > 1) {
-        // Add a column for each search term
-        validatedTerms.forEach((term, index) => {
-          const termStr = typeof term === 'object' ? 
-            (term.exactMatch || Object.values(term).join('+')) : term;
-          csvHeader += `,Term ${index+1}: ${termStr},Matches ${index+1}`;
-        });
-        // Add a total matches column
-        csvHeader += `,Total Matches,Matching Lines`;
-      } else {
-        // Single search term - use simpler header
-        csvHeader += `,Search Term,Search Matches,Matching Lines`;
-      }
-    }
-    
-    // Complete the header
-    csvHeader += ",Success,Error\n";
+    // Create a simple, consistent CSV header with the fields the user wants
+    const csvHeader = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL,Advanced Search Results,Match Count,Matching Lines,Success,Error\n";
     
     // Write header
     res.write(csvHeader);
@@ -405,8 +381,50 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
       // Wait for all bundle IDs in batch to complete
       const batchResults = await Promise.all(batchPromises);
       
+      // Log batch results summary for debugging
+      console.log(`CSV Export: Processing batch of ${batchResults.length} results`);
+      
+      // Check if we have matches in these results (for debugging)
+      const batchHasMatches = batchResults.some(res => 
+        res.appAdsTxt?.searchResults?.termResults?.length > 0 || 
+        res.matchesAdvancedSearch === true ||
+        (res.appAdsTxt?.searchResults?.advancedParams && 
+         res.appAdsTxt?.searchResults?.count > 0)
+      );
+      
+      console.log(`CSV Export: Batch has matches: ${batchHasMatches}`);
+      
+      // Extra processing step to ensure search results are properly formatted
+      const processedResults = batchResults.map(result => {
+        // If result matches advanced search but doesn't have termResults, add a placeholder result
+        if (result.matchesAdvancedSearch === true && result.appAdsTxt && 
+            (!result.appAdsTxt.searchResults || !result.appAdsTxt.searchResults.termResults)) {
+          // Initialize search results if needed
+          if (!result.appAdsTxt.searchResults) {
+            result.appAdsTxt.searchResults = { count: 0, termResults: [] };
+          }
+          
+          // Ensure termResults exists
+          if (!result.appAdsTxt.searchResults.termResults) {
+            result.appAdsTxt.searchResults.termResults = [];
+          }
+          
+          // Add a basic term result for matching criteria
+          result.appAdsTxt.searchResults.termResults.push({
+            term: "Advanced search match",
+            count: 1,
+            matches: ["Match found"]
+          });
+          
+          // Update count
+          result.appAdsTxt.searchResults.count = result.appAdsTxt.searchResults.termResults.length;
+        }
+        
+        return result;
+      });
+      
       // Stream each result as CSV
-      for (const result of batchResults) {
+      for (const result of processedResults) {
         const csvLine = generateCsvLine(result, validatedTerms);
         res.write(csvLine);
         processedCount++;
@@ -472,11 +490,21 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
  * Helper function to generate CSV line for a result
  * @param {Object} result - Extraction result
  * @param {Array} searchTerms - Search terms if provided
- * @param {Object|Array} structuredParams - Structured search parameters (optional)
  * @returns {string} - CSV line
  */
 function generateCsvLine(result, searchTerms) {
+  // Extract necessary data
   const hasAppAds = result.success && result.appAdsTxt?.exists;
+  
+  // Create debug logging to understand the result structure
+  console.log('Processing result for CSV export:', {
+    bundleId: result.bundleId,
+    domain: result.domain,
+    hasAppAds: hasAppAds,
+    hasSearchResults: result.appAdsTxt?.searchResults ? true : false,
+    matchesAdvancedSearch: result.matchesAdvancedSearch,
+    termResults: result.appAdsTxt?.searchResults?.termResults
+  });
   
   // Basic columns
   const basicCols = [
@@ -487,49 +515,49 @@ function generateCsvLine(result, searchTerms) {
     `"${(hasAppAds ? result.appAdsTxt.url : '').replace(/"/g, '""')}"`
   ];
   
-  // Search columns
-  let searchCols = [];
+  // Check for any search results
+  const hasSearchResults = hasAppAds && 
+    (result.appAdsTxt?.searchResults || result.matchesAdvancedSearch === true);
   
-  // Detect if we're dealing with advanced search parameters
-  const isAdvancedSearch = result && 
-    (result.appAdsTxt?.searchResults?.mode === 'advanced' ||
-     result.appAdsTxt?.searchResults?.termResults?.length > 0 ||
-     result.matchesAdvancedSearch === true) &&
-    (result.appAdsTxt?.searchResults?.advancedParams || result.appAdsTxt?.searchResults?.termResults);
-    
-  if (isAdvancedSearch) {
-    // Handle advanced search format
-    const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
-    let matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
-    
-    // Format advanced search results
-    let advancedSearchInfo = '';
-    
-    // First try to use termResults if available (from our client-side fix)
-    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
+  // Advanced search results column  
+  let advancedSearchInfo = '';
+  let matchCount = '0';
+  let matchingLinesSummary = '';
+  
+  if (hasSearchResults) {
+    // 1. Check for termResults (our new format)
+    if (result.appAdsTxt?.searchResults?.termResults?.length > 0) {
       const termResults = result.appAdsTxt.searchResults.termResults;
-      advancedSearchInfo = termResults.map(termResult => termResult.term || '').join(' | ');
       
-      // Also update the matchCount to reflect the actual number of term results
-      matchCount = termResults.length;
+      // Format term results for display
+      advancedSearchInfo = termResults.map(tr => tr.term || '').join(' | ');
+      matchCount = termResults.length.toString();
+      
+      // Format matching lines
+      matchingLinesSummary = termResults
+        .map(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            return `${tr.term}: ${tr.matches.join(', ')}`;
+          }
+          return tr.term;
+        })
+        .join(' | ');
     }
-    // Fall back to traditional advancedParams if termResults not available
-    else if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
+    // 2. Check for legacy structured params format
+    else if (result.appAdsTxt?.searchResults?.advancedParams) {
       const params = result.appAdsTxt.searchResults.advancedParams;
       
-      // Format each parameter as a readable string
+      // Format params
       if (Array.isArray(params)) {
-        const paramStrings = params.map(param => {
+        advancedSearchInfo = params.map(param => {
           const parts = [];
           if (param.domain) parts.push(`domain: ${param.domain}`);
           if (param.publisherId) parts.push(`publisherId: ${param.publisherId}`);
           if (param.relationship) parts.push(`relationship: ${param.relationship}`);
           if (param.tagId) parts.push(`tagId: ${param.tagId}`);
           return parts.join(', ');
-        });
-        advancedSearchInfo = paramStrings.join(' | ');
+        }).join(' | ');
       } else {
-        // Single parameter object
         const parts = [];
         if (params.domain) parts.push(`domain: ${params.domain}`);
         if (params.publisherId) parts.push(`publisherId: ${params.publisherId}`);
@@ -537,108 +565,28 @@ function generateCsvLine(result, searchTerms) {
         if (params.tagId) parts.push(`tagId: ${params.tagId}`);
         advancedSearchInfo = parts.join(', ');
       }
+      
+      // Set match count
+      matchCount = (result.appAdsTxt.searchResults.count || '0').toString();
+      
+      // Format matching lines
+      if (result.appAdsTxt.searchResults.matchingLines) {
+        matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
+      }
     }
-    
-    // Limit matching lines for CSV
-    let matchingLinesSummary = '';
-    
-    // First try to get matches from termResults if available
-    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
-      const termMatches = result.appAdsTxt.searchResults.termResults
-        .map(termResult => {
-          // Include both the term description and the actual matched entries
-          if (termResult.matches && termResult.matches.length > 0) {
-            return `${termResult.term}: ${termResult.matches.join(', ')}`;
-          }
-          return termResult.term;
-        })
-        .join(' | ');
-      
-      matchingLinesSummary = termMatches;
-    }
-    // Fall back to traditional matchingLines if available
-    else if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
-      matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
-    }
-    
-    searchCols = [
-      `"${advancedSearchInfo}"`,
-      matchCount.toString(),
-      `"${matchingLinesSummary.replace(/"/g, '""')}"`
-    ];
-  } else if (searchTerms && searchTerms.length > 0) {
-    const hasMatches = hasAppAds && result.appAdsTxt.searchResults?.count > 0;
-    let matchCount = hasMatches ? result.appAdsTxt.searchResults.count : 0;
-    
-    // Limit matching lines for CSV
-    let matchingLinesSummary = '';
-    
-    // First try to get matches from termResults if available
-    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
-      const termResults = result.appAdsTxt.searchResults.termResults;
-      matchCount = termResults.length; // Update match count
-      
-      // Format term matches
-      const termMatches = termResults.map(termResult => {
-        if (termResult.matches && termResult.matches.length > 0) {
-          return `${termResult.term}: ${termResult.matches.join(', ')}`;
-        }
-        return termResult.term;
-      }).join(' | ');
-      
-      matchingLinesSummary = termMatches;
-    } 
-    // Fall back to traditional matchingLines if available
-    else if (hasMatches && result.appAdsTxt.searchResults?.matchingLines) {
-      matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
-    }
-    
-    // Handle multiple search terms with separate columns
-    if (searchTerms.length > 1) {
-      // Add individual term match columns
-      searchTerms.forEach((term, index) => {
-        // Properly format the term string (handle both string and object formats)
-        const termStr = typeof term === 'object' ? 
-          (term.exactMatch || Object.values(term).filter(Boolean).join('+')) : term;
-          
-        // Find term-specific matches
-        let termMatchCount = 0;
-        if (hasMatches && result.appAdsTxt.searchResults?.termResults) {
-          const termResult = result.appAdsTxt.searchResults.termResults[index];
-          if (termResult) {
-            termMatchCount = termResult.count || 0;
-          }
-        }
-        
-        // Add term and its match count
-        searchCols.push(
-          `"${(termStr || '').replace(/"/g, '""')}"`,
-          termMatchCount.toString()
-        );
-      });
-      
-      // Add total matches and matching lines columns
-      searchCols.push(
-        matchCount.toString(),
-        `"${matchingLinesSummary.replace(/"/g, '""')}"`
-      );
-    } else {
-      // Single search term - use simpler format
-      const searchTermText = Array.isArray(searchTerms) && searchTerms.length > 0 ? 
-        searchTerms[0] : (searchTerms || '');
-      
-      // Format the term properly
-      const termStr = typeof searchTermText === 'object' ?
-        (searchTermText.exactMatch || Object.values(searchTermText).filter(Boolean).join('+')) :
-        searchTermText;
-      
-      searchCols = [
-        `"${(termStr || '').replace(/"/g, '""')}"`,
-        matchCount.toString(),
-        `"${matchingLinesSummary.replace(/"/g, '""')}"`
-      ];
+    // 3. Simplest case - just indicate a match occurred
+    else if (result.matchesAdvancedSearch === true) {
+      advancedSearchInfo = "Match found";
+      matchCount = "1";
     }
   }
+  
+  // Search columns
+  const searchCols = [
+    `"${advancedSearchInfo.replace(/"/g, '""')}"`,
+    matchCount,
+    `"${matchingLinesSummary.replace(/"/g, '""')}"`
+  ];
   
   // Status columns
   const statusCols = [

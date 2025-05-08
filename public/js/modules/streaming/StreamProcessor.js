@@ -782,6 +782,17 @@ class StreamProcessor {
       }
     });
     
+    // Remove the worker message about "Using Web Worker for processing!" that persists after completion
+    const workerMessages = document.querySelectorAll('#debug-information, #debugInfo, .debug-info');
+    workerMessages.forEach(element => {
+      // Only remove it if it contains the worker message
+      if (element && element.textContent && element.textContent.includes('Using Web Worker for processing')) {
+        if (element.parentNode) {
+          element.parentNode.removeChild(element);
+        }
+      }
+    });
+    
     // Update completion status in the StreamResultsRenderer - this will create the completion banner
     if (this.resultsRenderer && typeof this.resultsRenderer.updateCompletionStatus === 'function') {
       this.resultsRenderer.updateCompletionStatus(stats);

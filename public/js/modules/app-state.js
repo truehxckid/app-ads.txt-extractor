@@ -73,11 +73,29 @@ class AppStateManager {
    */
   updateDebugMode(isDebug) {
     this.debugMode = isDebug;
-    const debugInfo = document.getElementById('debugInfo');
     
+    // Look for debug info element
+    let debugInfo = document.getElementById('debugInfo');
+    
+    // If debug mode is enabled but element doesn't exist, create it
+    if (this.debugMode && !debugInfo) {
+      debugInfo = document.createElement('div');
+      debugInfo.id = 'debugInfo';
+      debugInfo.className = 'debug-info';
+      debugInfo.style.cssText = 'position: fixed; bottom: 10px; right: 10px; background: rgba(0,0,0,0.8); color: #00ff00; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; max-width: 50%; max-height: 200px; overflow: auto; z-index: 9999;';
+      debugInfo.innerHTML = '<strong>Debug Mode Enabled</strong><br>App-Ads.txt Extractor<br>Press Ctrl+D to toggle';
+      document.body.appendChild(debugInfo);
+      
+      console.log('Debug info element created');
+    }
+    
+    // Update visibility if element exists
     if (debugInfo) {
       debugInfo.style.display = this.debugMode ? 'block' : 'none';
     }
+    
+    // Log debug mode state
+    console.log(`Debug mode ${this.debugMode ? 'enabled' : 'disabled'}`);
     
     this.notifyListeners('stateChange', { debugMode: this.debugMode });
   }
