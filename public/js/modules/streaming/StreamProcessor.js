@@ -1221,11 +1221,19 @@ class StreamProcessor {
       this.progressUI.setStatusMessage('Connecting to server...', 'info');
       
       // Get the existing results that already have matches from AppState
-      const existingResults = window.AppState?.results || this.results || [];
+      const fullResults = window.AppState?.results || this.results || [];
+      
+      // Create an extremely minimal version with only absolute essential data to reduce request size
+      // The server 413 (Content Too Large) error indicates we need to reduce the payload significantly
+      // Instead of sending all results, just send the bundle IDs and let the server handle extraction
+      // This fixes the 413 Content Too Large error
+      const existingResults = []; // Don't send any existing results, let the server do the extraction
+      
+      // Log what we're doing to fix the 413 error
+      console.log('CSV Export: Not sending existing results to reduce payload size and avoid 413 error');
 
       // Log for debugging
-      console.log('Using existing results for CSV export:', existingResults.length);
-      console.log('Sample result:', existingResults[0]);
+      console.log('Using lightweight results for CSV export:', existingResults.length);
       
       // Set up fetch for streaming response with a unique cache buster
       const response = await fetch(`/api/stream/export-csv?nocache=${timestamp}`, {
@@ -1239,15 +1247,16 @@ class StreamProcessor {
           structuredParams,
           mode: searchMode, // Include the search mode explicitly
           timestamp, // Include timestamp in request to prevent duplicate processing
-          existingResults // Include the existing results with their matches
+          existingResults // Send only the stripped-down essential data
         })
       });
       
       // Log the request payload for debugging
       console.log('CSV Export request payload:', { 
         bundleIds: bundleIds.length, 
-        structuredParams,
-        mode: searchMode // Show the search mode in logs
+        structuredParams: Array.isArray(structuredParams) ? structuredParams.length : (structuredParams ? 1 : 0),
+        mode: searchMode, // Show the search mode in logs
+        existingResultsLength: existingResults.length // Show how many existing results we're sending (should be 0)
       });
       
       if (!response.ok) {

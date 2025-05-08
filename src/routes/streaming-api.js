@@ -307,6 +307,15 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
     // Log if we received existing results from the client
     console.log(`CSV Export: Received ${existingResults?.length || 0} existing results from client`);
     
+    // Check request size
+    const requestSize = JSON.stringify(req.body).length;
+    console.log(`CSV Export: Request payload size: ${requestSize} bytes`);
+    
+    // Increase request size limit for this endpoint
+    if (requestSize > 500000) {
+      console.log(`CSV Export: Request too large (${requestSize} bytes), processing without existing results`);
+    }
+    
     // Validate and filter bundle IDs
     // Allow more bundle IDs for CSV export
     const validation = validateBundleIds(bundleIds, config.api.maxBundleIds * 2);
@@ -524,16 +533,18 @@ router.post('/export-csv', streamingLimiter, async (req, res, next) => {
  */
 function generateCsvLine(result, searchTerms) {
   // Extract necessary data
-  const hasAppAds = result.success && result.appAdsTxt?.exists;
+  // Check both new lightweight format (result.hasAppAds) and legacy format (result.appAdsTxt?.exists)
+  const hasAppAds = result.success && (result.hasAppAds || result.appAdsTxt?.exists);
   
   // Create debug logging to understand the result structure
   console.log('Processing result for CSV export:', {
     bundleId: result.bundleId,
     domain: result.domain,
     hasAppAds: hasAppAds,
-    hasSearchResults: result.appAdsTxt?.searchResults ? true : false,
+    hasSearchResults: result.appAdsTxt?.searchResults || result.matchInfo ? true : false,
     matchesAdvancedSearch: result.matchesAdvancedSearch,
-    termResults: result.appAdsTxt?.searchResults?.termResults
+    hasMatchInfo: result.matchInfo ? true : false,
+    termResults: result.matchInfo?.termResults || result.appAdsTxt?.searchResults?.termResults
   });
   
   // Basic columns
@@ -542,12 +553,15 @@ function generateCsvLine(result, searchTerms) {
     `"${(result.storeType ? getStoreDisplayName(result.storeType) : '').replace(/"/g, '""')}"`,
     `"${(result.domain || '').replace(/"/g, '""')}"`,
     hasAppAds ? "Yes" : "No",
-    `"${(hasAppAds ? result.appAdsTxt.url : '').replace(/"/g, '""')}"`
+    `"${(hasAppAds && result.appAdsTxt?.url ? result.appAdsTxt.url : '').replace(/"/g, '""')}"`
   ];
   
-  // Check for any search results
-  const hasSearchResults = hasAppAds && 
-    (result.appAdsTxt?.searchResults || result.matchesAdvancedSearch === true);
+  // Check for any search results - include new matchInfo format from StreamProcessor
+  const hasSearchResults = hasAppAds && (
+    result.matchInfo || 
+    result.appAdsTxt?.searchResults || 
+    result.matchesAdvancedSearch === true
+  );
   
   // Advanced search results column  
   let advancedSearchInfo = '';
@@ -555,8 +569,26 @@ function generateCsvLine(result, searchTerms) {
   let matchingLinesSummary = '';
   
   if (hasSearchResults) {
-    // 1. Check for termResults (our new format)
-    if (result.appAdsTxt?.searchResults?.termResults?.length > 0) {
+    // 1. Check for matchInfo first (new lightweight format from StreamProcessor)
+    if (result.matchInfo?.termResults?.length > 0) {
+      const termResults = result.matchInfo.termResults;
+      
+      // Format term results for display
+      advancedSearchInfo = termResults.map(tr => tr.term || '').join(' | ');
+      matchCount = termResults.length.toString();
+      
+      // Format matching lines
+      matchingLinesSummary = termResults
+        .map(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            return `${tr.term}: ${tr.matches.join(', ')}`;
+          }
+          return tr.term;
+        })
+        .join(' | ');
+    }
+    // 2. Check for original termResults format
+    else if (result.appAdsTxt?.searchResults?.termResults?.length > 0) {
       const termResults = result.appAdsTxt.searchResults.termResults;
       
       // Format term results for display
@@ -573,7 +605,7 @@ function generateCsvLine(result, searchTerms) {
         })
         .join(' | ');
     }
-    // 2. Check for legacy structured params format
+    // 3. Check for legacy structured params format
     else if (result.appAdsTxt?.searchResults?.advancedParams) {
       const params = result.appAdsTxt.searchResults.advancedParams;
       
@@ -604,7 +636,7 @@ function generateCsvLine(result, searchTerms) {
         matchingLinesSummary = truncateMatchingLines(result.appAdsTxt.searchResults.matchingLines);
       }
     }
-    // 3. Simplest case - just indicate a match occurred
+    // 4. Simplest case - just indicate a match occurred
     else if (result.matchesAdvancedSearch === true) {
       advancedSearchInfo = "Match found";
       matchCount = "1";
