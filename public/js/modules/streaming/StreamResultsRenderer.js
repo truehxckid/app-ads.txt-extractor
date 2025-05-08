@@ -869,10 +869,10 @@ class StreamResultsRenderer {
       backButton.textContent = 'Hide Results';
       backButton.setAttribute('data-action', 'hide-results');
       
-      backButton.addEventListener('click', () => {
-        // Hide results but keep completion banner visible
-        container.style.display = 'none';
-        
+      // Remove any existing click listeners to prevent duplicate handlers
+      const newBackButton = backButton.cloneNode(true);
+      backButton.parentNode.replaceChild(newBackButton, backButton);
+      
         // Make sure completion banner is visible
         if (this.resultElement) {
           const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');

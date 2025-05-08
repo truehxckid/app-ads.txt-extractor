@@ -376,12 +376,20 @@ class EventHandlerManager {
         if (hideResultsDisplay) {
           hideResultsDisplay.style.display = 'none';
           
-          // Update all buttons at once for better efficiency
+          // Modify current button to show results instead
+          if (actionElement) {
+            actionElement.setAttribute('data-action', 'show-results');
+            actionElement.textContent = 'Show Results';
+          }
+          
+          // Also update any other show-results buttons for consistency
           const showResultsBtns = document.querySelectorAll('[data-action="show-results"]');
           if (showResultsBtns.length > 0) {
-            // Update all matching buttons in a single iteration
             showResultsBtns.forEach(btn => { btn.textContent = 'Show Results'; });
           }
+          
+          // Log that we're hiding results for debugging
+          console.log('Hide Results button clicked, results hidden');
         }
         break;
       case 'show-results':
@@ -393,11 +401,20 @@ class EventHandlerManager {
           showResultsDisplay.style.display = 'block';
           showResultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
           
-          // Update all matching buttons at once using querySelectorAll for better efficiency
+          // Modify current button to hide results instead
+          if (actionElement) {
+            actionElement.setAttribute('data-action', 'hide-results');
+            actionElement.textContent = 'Hide Results';
+          }
+          
+          // Update any other hide-results buttons for consistency
           const hideResultsBtns = document.querySelectorAll('[data-action="hide-results"]');
           if (hideResultsBtns.length > 0) {
             hideResultsBtns.forEach(btn => { btn.textContent = 'Hide Results'; });
           }
+          
+          // Log that we're showing results for debugging
+          console.log('Show Results button clicked, results shown');
         } else {
           // Use Promise.all to load modules in parallel for better performance
           Promise.all([

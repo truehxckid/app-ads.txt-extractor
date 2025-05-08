@@ -423,8 +423,24 @@ class UnifiedExporter {
     if (hasAppAds && result.appAdsTxt?.searchResults) {
       const searchResults = result.appAdsTxt.searchResults;
       
-      // Process match count
-      matchCount = String(searchResults.count || 0);
+      // Calculate real match count by counting unique matching lines
+      const uniqueMatchingLines = new Set();
+      
+      // Collect all unique matching lines from all term results
+      if (searchResults.termResults && searchResults.termResults.length > 0) {
+        searchResults.termResults.forEach(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            tr.matches.forEach(match => uniqueMatchingLines.add(match));
+          } else if (tr.matchingLines && tr.matchingLines.length > 0) {
+            tr.matchingLines.forEach(line => {
+              if (line.content) uniqueMatchingLines.add(line.content);
+            });
+          }
+        });
+      }
+      
+      // Use the number of unique matches instead of the raw count from server
+      matchCount = String(uniqueMatchingLines.size || 0);
       
       // Process matching lines
       if (searchResults.termResults && searchResults.termResults.length > 0) {
@@ -441,9 +457,24 @@ class UnifiedExporter {
     
     // Also check for matchInfo format (used in some implementations)
     if (result.matchInfo) {
-      if (typeof result.matchInfo.count !== 'undefined') {
-        matchCount = String(result.matchInfo.count);
+      // Calculate real match count by counting unique matching lines
+      const uniqueMatchingLines = new Set();
+      
+      // Collect all unique matching lines from all term results
+      if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
+        result.matchInfo.termResults.forEach(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            tr.matches.forEach(match => uniqueMatchingLines.add(match));
+          } else if (tr.matchingLines && tr.matchingLines.length > 0) {
+            tr.matchingLines.forEach(line => {
+              if (line.content) uniqueMatchingLines.add(line.content);
+            });
+          }
+        });
       }
+      
+      // Use the number of unique matches
+      matchCount = String(uniqueMatchingLines.size || 0);
       
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
         matchingLinesSummary = result.matchInfo.termResults
