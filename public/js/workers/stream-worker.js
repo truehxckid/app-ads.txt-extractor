@@ -99,6 +99,12 @@ async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams
     
     console.log('Worker finalized API payload:', JSON.stringify(payload));
     
+    // Make isAdvancedSearch available globally in the worker context
+    const isAdvancedSearch = structuredParams !== null && (
+      Array.isArray(structuredParams) ? structuredParams.length > 0 : Object.keys(structuredParams).length > 0
+    );
+    console.log('Worker determined isAdvancedSearch:', isAdvancedSearch);
+    
     // Start fetch request
     const response = await fetch('/api/stream/extract-multiple', {
       method: 'POST',
