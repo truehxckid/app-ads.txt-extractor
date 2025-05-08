@@ -340,9 +340,55 @@ function matchesStructuredParams(result, params) {
     return false;
   }
   
-  // Get app-ads.txt entries
-  const entries = result.appAdsTxt.entries || [];
+  // Add a fallback for entries - if entries array is missing but content exists, try to parse it
+  let entries = result.appAdsTxt.entries || [];
+  
+  // Debug the entire app-ads.txt structure
+  console.log('App-ads.txt structure for', result.bundleId, ':', JSON.stringify(result.appAdsTxt, null, 2));
+  
+  // If no entries but we have content, try to create entries by parsing the content
+  if (!entries.length && result.appAdsTxt.content) {
+    console.log('No entries array found, but content exists. Attempting to parse manually.');
+    try {
+      // Manual parsing to add entries
+      const content = result.appAdsTxt.content;
+      const lines = content.split(/\r?\n/);
+      const parsedEntries = [];
+      
+      lines.forEach((line, lineNumber) => {
+        // Skip empty lines and comments
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.startsWith('#')) {
+          return;
+        }
+        
+        // Simple parsing: split by comma for app-ads.txt format
+        const parts = trimmedLine.split(',').map(part => part.trim());
+        if (parts.length >= 3) {
+          const entry = {
+            domain: parts[0].toLowerCase(),
+            publisherId: parts[1],
+            relationship: parts[2].toUpperCase(),
+            tagId: parts.length > 3 ? parts[3] : null,
+            lineNumber: lineNumber + 1,
+            raw: trimmedLine
+          };
+          parsedEntries.push(entry);
+        }
+      });
+      
+      console.log('Manually parsed', parsedEntries.length, 'entries from content');
+      entries = parsedEntries;
+      // Also add the entries to the result object for future use
+      result.appAdsTxt.entries = parsedEntries;
+    } catch (err) {
+      console.error('Error parsing app-ads.txt content:', err);
+    }
+  }
+  
+  console.log('App-ads.txt entries for', result.bundleId, ':', entries);
   if (!entries.length) {
+    console.log('No entries found in app-ads.txt for', result.bundleId);
     return false;
   }
   
@@ -359,8 +405,29 @@ function matchesStructuredParams(result, params) {
     const matchesForThisParamSet = entries.some(entry => {
       // Match domain if specified
       if (paramSet.domain && entry.domain) {
-        const domainMatches = entry.domain.toLowerCase() === paramSet.domain.toLowerCase();
-        if (!domainMatches) return false;
+        const entryDomain = entry.domain.toLowerCase();
+        const paramDomain = paramSet.domain.toLowerCase();
+        
+        // First try exact match
+        const exactMatch = entryDomain === paramDomain;
+        
+        // If exact match fails, try substring match (some entries might have subdomains)
+        const substringMatch = entryDomain.includes(paramDomain) || paramDomain.includes(entryDomain);
+        
+        const domainMatches = exactMatch || substringMatch;
+        console.log('Domain matching:', 
+          'Entry:', entryDomain, 
+          'Param:', paramDomain, 
+          'Exact match:', exactMatch, 
+          'Substring match:', substringMatch,
+          'Final result:', domainMatches);
+          
+        if (!domainMatches) {
+          console.log('Domain does not match, skipping entry');
+          return false;
+        } else {
+          console.log('Domain matches!');
+        }
       }
       
       // Match publisherId if specified
@@ -368,16 +435,37 @@ function matchesStructuredParams(result, params) {
         // Handle both single publisherId and multiple (+ separated)
         let publisherIdMatches = false;
         
+        // Debug publisher ID matching
+        console.log('Comparing publisherIds:',
+          'Entry: "' + entry.publisherId + '"',
+          'Param: "' + paramSet.publisherId + '"', 
+          'Entry trimmed: "' + entry.publisherId.trim() + '"',
+          'Param trimmed: "' + paramSet.publisherId.trim() + '"');
+        
         if (paramSet.publisherId.includes('+')) {
           // Multiple publisher IDs in the parameter
           const paramPublisherIds = paramSet.publisherId.split('+').map(id => id.trim());
           publisherIdMatches = paramPublisherIds.includes(entry.publisherId.trim());
+          console.log('Multiple publisherIds:', paramPublisherIds, 'Match result:', publisherIdMatches);
         } else {
-          // Single publisher ID comparison
-          publisherIdMatches = entry.publisherId.trim() === paramSet.publisherId.trim();
+          // Single publisher ID comparison - try both exact and relaxed matching
+          const exactMatch = entry.publisherId.trim() === paramSet.publisherId.trim();
+          // Try a more relaxed match that ignores all whitespace
+          const relaxedMatch = entry.publisherId.replace(/\s+/g, '') === paramSet.publisherId.replace(/\s+/g, '');
+          
+          publisherIdMatches = exactMatch || relaxedMatch;
+          console.log('Publisher ID matching:', 
+            'Exact match:', exactMatch, 
+            'Relaxed match:', relaxedMatch, 
+            'Final result:', publisherIdMatches);
         }
         
-        if (!publisherIdMatches) return false;
+        if (!publisherIdMatches) {
+          console.log('Publisher ID does not match, skipping entry');
+          return false;
+        } else {
+          console.log('Publisher ID matches!');
+        }
       }
       
       // Match relationship if specified
@@ -400,6 +488,23 @@ function matchesStructuredParams(result, params) {
     if (matchesForThisParamSet) {
       console.log('Found matching entry for paramSet:', paramSet);
       return true;
+    }
+    
+    // Last resort - do raw string content search if parameters are simple
+    if (result.appAdsTxt.content && paramSet.domain && paramSet.publisherId) {
+      console.log('Trying raw content search as last resort');
+      const searchDomain = paramSet.domain.toLowerCase();
+      const searchPublisherId = paramSet.publisherId.trim();
+      const content = result.appAdsTxt.content.toLowerCase();
+      
+      // Try to find a line with both domain and publisherId
+      const lines = content.split(/\r?\n/);
+      for (const line of lines) {
+        if (line.includes(searchDomain) && line.includes(searchPublisherId)) {
+          console.log('Found potential match in raw content:', line);
+          return true;
+        }
+      }
     }
   }
   
