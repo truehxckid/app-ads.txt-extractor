@@ -873,23 +873,22 @@ class StreamResultsRenderer {
       const newBackButton = backButton.cloneNode(true);
       backButton.parentNode.replaceChild(newBackButton, backButton);
       
-        // Make sure completion banner is visible
-        if (this.resultElement) {
-          const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
-          if (completionBanner) {
-            completionBanner.style.display = 'block';
-            
-            // Update the Show Results button text
-            const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
-            if (showResultsBtn) {
-              showResultsBtn.textContent = 'Show Results';
-            }
-          } else {
-            // If banner doesn't exist, recreate it
-            this._createCompletionBanner();
+      // Make sure completion banner is visible
+      if (this.resultElement) {
+        const completionBanner = this.resultElement.querySelector('.streaming-completion-banner');
+        if (completionBanner) {
+          completionBanner.style.display = 'block';
+          
+          // Update the Show Results button text
+          const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
+          if (showResultsBtn) {
+            showResultsBtn.textContent = 'Show Results';
           }
+        } else {
+          // If banner doesn't exist, recreate it
+          this._createCompletionBanner();
         }
-      });
+      }
     }
     
     // NOTE: Pagination clicks (data-action="pagination") should be handled by the
