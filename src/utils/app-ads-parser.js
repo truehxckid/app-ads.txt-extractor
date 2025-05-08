@@ -84,13 +84,34 @@ function matchStructuredQuery(entry, query) {
         const normalizedQuery = queryValue.replace(/\s+/g, '');
         const normalizedEntry = entryValue.replace(/\s+/g, '');
         
-        if (normalizedQuery !== normalizedEntry) {
+        // Check for multiple publisher IDs (separated by "+")
+        if (normalizedQuery.includes('+')) {
+          const queryIds = normalizedQuery.split('+').map(id => id.trim());
+          // If any publisher ID matches, return true for this field
+          const matchesAnyId = queryIds.some(id => normalizedEntry === id);
+          if (!matchesAnyId) {
+            return false;
+          }
+        } else if (normalizedQuery !== normalizedEntry) {
+          // Standard exact match when there's no "+" separator
           return false;
         }
       } else if (field === 'relationship') {
         // Special handling for relationship field - partial match is okay
         // This allows searching for just "DIRECT" or "RESELLER" without case sensitivity
         if (!entryValue.includes(queryValue)) {
+          return false;
+        }
+      } else if (field === 'domain') {
+        // For domain, allow partial match if query contains an asterisk wildcard
+        if (queryValue.includes('*')) {
+          const regexPattern = queryValue.replace(/\*/g, '.*');
+          const regex = new RegExp(`^${regexPattern}$`, 'i');
+          if (!regex.test(entryValue)) {
+            return false;
+          }
+        } else if (entryValue !== queryValue) {
+          // Exact match for domain when no wildcard is present
           return false;
         }
       } else if (entryValue !== queryValue) {

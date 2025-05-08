@@ -183,7 +183,25 @@ class UnifiedSearchManager {
       const params = {};
       
       if (domain) params.domain = domain;
-      if (publisherId) params.publisherId = publisherId;
+      
+      // Handle publisher ID - could contain multiple IDs separated by spaces, commas, or "+"
+      if (publisherId) {
+        // Check if there are multiple publisher IDs separated by commas or spaces
+        if (publisherId.includes(',') || publisherId.includes(' ') && !publisherId.includes('+')) {
+          // Convert to "+" format for backend processing
+          const cleanedIds = publisherId
+            .split(/[\s,]+/)         // Split by spaces or commas
+            .filter(Boolean)         // Remove empty items
+            .join('+');              // Join with "+" for backend
+          
+          params.publisherId = cleanedIds;
+          console.log('UnifiedSearch: Multiple publisher IDs detected:', cleanedIds);
+        } else {
+          // Use as-is if it already contains "+" or is a single ID
+          params.publisherId = publisherId;
+        }
+      }
+      
       if (relationship) params.relationship = relationship;
       if (tagId) params.tagId = tagId;
       
@@ -369,7 +387,7 @@ class UnifiedSearchManager {
     publisherIdInput.type = 'text';
     publisherIdInput.id = `structuredPublisherId_${index}`;
     publisherIdInput.className = 'structured-publisher-id';
-    publisherIdInput.placeholder = 'e.g., 12447';
+    publisherIdInput.placeholder = 'e.g., 12447 (searches for exact publisher ID)';
     if (publisherId) {
       publisherIdInput.value = publisherId;
     }

@@ -17,6 +17,7 @@ const { getLogger } = require('../utils/logger');
 const config = require('../config');
 const axios = require('axios');
 const memoryManager = require('../services/memory-manager');
+const { parseAppAdsLine } = require('../utils/app-ads-parser');
 
 const logger = getLogger('app-ads-checker');
 
@@ -646,10 +647,11 @@ function processSearchTerms(lines, searchTerms) {
         // For advanced search, each object is its own group (AND relationship within group)
         searchGroups = searchTerms.map(term => {
           const groupTerms = [];
-          if (term.domain) groupTerms.push({ exactMatch: term.domain.toLowerCase() });
-          if (term.publisherId) groupTerms.push({ exactMatch: term.publisherId.toLowerCase() });
-          if (term.relationship) groupTerms.push({ exactMatch: term.relationship.toLowerCase() });
-          if (term.tagId) groupTerms.push({ exactMatch: term.tagId.toLowerCase() });
+          // Include the field name so we can do proper structured field matching
+          if (term.domain) groupTerms.push({ exactMatch: term.domain.toLowerCase(), field: 'domain' });
+          if (term.publisherId) groupTerms.push({ exactMatch: term.publisherId.toLowerCase(), field: 'publisherId' });
+          if (term.relationship) groupTerms.push({ exactMatch: term.relationship.toLowerCase(), field: 'relationship' });
+          if (term.tagId) groupTerms.push({ exactMatch: term.tagId.toLowerCase(), field: 'tagId' });
           return groupTerms;
         });
         
@@ -736,7 +738,21 @@ function processSearchTerms(lines, searchTerms) {
             
             if (matcher.type === 'exact') {
               // For exact match terms, check if the exact string appears in the line
-              isMatch = lineLower.includes(matcher.value);
+              // First check if this is a structured field term
+              if (matcher.originalTerm && matcher.originalTerm.field) {
+                // For structured field matches, we need to parse the line and check the specific field
+                const parsedLine = parseAppAdsLine(lineContent);
+                if (parsedLine) {
+                  const fieldName = matcher.originalTerm.field;
+                  const fieldValue = parsedLine[fieldName]?.toLowerCase();
+                  if (fieldValue) {
+                    isMatch = fieldValue === matcher.value;
+                  }
+                }
+              } else {
+                // For regular exact match terms, check if the string appears anywhere in the line
+                isMatch = lineLower.includes(matcher.value);
+              }
             } else {
               // For regex terms, use the regex test method
               isMatch = matcher.value.test(lineContent);
