@@ -431,8 +431,9 @@ class EventHandlerManager {
     // Ctrl+D for debug mode
     if (event.ctrlKey && event.key.toLowerCase() === 'd') {
       event.preventDefault();
-      const isDebug = AppState.toggleDebugMode();
-      showNotification(`Debug mode ${isDebug ? 'enabled' : 'disabled'}`, 'info');
+      // Just toggle debug mode - don't show additional notification
+      // The persistent debug info panel is enough
+      AppState.toggleDebugMode();
     }
   }
   
