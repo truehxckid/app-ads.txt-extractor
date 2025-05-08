@@ -82,8 +82,54 @@ button:disabled,
   padding: var(--space-sm) var(--space-xl);
   font-weight: var(--font-weight-semibold);
   min-width: 200px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 3px 6px var(--shadow);
+  transition: all var(--transition-fast);
 }
 
+.extract-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px var(--shadow);
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, var(--highlight), var(--primary));
+  color: white;
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 8px var(--shadow);
+  transition: all var(--transition-fast);
+}
+
+.primary-btn:hover {
+  background: linear-gradient(135deg, var(--highlight-hover), var(--primary-hover));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px var(--shadow);
+}
+
+/* Download CSV button styles */
+.download-csv-btn {
+  position: relative;
+}
+
+.download-csv-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(135deg, var(--highlight-100), var(--primary-100));
+  opacity: 0.3;
+  border-radius: inherit;
+  z-index: -1;
+  transition: opacity var(--transition-fast);
+}
+
+.download-csv-btn:hover::before {
+  opacity: 0.5;
+}
+
+/* Legacy style for backward compatibility */
 .download-btn {
   background: linear-gradient(135deg, var(--highlight), var(--primary));
   color: white;

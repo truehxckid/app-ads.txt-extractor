@@ -437,43 +437,109 @@ class UnifiedExporter {
     if (hasAppAds && result.appAdsTxt?.searchResults) {
       const searchResults = result.appAdsTxt.searchResults;
       
-      // Calculate real match count by extracting the actual unique values
-      // This avoids counting the same match multiple times across different criteria
-      const uniqueMatchValues = new Set();
-      
-      // Track raw matches for debugging
+      const uniquePublisherIds = new Set();
       const allMatches = [];
+      const extractedIds = [];
       
-      // Collect all unique matching lines from all term results
+      const paramsArray = Array.isArray(structuredParams) ? structuredParams : [structuredParams];
+      
+      const expectedIds = new Set();
+      paramsArray.forEach(param => {
+        if (param.publisherId) {
+          expectedIds.add(param.publisherId.trim());
+        }
+      });
+      
       if (searchResults.termResults && searchResults.termResults.length > 0) {
         searchResults.termResults.forEach(tr => {
           if (tr.matches && tr.matches.length > 0) {
             tr.matches.forEach(match => {
-              // Extract the actual value before the colon (if present)
-              const baseValue = match.includes(':') ? match.split(':')[0] + ':' + match.split(':')[1] : match;
-              uniqueMatchValues.add(baseValue);
               allMatches.push(match);
+              
+              let publisherId = null;
+              
+              if (match.includes(',')) {
+                const parts = match.split(',').map(part => part.trim());
+                if (parts.length >= 2) {
+                  const idMatch = parts[1].match(/\d+/);
+                  if (idMatch) publisherId = idMatch[0];
+                }
+              }
+              
+              if (!publisherId && match.includes(':')) {
+                const parts = match.split(':');
+                if (parts.length >= 2) {
+                  const idMatch = parts[1].match(/\d+/);
+                  if (idMatch) publisherId = idMatch[0];
+                }
+              }
+              
+              if (!publisherId && match.includes('publisherId:')) {
+                const idMatch = match.match(/publisherId:\s*(\d+)/);
+                if (idMatch && idMatch[1]) publisherId = idMatch[1];
+              }
+              
+              if (!publisherId) {
+                const numbers = match.match(/\d+/g);
+                if (numbers && numbers.length > 0) {
+                  const foundId = numbers.find(num => expectedIds.has(num));
+                  if (foundId) {
+                    publisherId = foundId;
+                  }
+                }
+              }
+              
+              if (publisherId && expectedIds.has(publisherId)) {
+                uniquePublisherIds.add(publisherId);
+                extractedIds.push(publisherId);
+              }
             });
           } else if (tr.matchingLines && tr.matchingLines.length > 0) {
             tr.matchingLines.forEach(line => {
               if (line.content) {
-                // Extract the base value if it's a content line
                 const content = line.content;
-                const baseValue = content.includes(':') ? content.split(':')[0] + ':' + content.split(':')[1] : content;
-                uniqueMatchValues.add(baseValue);
                 allMatches.push(content);
+                
+                let publisherId = null;
+                
+                if (content.includes(',')) {
+                  const parts = content.split(',').map(part => part.trim());
+                  if (parts.length >= 2) {
+                    const idMatch = parts[1].match(/\d+/);
+                    if (idMatch) publisherId = idMatch[0];
+                  }
+                }
+                
+                if (!publisherId && content.includes(':')) {
+                  const parts = content.split(':');
+                  if (parts.length >= 2) {
+                    const idMatch = parts[1].match(/\d+/);
+                    if (idMatch) publisherId = idMatch[0];
+                  }
+                }
+                
+                if (!publisherId) {
+                  const numbers = content.match(/\d+/g);
+                  if (numbers && numbers.length > 0) {
+                    const foundId = numbers.find(num => expectedIds.has(num));
+                    if (foundId) {
+                      publisherId = foundId;
+                    }
+                  }
+                }
+                
+                if (publisherId && expectedIds.has(publisherId)) {
+                  uniquePublisherIds.add(publisherId);
+                  extractedIds.push(publisherId);
+                }
               }
             });
           }
         });
       }
       
-      // Log for debugging
-      console.log('Unique match values: ', Array.from(uniqueMatchValues));
-      console.log('All matches: ', allMatches);
-      
-      // Use the number of truly unique matches
-      matchCount = String(uniqueMatchValues.size || 0);
+      // Use the count of unique publisher IDs that match our criteria
+      matchCount = String(uniquePublisherIds.size || 0);
       
       // Process matching lines to ensure uniqueness
       if (searchResults.termResults && searchResults.termResults.length > 0) {
@@ -532,43 +598,109 @@ class UnifiedExporter {
     
     // Also check for matchInfo format (used in some implementations)
     if (result.matchInfo) {
-      // Calculate real match count by extracting the actual unique values
-      // This avoids counting the same match multiple times across different criteria
-      const uniqueMatchValues = new Set();
-      
-      // Track raw matches for debugging
+      const uniquePublisherIds = new Set();
       const allMatches = [];
+      const extractedIds = [];
       
-      // Collect all unique matching lines from all term results
+      const paramsArray = Array.isArray(structuredParams) ? structuredParams : [structuredParams];
+      
+      const expectedIds = new Set();
+      paramsArray.forEach(param => {
+        if (param.publisherId) {
+          expectedIds.add(param.publisherId.trim());
+        }
+      });
+      
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
         result.matchInfo.termResults.forEach(tr => {
           if (tr.matches && tr.matches.length > 0) {
             tr.matches.forEach(match => {
-              // Extract the actual value before the colon (if present)
-              const baseValue = match.includes(':') ? match.split(':')[0] + ':' + match.split(':')[1] : match;
-              uniqueMatchValues.add(baseValue);
               allMatches.push(match);
+              
+              let publisherId = null;
+              
+              if (match.includes(',')) {
+                const parts = match.split(',').map(part => part.trim());
+                if (parts.length >= 2) {
+                  const idMatch = parts[1].match(/\d+/);
+                  if (idMatch) publisherId = idMatch[0];
+                }
+              }
+              
+              if (!publisherId && match.includes(':')) {
+                const parts = match.split(':');
+                if (parts.length >= 2) {
+                  const idMatch = parts[1].match(/\d+/);
+                  if (idMatch) publisherId = idMatch[0];
+                }
+              }
+              
+              if (!publisherId && match.includes('publisherId:')) {
+                const idMatch = match.match(/publisherId:\s*(\d+)/);
+                if (idMatch && idMatch[1]) publisherId = idMatch[1];
+              }
+              
+              if (!publisherId) {
+                const numbers = match.match(/\d+/g);
+                if (numbers && numbers.length > 0) {
+                  const foundId = numbers.find(num => expectedIds.has(num));
+                  if (foundId) {
+                    publisherId = foundId;
+                  }
+                }
+              }
+              
+              if (publisherId && expectedIds.has(publisherId)) {
+                uniquePublisherIds.add(publisherId);
+                extractedIds.push(publisherId);
+              }
             });
           } else if (tr.matchingLines && tr.matchingLines.length > 0) {
             tr.matchingLines.forEach(line => {
               if (line.content) {
-                // Extract the base value if it's a content line
                 const content = line.content;
-                const baseValue = content.includes(':') ? content.split(':')[0] + ':' + content.split(':')[1] : content;
-                uniqueMatchValues.add(baseValue);
                 allMatches.push(content);
+                
+                let publisherId = null;
+                
+                if (content.includes(',')) {
+                  const parts = content.split(',').map(part => part.trim());
+                  if (parts.length >= 2) {
+                    const idMatch = parts[1].match(/\d+/);
+                    if (idMatch) publisherId = idMatch[0];
+                  }
+                }
+                
+                if (!publisherId && content.includes(':')) {
+                  const parts = content.split(':');
+                  if (parts.length >= 2) {
+                    const idMatch = parts[1].match(/\d+/);
+                    if (idMatch) publisherId = idMatch[0];
+                  }
+                }
+                
+                if (!publisherId) {
+                  const numbers = content.match(/\d+/g);
+                  if (numbers && numbers.length > 0) {
+                    const foundId = numbers.find(num => expectedIds.has(num));
+                    if (foundId) {
+                      publisherId = foundId;
+                    }
+                  }
+                }
+                
+                if (publisherId && expectedIds.has(publisherId)) {
+                  uniquePublisherIds.add(publisherId);
+                  extractedIds.push(publisherId);
+                }
               }
             });
           }
         });
       }
       
-      // Log for debugging
-      console.log('MatchInfo - Unique match values: ', Array.from(uniqueMatchValues));
-      console.log('MatchInfo - All matches: ', allMatches);
-      
-      // Use the number of truly unique matches
-      matchCount = String(uniqueMatchValues.size || 0);
+      // Use the count of unique publisher IDs that match our criteria
+      matchCount = String(uniquePublisherIds.size || 0);
       
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
         // First collect unique terms and their matches
