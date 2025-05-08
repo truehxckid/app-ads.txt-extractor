@@ -212,7 +212,7 @@ class StreamResultsRenderer {
   /**
    * Render a batch of results
    * @param {Array} results - Results to render
-   * @param {Array} searchTerms - Search terms for highlighting
+   * @param {Array} searchTerms - Search terms for highlighting (no longer used)
    */
   renderBatch(results, searchTerms = []) {
     if (!results || !results.length) return;

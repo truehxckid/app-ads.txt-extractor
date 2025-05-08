@@ -283,7 +283,6 @@ class StreamProcessor {
     
     // Reset state
     this.resetState();
-    this.searchTerms = searchTerms;
     this.stats.startTime = Date.now();
     this.stats.totalBundleIds = bundleIds.length;
     
@@ -318,7 +317,7 @@ class StreamProcessor {
     });
     
     // Initialize UI components
-    this.resultsRenderer.initializeUI(resultSection, bundleIds.length, searchTerms.length > 0);
+    this.resultsRenderer.initializeUI(resultSection, bundleIds.length, structuredParams && structuredParams.length > 0);
     
     // We'll just use the worker indicator now, so no need for separate progress UI
     console.log('Not initializing detailed progress UI, will use worker indicator only');
@@ -378,7 +377,6 @@ class StreamProcessor {
         }, 5000);
         
         // Enhanced logging before sending to worker
-      console.log('🚀 StreamProcessor: About to send to worker - searchTerms:', searchTerms);
       console.log('🚀 StreamProcessor: About to send to worker - structuredParams:', structuredParams);
       console.log('🚀 StreamProcessor: Structured params type:', structuredParams ? typeof structuredParams : 'null');
       if (structuredParams) {
@@ -389,9 +387,9 @@ class StreamProcessor {
       this.worker.postMessage({
         type: 'processBundleIds',
         bundleIds,
-        searchTerms: searchTerms || [],
         structuredParams: structuredParams,
-        totalBundleIds: bundleIds.length
+        totalBundleIds: bundleIds.length,
+        hasSearchTerms: false // Add this for backward compatibility
       });
         
         // Update debug information with worker status
@@ -421,7 +419,7 @@ class StreamProcessor {
         }
       }, 5000);
       
-      return await this._processBundleIdsMainThread(bundleIds, searchTerms, structuredParams);
+      return await this._processBundleIdsMainThread(bundleIds, [], structuredParams);
     } catch (err) {
       console.error('Error starting streaming process:', err);
       showNotification(`Streaming error: ${err.message}`, 'error');
@@ -517,7 +515,7 @@ class StreamProcessor {
         
         // Use the API module which will automatically redirect to streaming endpoint
         // if streaming is enabled in localStorage
-        const apiResponse = await Api.extractDomains(bundleIds, searchTerms, 1, 20, structuredParams);
+        const apiResponse = await Api.extractDomains(bundleIds, [], 1, 20, structuredParams);
         
         // Check if we got a streaming response
         if (apiResponse.isStreaming && apiResponse.response) {
@@ -577,7 +575,6 @@ class StreamProcessor {
           },
           body: JSON.stringify({ 
             bundleIds, 
-            searchTerms,
             structuredParams 
           }),
           signal: controller.signal
@@ -723,7 +720,7 @@ class StreamProcessor {
     if (this.lastRenderTime === 0 || (now - this.lastRenderTime) > this.renderThrottleTime) {
       this.isRendering = true;
       this.animationFrameId = requestAnimationFrame(() => {
-        this.resultsRenderer.renderBatch(this.resultBuffer, this.searchTerms);
+        this.resultsRenderer.renderBatch(this.resultBuffer, []);
         
         // Update progress UI
         this.progressUI.updateProgress(this.stats);
@@ -942,7 +939,7 @@ class StreamProcessor {
           // Use special direct render method for worker results
           // to avoid double-counting stats
           if (this.resultsRenderer) {
-            this.resultsRenderer.renderBatch([data.result], this.searchTerms);
+            this.resultsRenderer.renderBatch([data.result], []);
           }
         }
         break;
@@ -1004,7 +1001,7 @@ class StreamProcessor {
         // Try to fall back to main thread if worker fails
         try {
           console.warn('⚡ StreamProcessor: Worker failed, trying to fall back to main thread');
-          this._processBundleIdsMainThread(this.stats.bundleIds || [], this.searchTerms || []);
+          this._processBundleIdsMainThread(this.stats.bundleIds || [], [], structuredParams);
         } catch (fallbackError) {
           console.error('⚡ StreamProcessor: Fallback to main thread also failed:', fallbackError);
         }
@@ -1102,16 +1099,18 @@ class StreamProcessor {
     }
     
     // Parse search parameters based on type
-    let searchTerms = [];
     let structuredParams = null;
-    let searchMode = 'simple'; // Default mode
+    let searchMode = 'advanced'; // Default mode is now always advanced
     
-    // Check if searchParams is an object with mode property (unified search format)
-    if (searchParams && typeof searchParams === 'object' && searchParams.mode) {
-      // Store the search mode
-      searchMode = searchParams.mode;
+    // We only support advanced mode now
+    if (searchParams && typeof searchParams === 'object') {
+      // If there's a mode, store it
+      if (searchParams.mode) {
+        searchMode = searchParams.mode;
+      }
       
-      if (searchParams.mode === 'advanced' && searchParams.structuredParams) {
+      // Get structuredParams from either mode
+      if (searchParams.structuredParams) {
         // Advanced mode: use structuredParams
         structuredParams = searchParams.structuredParams;
         console.log('CSV Export: Using advanced search mode with structuredParams:', structuredParams);
@@ -1121,33 +1120,18 @@ class StreamProcessor {
           structuredParams = [structuredParams];
           console.log('CSV Export: Converted structuredParams to array:', structuredParams);
         }
-      } else if (searchParams.mode === 'simple' && searchParams.queries) {
-        // Simple mode: use queries as search terms
-        // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
-        // Make sure each term is explicitly an object with exactMatch property
-        searchTerms = searchParams.queries.map(term => ({ exactMatch: term.trim() }));
-        console.log('CSV Export: Using simple search mode with terms (fixed for multi-term OR logic):', searchTerms);
       }
-    } else if (Array.isArray(searchParams)) {
-      // Legacy format: searchParams is just an array of search terms
-      // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
-      searchTerms = searchParams.map(term => 
-        typeof term === 'string' ? { exactMatch: term.trim() } : term
-      );
-      console.log('CSV Export: Using legacy search terms format (fixed for multi-term OR logic):', searchTerms);
     }
     
     // Debug check the variables
     console.log('CSV Export: Final parameters:', {
       mode: searchMode,
-      searchTerms,
       structuredParams
     });
     
     // Log the actual parameters we'll use
     console.log('CSV Export parameters:', {
       bundleIds: bundleIds.length,
-      searchTerms: searchTerms,
       structuredParams: structuredParams
     });
     
@@ -1195,7 +1179,6 @@ class StreamProcessor {
         },
         body: JSON.stringify({ 
           bundleIds, 
-          searchTerms,
           structuredParams,
           mode: searchMode, // Include the search mode explicitly
           timestamp // Include timestamp in request to prevent duplicate processing
@@ -1205,7 +1188,6 @@ class StreamProcessor {
       // Log the request payload for debugging
       console.log('CSV Export request payload:', { 
         bundleIds: bundleIds.length, 
-        searchTerms, 
         structuredParams,
         mode: searchMode // Show the search mode in logs
       });
