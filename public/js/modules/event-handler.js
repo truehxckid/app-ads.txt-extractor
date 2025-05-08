@@ -12,6 +12,7 @@ import Api from './api.js';
 import StreamProcessor from './streaming/StreamProcessor.js';
 import UnifiedSearch from './unified-search.js';
 import UnifiedExporter from './unified-exporter.js';
+import Sanitizer from '../utils/sanitizer.js';
 
 /**
  * Event Handler Class
@@ -21,6 +22,9 @@ class EventHandlerManager {
    * Initialize all event listeners
    */
   initialize() {
+    // Initialize CSRF protection
+    this._initializeCsrfProtection();
+    
     // Theme toggle
     const themeToggleBtn = DOMUtils.getElement('themeToggle');
     if (themeToggleBtn) {
@@ -43,8 +47,15 @@ class EventHandlerManager {
     const extractForm = DOMUtils.getElement('extractForm');
     if (extractForm) {
       extractForm.addEventListener('submit', (e) => {
+        // Always prevent default form submission behavior to avoid navigation
         e.preventDefault();
+        e.stopPropagation();
+        
+        // Handle the extraction through our controlled method
         this.handleExtractButtonClick(e);
+        
+        // Return false as extra precaution to prevent navigation
+        return false;
       });
     }
     
@@ -77,8 +88,9 @@ class EventHandlerManager {
    * @param {Event} event - Click event
    */
   handleExtractButtonClick = (event) => {
-    // Prevent default form submission
+    // Always prevent default form submission to avoid navigation
     event.preventDefault();
+    event.stopPropagation();
     
     // Prevent double submission
     if (AppState.isProcessing) return;
@@ -88,10 +100,17 @@ class EventHandlerManager {
     const bundleIds = bundleIdsElement ? 
       DOMUtils.getTextareaLines('bundleIds') : [];
     
-    if (bundleIds.length === 0) {
+    if (!bundleIds || bundleIds.length === 0) {
       showNotification('Please enter at least one bundle ID', 'error');
-      bundleIdsElement?.focus();
-      return;
+      if (bundleIdsElement) {
+        bundleIdsElement.focus();
+        bundleIdsElement.classList.add('error');
+        // Remove error class after a delay
+        setTimeout(() => {
+          bundleIdsElement.classList.remove('error');
+        }, 2000);
+      }
+      return false; // Return false to further prevent form submission
     }
     
     // Get unified search parameters
@@ -696,6 +715,53 @@ class EventHandlerManager {
    */
   handleRemoveStructuredSearch(button) {
     UnifiedSearch.removeStructuredSearchForm(button);
+  }
+
+  /**
+   * Initialize CSRF protection
+   * @private
+   */
+  _initializeCsrfProtection() {
+    try {
+      // Function to get CSRF token from cookies
+      const getCsrfToken = () => {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.startsWith('XSRF-TOKEN=')) {
+            return cookie.substring('XSRF-TOKEN='.length, cookie.length);
+          }
+        }
+        return '';
+      };
+      
+      // Set CSRF token in the hidden input field
+      const csrfTokenInput = document.getElementById('csrfToken');
+      if (csrfTokenInput) {
+        csrfTokenInput.value = getCsrfToken();
+      }
+      
+      // Add an event listener to update the CSRF token whenever it changes
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          // Update CSRF token when tab becomes visible again
+          const token = getCsrfToken();
+          if (csrfTokenInput && token) {
+            csrfTokenInput.value = token;
+          }
+        }
+      });
+      
+      // Also check for CSRF token every 5 minutes
+      setInterval(() => {
+        const token = getCsrfToken();
+        if (csrfTokenInput && token) {
+          csrfTokenInput.value = token;
+        }
+      }, 5 * 60 * 1000);
+    } catch (err) {
+      console.error('Error initializing CSRF protection:', err);
+    }
   }
 
   /**

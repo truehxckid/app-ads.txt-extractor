@@ -6,6 +6,7 @@
 import DOMUtils from '../dom-utils.js';
 import { formatNumber, getStoreDisplayName } from '../../utils/formatting.js';
 import { showNotification } from '../../utils/notification.js';
+import Sanitizer from '../../utils/sanitizer.js';
 
 /**
  * Stream Results Renderer Class
@@ -154,18 +155,40 @@ class StreamResultsRenderer {
       });
     }
     
-    // Create worker processing indicator div
+    // Create worker processing indicator div using the Sanitizer
     const workerIndicator = document.createElement('div');
     workerIndicator.className = 'streaming-info-banner worker-processing-indicator';
     workerIndicator.style.cssText = 'margin: 20px 0; padding: 15px; background: #f1f8ff; border: 1px solid #0366d6; border-radius: 4px; text-align: center;';
-    workerIndicator.innerHTML = `
-      <h3 style="margin-top: 0; color: #0366d6;">⚙️ Worker Processing... 0% complete (0 of ${totalItems})</h3>
-      <p>Results will be available when processing is complete.</p>
-      <p class="processing-note" style="font-style: italic; margin-top: 10px;">For performance reasons, results will be displayed only after all processing is complete.</p>
-      <div class="progress-bar-wrapper" style="margin-top: 15px; height: 4px; background: #e0e0e0; border-radius: 2px; overflow: hidden;">
-        <div class="progress-bar" style="height: 100%; width: 0%; background: #0366d6; transition: width 0.3s ease;"></div>
-      </div>
-    `;
+    
+    // Create child elements safely
+    const heading = Sanitizer.createSafeElement('h3', {
+      style: 'margin-top: 0; color: #0366d6;'
+    }, `⚙️ Worker Processing... 0% complete (0 of ${Sanitizer.sanitizeString(String(totalItems))})`);
+    
+    const processingText = Sanitizer.createSafeElement('p', {}, 
+      'Results will be available when processing is complete.');
+    
+    const noteText = Sanitizer.createSafeElement('p', {
+      class: 'processing-note',
+      style: 'font-style: italic; margin-top: 10px;'
+    }, 'For performance reasons, results will be displayed only after all processing is complete.');
+    
+    const progressBarWrapper = Sanitizer.createSafeElement('div', {
+      class: 'progress-bar-wrapper',
+      style: 'margin-top: 15px; height: 4px; background: #e0e0e0; border-radius: 2px; overflow: hidden;'
+    });
+    
+    const progressBar = Sanitizer.createSafeElement('div', {
+      class: 'progress-bar',
+      style: 'height: 100%; width: 0%; background: #0366d6; transition: width 0.3s ease;'
+    });
+    
+    // Assemble the elements
+    progressBarWrapper.appendChild(progressBar);
+    workerIndicator.appendChild(heading);
+    workerIndicator.appendChild(processingText);
+    workerIndicator.appendChild(noteText);
+    workerIndicator.appendChild(progressBarWrapper);
     
     // Cache the worker indicator
     this.domCache.workerIndicator = workerIndicator;
@@ -178,8 +201,10 @@ class StreamResultsRenderer {
     // Cache the results container
     this.domCache.resultsContainer = resultsContainer;
     
-    // Clear the result element's existing content
-    this.resultElement.innerHTML = '';
+    // Clear the result element's existing content (safely)
+    while (this.resultElement.firstChild) {
+      this.resultElement.removeChild(this.resultElement.firstChild);
+    }
     
     // Add our new elements
     this.resultElement.appendChild(workerIndicator);
@@ -375,13 +400,20 @@ class StreamResultsRenderer {
           // Only update the text if we have valid data
           // Check if we're not going backwards from a previous valid state
           if (!workerIndicator.textContent.includes('initializing')) {
-            workerIndicator.textContent = `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`;
+            // Use the sanitizer to set text content safely
+            Sanitizer.setTextContent(
+              workerIndicator.querySelector('h3') || workerIndicator, 
+              `⚙️ Worker Processing... ${percent}% complete (${processedCount} of ${totalCount})`
+            );
           }
         }
         // Don't revert to "initializing" once we've started showing progress
         else if (!workerIndicator.textContent.includes('%')) {
           // Only show initializing if we haven't started showing percentages yet
-          workerIndicator.textContent = `⚙️ Worker Processing... initializing`;
+          Sanitizer.setTextContent(
+            workerIndicator.querySelector('h3') || workerIndicator, 
+            `⚙️ Worker Processing... initializing`
+          );
         }
         
         // Get cached progress bar or query it once
@@ -482,7 +514,7 @@ class StreamResultsRenderer {
       const showResultsBtn = this._getElement('showResultsBtn', 
         () => completionBanner.querySelector('[data-action="show-results"]'));
       if (showResultsBtn) {
-        showResultsBtn.textContent = 'Hide Results';
+        Sanitizer.setTextContent(showResultsBtn, 'Hide Results');
       }
     }
     
@@ -550,40 +582,89 @@ class StreamResultsRenderer {
       // Cache the results display
       this.domCache.resultsDisplay = resultsDisplay;
       
-      // Add results header with search-styled UI
-      resultsDisplay.innerHTML = `
-        <div class="stream-results-header search-container">
-          <div class="results-summary">
-            <div class="summary-text">
-              <h3>Processing Results</h3>
-              <p>Showing ${results.length} extracted results from your bundle IDs.</p>
-            </div>
-          </div>
-          
-          <div class="stream-results-table-container results-table-container">
-            <table class="results-table">
-              <thead>
-                <tr>
-                  <th>Bundle ID</th>
-                  <th>Store</th>
-                  <th>Domain</th>
-                  <th>app-ads.txt</th>
-                  <th>Matched Terms</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="results-final-tbody">
-                ${results.length === 0 ? '<tr><td colspan="6" style="text-align: center; padding: 20px;">No results found</td></tr>' : ''}
-              </tbody>
-            </table>
-          </div>
-          
-          <!-- Pagination Controls -->
-          <div id="pagination-controls" class="pagination-wrapper">
-            ${this._generatePaginationControls(results.length, this.pageSize, 1)}
-          </div>
-        </div>
-      `;
+      // Add results header with search-styled UI - using Sanitizer
+      const headerContainer = Sanitizer.createSafeElement('div', { 
+        class: 'stream-results-header search-container' 
+      });
+      
+      const resultsSummary = Sanitizer.createSafeElement('div', { 
+        class: 'results-summary' 
+      });
+      
+      const summaryText = Sanitizer.createSafeElement('div', { 
+        class: 'summary-text' 
+      });
+      
+      const heading = Sanitizer.createSafeElement('h3', {}, 'Processing Results');
+      
+      const resultCount = Sanitizer.createSafeElement('p', {}, 
+        `Showing ${Sanitizer.sanitizeString(String(results.length))} extracted results from your bundle IDs.`
+      );
+      
+      // Build summary section
+      summaryText.appendChild(heading);
+      summaryText.appendChild(resultCount);
+      resultsSummary.appendChild(summaryText);
+      headerContainer.appendChild(resultsSummary);
+      
+      // Create table container
+      const tableContainer = Sanitizer.createSafeElement('div', {
+        class: 'stream-results-table-container results-table-container'
+      });
+      
+      // Create table
+      const table = Sanitizer.createSafeElement('table', {
+        class: 'results-table'
+      });
+      
+      // Create table header
+      const thead = Sanitizer.createSafeElement('thead', {});
+      const headerRow = Sanitizer.createSafeElement('tr', {});
+      
+      // Add table headers
+      const headerLabels = ['Bundle ID', 'Store', 'Domain', 'app-ads.txt', 'Matched Terms', 'Actions'];
+      headerLabels.forEach(label => {
+        const th = Sanitizer.createSafeElement('th', {}, label);
+        headerRow.appendChild(th);
+      });
+      
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = Sanitizer.createSafeElement('tbody', {
+        id: 'results-final-tbody'
+      });
+      
+      // Add empty state message if no results
+      if (results.length === 0) {
+        const emptyRow = Sanitizer.createSafeElement('tr', {});
+        const emptyCell = Sanitizer.createSafeElement('td', {
+          colspan: '6',
+          style: 'text-align: center; padding: 20px;'
+        }, 'No results found');
+        
+        emptyRow.appendChild(emptyCell);
+        tbody.appendChild(emptyRow);
+      }
+      
+      table.appendChild(tbody);
+      tableContainer.appendChild(table);
+      
+      // Create pagination controls container
+      const paginationContainer = Sanitizer.createSafeElement('div', {
+        id: 'pagination-controls',
+        class: 'pagination-wrapper'
+      });
+      
+      // Add pagination controls (generated separately)
+      const paginationControlsFragment = this._generatePaginationControls(results.length, this.pageSize, 1);
+      paginationContainer.appendChild(paginationControlsFragment);
+      
+      // Assemble all components
+      headerContainer.appendChild(tableContainer);
+      headerContainer.appendChild(paginationContainer);
+      resultsDisplay.appendChild(headerContainer);
       
       // Get references to the table elements and cache them for future use
       this.domCache.resultsTableContainer = resultsDisplay.querySelector('.results-table-container');
@@ -617,17 +698,29 @@ class StreamResultsRenderer {
       
       // Create a minimal fallback results display in case of error
       if (this.resultElement) {
-        const errorDisplay = document.createElement('div');
-        errorDisplay.className = 'stream-results-display error-state';
-        errorDisplay.innerHTML = `
-          <div class="error-message-container">
-            <h3>Error Displaying Results</h3>
-            <p>There was an error displaying the results. You can try downloading the CSV instead.</p>
-            <button class="download-btn extract-btn" data-action="download-csv">
-              Download CSV Results
-            </button>
-          </div>
-        `;
+        const errorDisplay = Sanitizer.createSafeElement('div', {
+          class: 'stream-results-display error-state'
+        });
+        
+        const errorContainer = Sanitizer.createSafeElement('div', {
+          class: 'error-message-container'
+        });
+        
+        const errorHeading = Sanitizer.createSafeElement('h3', {}, 'Error Displaying Results');
+        
+        const errorMessage = Sanitizer.createSafeElement('p', {}, 
+          'There was an error displaying the results. You can try downloading the CSV instead.');
+        
+        const downloadButton = Sanitizer.createSafeElement('button', {
+          class: 'download-btn extract-btn',
+          'data-action': 'download-csv'
+        }, 'Download CSV Results');
+        
+        // Assemble the error display
+        errorContainer.appendChild(errorHeading);
+        errorContainer.appendChild(errorMessage);
+        errorContainer.appendChild(downloadButton);
+        errorDisplay.appendChild(errorContainer);
         
         // Add to the page
         this.resultElement.appendChild(errorDisplay);
@@ -671,18 +764,38 @@ class StreamResultsRenderer {
       pageResults.forEach(result => {
         if (!result) return; // Skip null/undefined results
         
-        const row = document.createElement('tr');
-        row.className = result.success ? 'success-row' : 'error-row';
+        const row = Sanitizer.createSafeElement('tr', {
+          class: result.success ? 'success-row' : 'error-row'
+        });
         
         if (result.success) {
           const hasAppAds = result.appAdsTxt?.exists;
           const hasSearchMatches = hasAppAds && result.appAdsTxt.searchResults && result.appAdsTxt.searchResults.count > 0;
           const searchMatchCount = hasSearchMatches ? result.appAdsTxt.searchResults.count : 0;
           
-          // Create matched terms cell content
-          let matchedTermsHtml = '';
+          // Create cells with safe DOM methods
+          
+          // Bundle ID cell
+          const bundleIdCell = Sanitizer.createSafeElement('td', {}, result.bundleId || '');
+          
+          // Store type cell
+          const storeCell = Sanitizer.createSafeElement('td', {}, getStoreDisplayName(result.storeType || ''));
+          
+          // Domain cell
+          const domainCell = Sanitizer.createSafeElement('td', { class: 'domain-cell' }, result.domain || 'N/A');
+          
+          // App-ads.txt cell
+          const appAdsCell = Sanitizer.createSafeElement('td', { class: 'app-ads-cell' });
+          const appAdsStatusSpan = Sanitizer.createSafeElement('span', { 
+            class: hasAppAds ? 'app-ads-found' : 'app-ads-missing' 
+          }, hasAppAds ? 'Found' : 'Not found');
+          appAdsCell.appendChild(appAdsStatusSpan);
+          
+          // Search matches cell
+          const matchesCell = Sanitizer.createSafeElement('td', { class: 'search-matches-cell' });
+          
           if (hasSearchMatches) {
-            matchedTermsHtml += '<span class="search-matches-found">';
+            const matchesSpan = Sanitizer.createSafeElement('span', { class: 'search-matches-found' });
             
             // For multi-term search, show color-coded indicators
             if (result.appAdsTxt.searchResults.termResults) {
@@ -690,47 +803,65 @@ class StreamResultsRenderer {
               result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
                 if (termResult.count > 0) {
                   const colorClass = `term-match-${termIndex % 5}`;
-                  matchedTermsHtml += `<span class="term-match-indicator ${colorClass}">${termIndex + 1}</span> `;
+                  const termIndicator = Sanitizer.createSafeElement('span', { 
+                    class: `term-match-indicator ${colorClass}` 
+                  }, String(termIndex + 1));
+                  matchesSpan.appendChild(termIndicator);
+                  matchesSpan.appendChild(document.createTextNode(' '));
                 }
               });
             } else if (searchMatchCount > 0) {
               // Fallback for single-term search
-              matchedTermsHtml += `${searchMatchCount} matches`;
+              matchesSpan.appendChild(document.createTextNode(`${searchMatchCount} matches`));
             } else {
-              matchedTermsHtml += 'None';
+              matchesSpan.appendChild(document.createTextNode('None'));
             }
             
-            matchedTermsHtml += '</span>';
+            matchesCell.appendChild(matchesSpan);
           } else {
-            matchedTermsHtml = '<span class="search-matches-missing">None</span>';
+            const noMatchesSpan = Sanitizer.createSafeElement('span', { class: 'search-matches-missing' }, 'None');
+            matchesCell.appendChild(noMatchesSpan);
           }
           
-          row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-            <td>${DOMUtils.escapeHtml(getStoreDisplayName(result.storeType || ''))}</td>
-            <td class="domain-cell">${DOMUtils.escapeHtml(result.domain || 'N/A')}</td>
-            <td class="app-ads-cell">
-              ${hasAppAds 
-                ? '<span class="app-ads-found">Found</span>' 
-                : '<span class="app-ads-missing">Not found</span>'}
-            </td>
-            <td class="search-matches-cell">
-              ${matchedTermsHtml}
-            </td>
-            <td>
-              <button class="table-copy-btn" data-action="copy" data-copy="${result.domain || ''}" 
-                type="button" title="Copy domain to clipboard">Copy</button>
-            </td>
-          `;
+          // Actions cell
+          const actionsCell = Sanitizer.createSafeElement('td', {});
+          const copyButton = Sanitizer.createSafeElement('button', {
+            class: 'table-copy-btn',
+            'data-action': 'copy',
+            'data-copy': result.domain || '',
+            type: 'button',
+            title: 'Copy domain to clipboard'
+          }, 'Copy');
+          actionsCell.appendChild(copyButton);
+          
+          // Add all cells to the row
+          row.appendChild(bundleIdCell);
+          row.appendChild(storeCell);
+          row.appendChild(domainCell);
+          row.appendChild(appAdsCell);
+          row.appendChild(matchesCell);
+          row.appendChild(actionsCell);
         } else {
-          row.innerHTML = `
-            <td>${DOMUtils.escapeHtml(result.bundleId || '')}</td>
-            <td colspan="3" class="error-message">
-              Error: ${DOMUtils.escapeHtml(result.error || 'Unknown error')}
-            </td>
-            <td>N/A</td>
-            <td></td>
-          `;
+          // Error row - create cells with safe DOM methods
+          
+          // Bundle ID cell
+          const bundleIdCell = Sanitizer.createSafeElement('td', {}, result.bundleId || '');
+          
+          // Error message cell (spans 3 columns)
+          const errorCell = Sanitizer.createSafeElement('td', {
+            colspan: '3',
+            class: 'error-message'
+          }, `Error: ${result.error || 'Unknown error'}`);
+          
+          // Empty cells for consistency
+          const naCell = Sanitizer.createSafeElement('td', {}, 'N/A');
+          const emptyCell = Sanitizer.createSafeElement('td', {}, '');
+          
+          // Add all cells to the row
+          row.appendChild(bundleIdCell);
+          row.appendChild(errorCell);
+          row.appendChild(naCell);
+          row.appendChild(emptyCell);
         }
         
         fragment.appendChild(row);
@@ -742,11 +873,18 @@ class StreamResultsRenderer {
       // Update pagination controls using our caching method
       const paginationControls = this._getElement('paginationControls', '#pagination-controls');
       if (paginationControls) {
-        paginationControls.innerHTML = this._generatePaginationControls(
+        // Clear existing content
+        while (paginationControls.firstChild) {
+          paginationControls.removeChild(paginationControls.firstChild);
+        }
+        
+        // Add new pagination controls
+        const paginationControlsFragment = this._generatePaginationControls(
           results.length, 
           this.pageSize, 
           page
         );
+        paginationControls.appendChild(paginationControlsFragment);
       }
     } catch (err) {
       // Use standardized error handling for pagination rendering
@@ -760,14 +898,21 @@ class StreamResultsRenderer {
       try {
         const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
         if (tbody) {
-          // Clear existing content and add a simple error message
-          tbody.innerHTML = `
-            <tr>
-              <td colspan="6" class="error-message" style="text-align: center; padding: 20px;">
-                Error rendering results. Please try changing pages or refreshing.
-              </td>
-            </tr>
-          `;
+          // Clear existing content
+          while (tbody.firstChild) {
+            tbody.removeChild(tbody.firstChild);
+          }
+          
+          // Add a simple error message
+          const errorRow = Sanitizer.createSafeElement('tr', {});
+          const errorCell = Sanitizer.createSafeElement('td', {
+            colspan: '6',
+            class: 'error-message',
+            style: 'text-align: center; padding: 20px;'
+          }, 'Error rendering results. Please try changing pages or refreshing.');
+          
+          errorRow.appendChild(errorCell);
+          tbody.appendChild(errorRow);
         }
       } catch (fallbackError) {
         console.error('Error creating fallback UI:', fallbackError);
@@ -776,37 +921,57 @@ class StreamResultsRenderer {
   }
   
   /**
-   * Generate pagination controls HTML
+   * Generate pagination controls
    * @param {number} totalItems - Total items count
    * @param {number} pageSize - Items per page
    * @param {number} currentPage - Current page number
-   * @returns {string} - Pagination HTML
+   * @returns {HTMLElement} - Pagination controls fragment
    * @private
    */
   _generatePaginationControls(totalItems, pageSize, currentPage) {
+    // Create document fragment to hold all pagination elements
+    const fragment = document.createDocumentFragment();
+    
     if (totalItems <= pageSize) {
-      return ''; // No pagination needed
+      return fragment; // No pagination needed
     }
     
     const totalPages = Math.ceil(totalItems / pageSize);
-    let paginationHTML = '<div class="pagination">';
+    
+    // Main pagination container
+    const paginationDiv = Sanitizer.createSafeElement('div', { class: 'pagination' });
     
     // Previous button
+    const prevButton = Sanitizer.createSafeElement('button', {
+      type: 'button',
+      class: currentPage > 1 ? 'pagination-btn button-small' : 'pagination-btn button-small disabled'
+    }, '← Previous');
+    
     if (currentPage > 1) {
-      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${currentPage - 1}">← Previous</button>`;
+      prevButton.setAttribute('data-action', 'paginate');
+      prevButton.setAttribute('data-page', String(currentPage - 1));
     } else {
-      paginationHTML += `<button type="button" class="pagination-btn button-small disabled" disabled>← Previous</button>`;
+      prevButton.disabled = true;
     }
     
-    // Page numbers
-    paginationHTML += '<div class="page-numbers">';
+    paginationDiv.appendChild(prevButton);
+    
+    // Page numbers container
+    const pageNumbersDiv = Sanitizer.createSafeElement('div', { class: 'page-numbers' });
     
     // First page
     if (currentPage > 3) {
-      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="1">1</button>`;
+      const firstPageBtn = Sanitizer.createSafeElement('button', {
+        type: 'button',
+        class: 'pagination-btn button-small',
+        'data-action': 'paginate',
+        'data-page': '1'
+      }, '1');
+      pageNumbersDiv.appendChild(firstPageBtn);
       
       if (currentPage > 4) {
-        paginationHTML += '<span class="pagination-ellipsis">...</span>';
+        const ellipsis = Sanitizer.createSafeElement('span', { class: 'pagination-ellipsis' }, '...');
+        pageNumbersDiv.appendChild(ellipsis);
       }
     }
     
@@ -815,41 +980,68 @@ class StreamResultsRenderer {
     const endPage = Math.min(totalPages, currentPage + 2);
     
     for (let i = startPage; i <= endPage; i++) {
+      const pageBtn = Sanitizer.createSafeElement('button', {
+        type: 'button',
+        class: i === currentPage ? 'pagination-btn button-small active' : 'pagination-btn button-small'
+      }, String(i));
+      
       if (i === currentPage) {
-        paginationHTML += `<button type="button" class="pagination-btn button-small active" disabled>${i}</button>`;
+        pageBtn.disabled = true;
       } else {
-        paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${i}">${i}</button>`;
+        pageBtn.setAttribute('data-action', 'paginate');
+        pageBtn.setAttribute('data-page', String(i));
       }
+      
+      pageNumbersDiv.appendChild(pageBtn);
     }
     
     // Last page
     if (currentPage < totalPages - 2) {
       if (currentPage < totalPages - 3) {
-        paginationHTML += '<span class="pagination-ellipsis">...</span>';
+        const ellipsis = Sanitizer.createSafeElement('span', { class: 'pagination-ellipsis' }, '...');
+        pageNumbersDiv.appendChild(ellipsis);
       }
       
-      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${totalPages}">${totalPages}</button>`;
+      const lastPageBtn = Sanitizer.createSafeElement('button', {
+        type: 'button',
+        class: 'pagination-btn button-small',
+        'data-action': 'paginate',
+        'data-page': String(totalPages)
+      }, String(totalPages));
+      
+      pageNumbersDiv.appendChild(lastPageBtn);
     }
     
-    paginationHTML += '</div>';
+    paginationDiv.appendChild(pageNumbersDiv);
     
     // Next button
+    const nextButton = Sanitizer.createSafeElement('button', {
+      type: 'button',
+      class: currentPage < totalPages ? 'pagination-btn button-small' : 'pagination-btn button-small disabled'
+    }, 'Next →');
+    
     if (currentPage < totalPages) {
-      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${currentPage + 1}">Next →</button>`;
+      nextButton.setAttribute('data-action', 'paginate');
+      nextButton.setAttribute('data-page', String(currentPage + 1));
     } else {
-      paginationHTML += `<button type="button" class="pagination-btn button-small disabled" disabled>Next →</button>`;
+      nextButton.disabled = true;
     }
     
-    paginationHTML += '</div>';
+    paginationDiv.appendChild(nextButton);
+    
+    // Add the pagination container to the fragment
+    fragment.appendChild(paginationDiv);
     
     // Add page info
-    paginationHTML += `
-      <div class="pagination-info">
-        Showing ${(currentPage - 1) * pageSize + 1}-${Math.min(currentPage * pageSize, totalItems)} of ${totalItems} results
-      </div>
-    `;
+    const startItem = (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalItems);
     
-    return paginationHTML;
+    const paginationInfo = Sanitizer.createSafeElement('div', { class: 'pagination-info' }, 
+      `Showing ${startItem}-${endItem} of ${totalItems} results`);
+    
+    fragment.appendChild(paginationInfo);
+    
+    return fragment;
   }
   
   /**
@@ -866,7 +1058,7 @@ class StreamResultsRenderer {
     // Change Back button to Hide Results
     const backButton = container.querySelector('[data-action="back-to-search"]');
     if (backButton) {
-      backButton.textContent = 'Hide Results';
+      Sanitizer.setTextContent(backButton, 'Hide Results');
       backButton.setAttribute('data-action', 'hide-results');
       
       // Remove any existing click listeners to prevent duplicate handlers
@@ -882,7 +1074,7 @@ class StreamResultsRenderer {
           // Update the Show Results button text
           const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
           if (showResultsBtn) {
-            showResultsBtn.textContent = 'Show Results';
+            Sanitizer.setTextContent(showResultsBtn, 'Show Results');
           }
         } else {
           // If banner doesn't exist, recreate it
@@ -914,24 +1106,42 @@ class StreamResultsRenderer {
     }
     
     // Create a new banner if needed
-    const completionBanner = document.createElement('div');
-    completionBanner.className = 'streaming-completion-message streaming-completion-banner';
+    const completionBanner = Sanitizer.createSafeElement('div', {
+      class: 'streaming-completion-message streaming-completion-banner'
+    });
     
     // Cache the completion banner for future reference
     this.domCache.completionBanner = completionBanner;
     
-    completionBanner.innerHTML = `
-      <div class="completion-banner-content">
-        <div class="completion-message">
-          <p>Completed processing ${this.allResults?.length || 0} bundle IDs</p>
-        </div>
-        <div class="action-buttons">
-          <button class="extract-btn" data-action="show-results">
-            Show Results
-          </button>
-        </div>
-      </div>
-    `;
+    // Create banner content structure
+    const contentDiv = Sanitizer.createSafeElement('div', {
+      class: 'completion-banner-content'
+    });
+    
+    const messageDiv = Sanitizer.createSafeElement('div', {
+      class: 'completion-message'
+    });
+    
+    const messageText = Sanitizer.createSafeElement('p', {}, 
+      `Completed processing ${this.allResults?.length || 0} bundle IDs`);
+    
+    const actionButtons = Sanitizer.createSafeElement('div', {
+      class: 'action-buttons'
+    });
+    
+    const showResultsButton = Sanitizer.createSafeElement('button', {
+      class: 'extract-btn',
+      'data-action': 'show-results'
+    }, 'Show Results');
+    
+    // Assemble the banner
+    messageDiv.appendChild(messageText);
+    actionButtons.appendChild(showResultsButton);
+    
+    contentDiv.appendChild(messageDiv);
+    contentDiv.appendChild(actionButtons);
+    
+    completionBanner.appendChild(contentDiv);
     
     // Add to the result element
     this.resultElement.prepend(completionBanner);
@@ -1020,8 +1230,9 @@ streamResultsRenderer._updateCompletionStatus = function(stats) {
   
   try {
     // Create a streaming completion banner
-    const completionBanner = document.createElement('div');
-    completionBanner.className = 'streaming-completion-message streaming-completion-banner';
+    const completionBanner = Sanitizer.createSafeElement('div', {
+      class: 'streaming-completion-message streaming-completion-banner'
+    });
     
     // Cache the completion banner for future reference
     this.domCache.completionBanner = completionBanner;
@@ -1031,22 +1242,44 @@ streamResultsRenderer._updateCompletionStatus = function(stats) {
     const timeDisplay = timeInSeconds >= 60 
       ? `${(timeInSeconds / 60).toFixed(1)} minutes` 
       : `${timeInSeconds.toFixed(1)} seconds`;
-      
-    completionBanner.innerHTML = `
-      <div class="completion-banner-content">
-        <div class="completion-message">
-          <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
-        </div>
-        <div class="action-buttons">
-          <button class="download-btn extract-btn" data-action="download-csv" id="main-download-csv-btn">
-            Download CSV Results
-          </button>
-          <button class="extract-btn" data-action="show-results">
-            Show Results
-          </button>
-        </div>
-      </div>
-    `;
+    
+    // Create banner content structure
+    const contentDiv = Sanitizer.createSafeElement('div', {
+      class: 'completion-banner-content'
+    });
+    
+    const messageDiv = Sanitizer.createSafeElement('div', {
+      class: 'completion-message'
+    });
+    
+    const messageText = Sanitizer.createSafeElement('p', {}, 
+      `Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}`);
+    
+    const actionButtons = Sanitizer.createSafeElement('div', {
+      class: 'action-buttons'
+    });
+    
+    const downloadButton = Sanitizer.createSafeElement('button', {
+      class: 'download-btn extract-btn',
+      'data-action': 'download-csv',
+      id: 'main-download-csv-btn'
+    }, 'Download CSV Results');
+    
+    const showResultsButton = Sanitizer.createSafeElement('button', {
+      class: 'extract-btn',
+      'data-action': 'show-results'
+    }, 'Show Results');
+    
+    // Assemble the banner
+    messageDiv.appendChild(messageText);
+    
+    actionButtons.appendChild(downloadButton);
+    actionButtons.appendChild(showResultsButton);
+    
+    contentDiv.appendChild(messageDiv);
+    contentDiv.appendChild(actionButtons);
+    
+    completionBanner.appendChild(contentDiv);
     
     // First hide the worker processing indicator using cached element
     const workerIndicator = this._getElement('workerIndicator', '.worker-processing-indicator');

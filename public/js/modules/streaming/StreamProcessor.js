@@ -102,14 +102,31 @@ class StreamProcessor {
       console.error('Failed to initialize streaming worker:', err);
     }
     
-    // Create a debug element to verify initialization
+    // Create a debug element to verify initialization using safe DOM methods
     try {
       const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
       if (!debugElement) {
+        // Create main debug container
         const debugDiv = document.createElement('div');
         debugDiv.id = 'debug-information';
         debugDiv.style.cssText = 'background: #f7f7f7; border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px;';
-        debugDiv.innerHTML = '<strong>Stream Processing Debug Info:</strong><br>Initialization successful';
+        
+        // Create title element
+        const titleElement = document.createElement('strong');
+        titleElement.textContent = 'Stream Processing Debug Info:';
+        
+        // Create linebreak
+        const lineBreak = document.createElement('br');
+        
+        // Add success message
+        const successText = document.createTextNode('Initialization successful');
+        
+        // Add elements to debug div in order
+        debugDiv.appendChild(titleElement);
+        debugDiv.appendChild(lineBreak);
+        debugDiv.appendChild(successText);
+        
+        // Add debug div to document
         document.body.appendChild(debugDiv);
       }
     } catch (err) {

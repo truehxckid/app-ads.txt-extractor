@@ -109,6 +109,23 @@ const config = {
     enabled: true,
     sampleRate: 0.1, // Sample 10% of requests for detailed performance monitoring
     memorySnapshotIntervalMs: 300000 // 5 minutes between memory snapshots
+  },
+  
+  // Security settings
+  security: {
+    // Cookie secret for signed cookies (should be set from environment variable in production)
+    cookieSecret: process.env.COOKIE_SECRET || 'appad5-t3xt-extr@ct0r-s3cur1ty-k3y',
+    // CSRF settings
+    csrf: {
+      // Whether to enable CSRF protection
+      enabled: true,
+      // Cookie name for CSRF token
+      cookieName: 'XSRF-TOKEN',
+      // Header name for CSRF token
+      headerName: 'X-CSRF-Token',
+      // Routes to exclude from CSRF protection
+      ignorePaths: ['/health', '/api/stream']
+    }
   }
 };
 

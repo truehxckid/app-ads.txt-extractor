@@ -108,12 +108,45 @@ class StreamDataParser {
     
     try {
       // Process the stream
-      // Update debug info safely if in debug mode
+      // Update debug info safely if in debug mode using DOM manipulation instead of innerHTML
       const updateDebugInfo = (message) => {
         try {
           const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
           if (debugElement) {
-            debugElement.innerHTML += message;
+            // Parse the HTML message to create proper DOM nodes
+            const tempDiv = document.createElement('div');
+            
+            // First create a text node for the content
+            if (message.startsWith('<br>')) {
+              // Add a line break first if needed
+              debugElement.appendChild(document.createElement('br'));
+              // Update message to remove the <br> tag
+              message = message.substring(4);
+            }
+            
+            // Handle special formatting cases
+            if (message.includes('<strong') || message.includes('<span')) {
+              // For messages with formatting, create appropriate element
+              if (message.includes('<strong style="color:green">')) {
+                // Success message
+                const strongElement = document.createElement('strong');
+                strongElement.style.color = 'green';
+                strongElement.textContent = message.replace(/<strong style="color:green">|<\/strong>/g, '');
+                debugElement.appendChild(strongElement);
+              } else if (message.includes('<span style="color:red">')) {
+                // Error message
+                const spanElement = document.createElement('span');
+                spanElement.style.color = 'red';
+                spanElement.textContent = message.replace(/<span style="color:red">|<\/span>/g, '');
+                debugElement.appendChild(spanElement);
+              } else {
+                // Just add as text content
+                debugElement.appendChild(document.createTextNode(message));
+              }
+            } else {
+              // Regular debug message
+              debugElement.appendChild(document.createTextNode(message));
+            }
           }
         } catch (err) {
           // Use standardized error handling for non-critical UI updates

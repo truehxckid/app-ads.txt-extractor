@@ -6,6 +6,21 @@
 import { showNotification } from '../utils/notification.js';
 
 /**
+ * Gets the CSRF token from cookies
+ * @returns {string|null} - CSRF token or null if not found
+ */
+function getCsrfToken() {
+  const cookies = document.cookie.split(';');
+  for (let i = 0; i < cookies.length; i++) {
+    const cookie = cookies[i].trim();
+    if (cookie.startsWith('XSRF-TOKEN=')) {
+      return cookie.substring('XSRF-TOKEN='.length, cookie.length);
+    }
+  }
+  return null;
+}
+
+/**
  * API class for server communication
  */
 class ApiService {
@@ -62,13 +77,16 @@ class ApiService {
           }));
         }
         
-        const response = await fetch(`/api/stream/extract-multiple?_=${cacheBuster}`, {
+        // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
+      const response = await fetch(`/api/stream/extract-multiple?_=${cacheBuster}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
+            'Pragma': 'no-cache',
+            'X-CSRF-Token': csrfToken || ''
           },
           body: JSON.stringify({ 
             bundleIds, 
@@ -120,13 +138,16 @@ class ApiService {
         }));
       }
       
+      // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
       const response = await fetch(`/api/extract-multiple?_=${cacheBuster}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
+          'Pragma': 'no-cache',
+          'X-CSRF-Token': csrfToken || ''
         },
         body: JSON.stringify({ 
           bundleIds, 
@@ -176,11 +197,14 @@ class ApiService {
         structuredParams: finalStructuredParams
       });
       
+      // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
       const response = await fetch('/api/export-csv', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-CSRF-Token': csrfToken || ''
         },
         body: JSON.stringify({ 
           bundleIds, 
@@ -219,10 +243,13 @@ class ApiService {
         });
       }
       
+      // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
       const response = await fetch(`/api/check-app-ads?${searchParams.toString()}`, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-CSRF-Token': csrfToken || ''
         }
       });
       
@@ -251,11 +278,14 @@ class ApiService {
         showNotification('Performing structured search...', 'info');
       }
       
+      // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
       const response = await fetch('/api/structured-search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-CSRF-Token': csrfToken || ''
         },
         body: JSON.stringify({ domain, query })
       });
@@ -278,10 +308,13 @@ class ApiService {
    */
   async getStats() {
     try {
+      // Add CSRF token to prevent CSRF attacks
+      const csrfToken = getCsrfToken();
       const response = await fetch('/api/stats', {
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-CSRF-Token': csrfToken || ''
         }
       });
       

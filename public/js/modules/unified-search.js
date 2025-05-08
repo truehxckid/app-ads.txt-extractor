@@ -5,6 +5,7 @@
 
 import DOMUtils from './dom-utils.js';
 import { showNotification } from '../utils/notification.js';
+import Sanitizer from '../utils/sanitizer.js';
 
 /**
  * Unified Search Manager Class
@@ -179,7 +180,10 @@ class UnifiedSearchManager {
       // Clear existing structured search forms
       const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container) {
-        container.innerHTML = '';
+        // Clear using safe DOM manipulation
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
         
         // Handle array of structured params
         if (Array.isArray(params.structuredParams)) {
@@ -200,7 +204,10 @@ class UnifiedSearchManager {
     else if (params.queries && Array.isArray(params.queries)) {
       const container = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
       if (container) {
-        container.innerHTML = '';
+        // Clear using safe DOM manipulation
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
+        }
         
         // Convert each term to a domain search
         params.queries.slice(0, 5).forEach((query, index) => {
@@ -232,10 +239,11 @@ class UnifiedSearchManager {
   _addStructuredSearchFormToUI(container, params = {}, index = 0) {
     const { domain, publisherId, relationship, tagId } = params;
     
-    // Create form container
-    const form = document.createElement('div');
-    form.className = 'structured-search-form';
-    form.dataset.index = index;
+    // Create form container using Sanitizer
+    const form = Sanitizer.createSafeElement('div', {
+      class: 'structured-search-form',
+      'data-index': String(index)
+    });
     
     // Create domain field
     const domainField = document.createElement('div');
@@ -391,7 +399,10 @@ class UnifiedSearchManager {
     // Reset advanced mode only
     const structuredSearchContainer = this._getElement('structuredSearchContainer', 'structuredSearchContainer');
     if (structuredSearchContainer) {
-      structuredSearchContainer.innerHTML = '';
+      // Clear using safe DOM manipulation
+      while (structuredSearchContainer.firstChild) {
+        structuredSearchContainer.removeChild(structuredSearchContainer.firstChild);
+      }
       // Add one empty structured search form
       this._addStructuredSearchFormToUI(structuredSearchContainer);
       this._updateStructuredSearchFormsUI();

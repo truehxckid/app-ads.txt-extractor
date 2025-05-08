@@ -2,6 +2,7 @@
  * DOM Utilities Module
  * Helper functions for DOM manipulation
  */
+import Sanitizer from '../utils/sanitizer.js';
 
 // DOM Element cache for performance
 const DOMCache = new Map();
@@ -91,7 +92,10 @@ class DOMUtils {
   static clearElement(element) {
     const el = typeof element === 'string' ? this.getElement(element) : element;
     if (el) {
-      el.innerHTML = '';
+      // Safer than innerHTML = '' - removes children one by one
+      while (el.firstChild) {
+        el.removeChild(el.firstChild);
+      }
     }
   }
   
@@ -157,7 +161,11 @@ class DOMUtils {
     if (!container) return;
     
     // Clear previous content
-    container.innerHTML = `<div class="loading">${this.escapeHtml(message)}</div>`;
+    this.clearElement(container);
+    
+    // Add loading div with sanitized message
+    const loadingDiv = Sanitizer.createSafeElement('div', { class: 'loading' }, message);
+    container.appendChild(loadingDiv);
     container.style.display = 'block';
   }
   
@@ -171,12 +179,17 @@ class DOMUtils {
     if (!container) return;
     
     // Clear previous content
-    container.innerHTML = `
-      <div class="error">
-        <strong>Error:</strong> ${this.escapeHtml(message)}
-      </div>
-    `;
+    this.clearElement(container);
     
+    // Create error elements with sanitized content
+    const errorDiv = Sanitizer.createSafeElement('div', { class: 'error' });
+    const strongElement = Sanitizer.createSafeElement('strong', {}, 'Error:');
+    
+    // Add the error message as text content
+    errorDiv.appendChild(strongElement);
+    errorDiv.appendChild(document.createTextNode(' ' + message)); // Space after "Error:"
+    
+    container.appendChild(errorDiv);
     container.style.display = 'block';
   }
   
