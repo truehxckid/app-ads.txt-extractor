@@ -804,17 +804,9 @@ class StreamResultsRenderer {
                 if (termResult.count > 0) {
                   // Limit to 5 color classes (0-4) to match search highlighting
                   const colorClass = `term-match-${termIndex % 5}`;
-                  // Try to extract the publisher ID from the term for display
-                  let displayText = String(termIndex + 1);
-                  
-                  // Check if the term contains structured params info
-                  if (termResult.term && termResult.term.includes('publisherId:')) {
-                    const publisherIdMatch = termResult.term.match(/publisherId:\s*(\d+)/);
-                    if (publisherIdMatch && publisherIdMatch[1]) {
-                      // Use the publisher ID instead of the index
-                      displayText = publisherIdMatch[1];
-                    }
-                  }
+                  // Use index+1 to represent which search criteria matched (1, 2, 3, etc.)
+                  // This shows which criteria number matched rather than the actual ID
+                  const displayText = String(termIndex + 1);
                   
                   const termIndicator = Sanitizer.createSafeElement('span', { 
                     class: `term-match-indicator ${colorClass}`,

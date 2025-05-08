@@ -97,9 +97,9 @@
   top: 0;
   z-index: var(--z-above);
   transition: background-color var(--transition-normal);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   text-align: left;
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-md);
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--border);
   color: var(--text-primary);
@@ -232,16 +232,17 @@
 }
 
 .app-ads-found { 
-  background: linear-gradient(135deg, var(--success), var(--success-700));
-  border: 1px solid var(--success-hover);
+  background: linear-gradient(135deg, var(--success-500), var(--success-700));
+  border: 2px solid var(--success);
   box-shadow: 0 2px 4px var(--shadow);
   min-width: 60px;
   font-size: var(--font-size-sm);
   text-align: center;
   letter-spacing: 0.01em;
-  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
-  font-weight: var(--font-weight-semibold);
-  padding: 4px 8px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  font-weight: var(--font-weight-bold);
+  padding: 2px 8px;
+  color: white;
 }
 
 .search-matches-found { 
@@ -293,18 +294,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
+  min-width: 40px;
+  height: 18px;
+  padding: 0 4px;
   border-radius: var(--radius-sm);
   margin-right: 4px;
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
   color: white;
-  box-shadow: 0 2px 4px var(--shadow);
+  box-shadow: 0 1px 2px var(--shadow);
   transform: translateY(0);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-  font-family: var(--font-base);
+  font-family: var(--font-mono);
   text-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
 
@@ -432,7 +433,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-xs) var(--space-sm);
+  padding: 2px 8px;
   background-color: var(--primary);
   color: white;
   border: 1px solid var(--primary);
@@ -441,13 +442,16 @@
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: all var(--transition-fast);
-  box-shadow: 0 2px 4px var(--shadow);
+  box-shadow: 0 1px 2px var(--shadow);
+  min-width: 50px;
+  max-width: 70px;
+  height: 24px;
 }
 
 .table-copy-btn:hover {
   background-color: var(--primary-hover);
   color: white;
-  box-shadow: 0 3px 6px var(--shadow);
+  box-shadow: 0 2px 4px var(--shadow);
   transform: translateY(-1px);
 }
 
