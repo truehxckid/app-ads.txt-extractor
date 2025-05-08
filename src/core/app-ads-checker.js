@@ -739,33 +739,16 @@ function processSearchTerms(lines, searchTerms, structuredParams = null) {
       // 1. Each search term represents a separate search group (OR logic between them)
       // 2. All search terms belong to the same group (AND logic between them)
       
-      // Check if each search term contains commas or spaces
-      const hasMultipleWords = searchTerms.some(term => {
-        const termValue = typeof term === 'object' ? term.exactMatch : term;
-        return termValue.includes(',') || termValue.includes(' ');
-      });
-
-      if (hasMultipleWords) {
-        // If any term contains commas or spaces, treat all terms as one group (AND logic)
-        // This matches the expectation that searching for "appnexus.com 12447" finds lines with both parts
-        searchGroups = [searchTerms];
-        logger.debug({
-          searchGroups: searchGroups.map(group => group.map(term => 
-            typeof term === 'object' ? term.exactMatch : term
-          )),
-          termCount: searchTerms.length
-        }, 'Using simple search with AND logic between terms - multi-word terms detected');
-      } else {
-        // If we have multiple simple terms, treat each as its own group (OR logic between terms)
-        // This means searching for "term1, term2" should find lines with EITHER term
-        searchGroups = searchTerms.map(term => [term]);
-        logger.debug({
-          searchGroups: searchGroups.map(group => group.map(term => 
-            typeof term === 'object' ? term.exactMatch : term
-          )),
-          termCount: searchTerms.length
-        }, 'Using simple search with OR logic between separate terms');
-      }
+      // Always use OR logic between multiple search terms
+      // This means each search term is its own group, and any matching term will include the line
+      searchGroups = searchTerms.map(term => [term]);
+      
+      logger.debug({
+        searchGroups: searchGroups.map(group => group.map(term => 
+          typeof term === 'object' ? term.exactMatch : term
+        )),
+        termCount: searchTerms.length
+      }, 'Using simple search with OR logic between all terms');
     }
     
     // Pre-compile regexes or prepare exact match terms for performance
@@ -835,8 +818,17 @@ function processSearchTerms(lines, searchTerms, structuredParams = null) {
                   }
                 }
               } else {
-                // For regular exact match terms, check if the string appears anywhere in the line
-                isMatch = lineLower.includes(matcher.value);
+                // For regular exact match terms, first normalize whitespace around commas in both search term and content
+                const normalizedMatcher = matcher.value.replace(/\s*,\s*/g, ',');
+                const normalizedLine = lineLower.replace(/\s*,\s*/g, ',');
+                
+                // Check if the normalized string appears anywhere in the normalized line
+                isMatch = normalizedLine.includes(normalizedMatcher);
+                
+                // If still no match, try the original method as fallback
+                if (!isMatch) {
+                  isMatch = lineLower.includes(matcher.value);
+                }
               }
             } else {
               // For regex terms, use the regex test method

@@ -63,12 +63,21 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
       });
     }
     
+    // Determine if we have advanced search parameters
+    const isAdvancedSearch = req.body.structuredParams && (
+      Array.isArray(req.body.structuredParams) ? req.body.structuredParams.length > 0 : Object.keys(req.body.structuredParams).length > 0
+    );
+    
     // Validate search terms
     const validatedTerms = validateSearchTerms(searchTerms);
+    // Also validate structured params if provided (pass through as is)
+    const validatedStructuredParams = isAdvancedSearch ? req.body.structuredParams : null;
     
     logger.info({
       bundleIdsCount: validation.validIds.length,
       searchTermsCount: validatedTerms?.length || 0,
+      hasStructuredParams: !!validatedStructuredParams,
+      isAdvancedSearch,
       clientIp: req.ip,
       endpoint: 'stream/extract-multiple'
     }, 'Streaming extraction request');
