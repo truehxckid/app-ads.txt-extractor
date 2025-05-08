@@ -28,8 +28,7 @@ self.onmessage = function(e) {
     structuredParams = params || null;
     processingStartTime = Date.now();
     
-    // Debug logging for structured params
-    console.log('Worker received structuredParams:', JSON.stringify(structuredParams));
+    // Debug logging for structured params - removed console log
     
     // Initialize UI in main thread with total count
     self.postMessage({
@@ -72,9 +71,7 @@ function resetState() {
  */
 async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams = null) {
   try {
-    // Debug the data we're about to send to API
-    console.log('Worker sending to API - searchTerms:', JSON.stringify(searchTerms));
-    console.log('Worker sending to API - structuredParams:', JSON.stringify(structuredParams));
+    // Debug the data we're about to send to API - removed console logs
     
     // Create payload with structured parameters - always in advanced mode now
     const payload = {
@@ -84,13 +81,13 @@ async function processStreamedBundleIds(bundleIds, searchTerms, structuredParams
       structuredParams: structuredParams || [] // Empty array if no structured params provided
     };
     
-    console.log('Worker finalized API payload:', JSON.stringify(payload));
+    // Worker finalized API payload - removed console log
     
     // Make isAdvancedSearch available globally in the worker context
     const isAdvancedSearch = structuredParams !== null && (
       Array.isArray(structuredParams) ? structuredParams.length > 0 : Object.keys(structuredParams).length > 0
     );
-    console.log('Worker determined isAdvancedSearch:', isAdvancedSearch);
+    // Worker determined isAdvancedSearch - removed console log
     
     // Start fetch request
     const response = await fetch('/api/stream/extract-multiple', {
@@ -281,8 +278,7 @@ function processResult(result) {
     return;
   }
   
-  // Log the result for debugging (only in dev mode)
-  console.log('Processing result:', result.bundleId, result);
+  // Processing result - removed console log
   
   // Update statistics for all processed items
   processedCount++;
@@ -295,11 +291,7 @@ function processResult(result) {
       const matches = matchesStructuredParams(result, structuredParams);
       result.matchesAdvancedSearch = matches;
       
-      if (!matches) {
-        console.log('Result doesn\'t match advanced search criteria, but still tracking:', result.bundleId);
-      } else {
-        console.log('Result matched advanced search criteria:', result.bundleId);
-      }
+      // Advanced search criteria tracking - removed console logs
     }
     
     // Count as success
@@ -312,9 +304,7 @@ function processResult(result) {
   }
   
   // Check if result has search match data for structured search
-  if (result.appAdsTxt && result.appAdsTxt.structuredMatches) {
-    console.log('Structured matches found for', result.bundleId, result.appAdsTxt.structuredMatches);
-  }
+  // Check for structured matches - removed console log
   
   // Store result
   results.push(result);
@@ -343,12 +333,11 @@ function matchesStructuredParams(result, params) {
   // Add a fallback for entries - if entries array is missing but content exists, try to parse it
   let entries = result.appAdsTxt.entries || [];
   
-  // Debug the entire app-ads.txt structure
-  console.log('App-ads.txt structure for', result.bundleId, ':', JSON.stringify(result.appAdsTxt, null, 2));
+  // Debug the entire app-ads.txt structure - removed console log
   
   // If no entries but we have content, try to create entries by parsing the content
   if (!entries.length && result.appAdsTxt.content) {
-    console.log('No entries array found, but content exists. Attempting to parse manually.');
+    // No entries array found, attempting to parse manually - removed console log
     try {
       // Manual parsing to add entries
       const content = result.appAdsTxt.content;
@@ -377,7 +366,7 @@ function matchesStructuredParams(result, params) {
         }
       });
       
-      console.log('Manually parsed', parsedEntries.length, 'entries from content');
+      // Manually parsed entries from content - removed console log
       entries = parsedEntries;
       // Also add the entries to the result object for future use
       result.appAdsTxt.entries = parsedEntries;
@@ -386,9 +375,9 @@ function matchesStructuredParams(result, params) {
     }
   }
   
-  console.log('App-ads.txt entries for', result.bundleId, ':', entries);
+  // App-ads.txt entries - removed console log
   if (!entries.length) {
-    console.log('No entries found in app-ads.txt for', result.bundleId);
+    // No entries found - removed console log
     return false;
   }
   
@@ -410,7 +399,7 @@ function matchesStructuredParams(result, params) {
       continue;
     }
     
-    console.log(`Checking entries against paramSet:`, paramSet);
+    // Checking entries against paramSet - removed console log
     
     // Find matches for this parameter set
     const matchesForThisParamSet = entries.some(entry => {
@@ -426,18 +415,11 @@ function matchesStructuredParams(result, params) {
         const substringMatch = entryDomain.includes(paramDomain) || paramDomain.includes(entryDomain);
         
         const domainMatches = exactMatch || substringMatch;
-        console.log('Domain matching:', 
-          'Entry:', entryDomain, 
-          'Param:', paramDomain, 
-          'Exact match:', exactMatch, 
-          'Substring match:', substringMatch,
-          'Final result:', domainMatches);
-          
+        // Domain matching - removed console logs
+        
         if (!domainMatches) {
-          console.log('Domain does not match, skipping entry');
+          // Domain doesn't match - removed console log
           return false;
-        } else {
-          console.log('Domain matches!');
         }
       }
       
@@ -446,18 +428,13 @@ function matchesStructuredParams(result, params) {
         // Handle both single publisherId and multiple (+ separated)
         let publisherIdMatches = false;
         
-        // Debug publisher ID matching
-        console.log('Comparing publisherIds:',
-          'Entry: "' + entry.publisherId + '"',
-          'Param: "' + paramSet.publisherId + '"', 
-          'Entry trimmed: "' + entry.publisherId.trim() + '"',
-          'Param trimmed: "' + paramSet.publisherId.trim() + '"');
+        // Debug publisher ID matching - removed console log
         
         if (paramSet.publisherId.includes('+')) {
           // Multiple publisher IDs in the parameter
           const paramPublisherIds = paramSet.publisherId.split('+').map(id => id.trim());
           publisherIdMatches = paramPublisherIds.includes(entry.publisherId.trim());
-          console.log('Multiple publisherIds:', paramPublisherIds, 'Match result:', publisherIdMatches);
+          // Multiple publisherIds - removed console log
         } else {
           // Single publisher ID comparison - try both exact and relaxed matching
           const exactMatch = entry.publisherId.trim() === paramSet.publisherId.trim();
@@ -465,17 +442,12 @@ function matchesStructuredParams(result, params) {
           const relaxedMatch = entry.publisherId.replace(/\s+/g, '') === paramSet.publisherId.replace(/\s+/g, '');
           
           publisherIdMatches = exactMatch || relaxedMatch;
-          console.log('Publisher ID matching:', 
-            'Exact match:', exactMatch, 
-            'Relaxed match:', relaxedMatch, 
-            'Final result:', publisherIdMatches);
+          // Publisher ID matching - removed console log
         }
         
         if (!publisherIdMatches) {
-          console.log('Publisher ID does not match, skipping entry');
+          // Publisher ID doesn't match - removed console log
           return false;
-        } else {
-          console.log('Publisher ID matches!');
         }
       }
       
@@ -497,7 +469,7 @@ function matchesStructuredParams(result, params) {
     
     // If this parameter set matches, add it to the results
     if (matchesForThisParamSet) {
-      console.log('Found matching entry for paramSet:', paramSet);
+      // Found matching entry - removed console log
       
       // Create a formatted term result that the UI can display
       const termResult = {
@@ -521,7 +493,7 @@ function matchesStructuredParams(result, params) {
   if (!hasAnyMatches && result.appAdsTxt.content) {
     for (const paramSet of params) {
       if (paramSet.domain && paramSet.publisherId) {
-        console.log('Trying raw content search as last resort for:', paramSet);
+        // Trying raw content search - removed console log
         const searchDomain = paramSet.domain.toLowerCase();
         const searchPublisherId = paramSet.publisherId.trim();
         const content = result.appAdsTxt.content.toLowerCase();
@@ -530,7 +502,7 @@ function matchesStructuredParams(result, params) {
         const lines = content.split(/\r?\n/);
         for (const line of lines) {
           if (line.includes(searchDomain) && line.includes(searchPublisherId)) {
-            console.log('Found potential match in raw content:', line);
+            // Found potential match in raw content - removed console log
             
             // Create a formatted term result for this match
             const termResult = {

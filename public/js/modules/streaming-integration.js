@@ -261,47 +261,8 @@ class StreamingIntegration {
         
         // No longer creating fixed element to avoid duplicates - StreamProcessor now handles this
         
-        // Create a global debug info element if it doesn't exist
-        let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');
-        
-        if (!debugElement) {
-          console.log('⚡⚡⚡ ENTRY POINT: Creating debug info element from scratch');
-          debugElement = document.createElement('div');
-          debugElement.id = 'debugInfo';
-          debugElement.className = 'debug-section';
-          debugElement.style.cssText = 'background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; overflow: auto; max-height: 300px; display: block;';
-          
-          // Add to the page - try to position it in a sensible location
-          const resultElement = document.getElementById('result');
-          if (resultElement && resultElement.parentNode) {
-            resultElement.parentNode.insertBefore(debugElement, resultElement.nextSibling);
-          } else {
-            // Fallback to container or body
-            const container = document.querySelector('.container') || document.body;
-            container.appendChild(debugElement);
-          }
-          
-          console.log('⚡⚡⚡ ENTRY POINT: Debug info element created successfully');
-        }
-        
-        // Update the debug element
-        if (debugElement) {
-          console.log('⚡⚡⚡ ENTRY POINT: Updating debug element with initial information');
-          debugElement.innerHTML = `
-            <div class="debug-info">
-              <strong>Debug Info (${new Date().toLocaleTimeString()}):</strong><br>
-              <strong style="color: blue;">STREAMING MODE ACTIVE - USING /api/stream/extract-multiple</strong><br>
-              Bundle IDs: ${bundleIds.length}<br>
-              Search Terms: ${searchTerms.length ? searchTerms.join(', ') : 'None'}<br>
-              Browser: ${navigator.userAgent}<br>
-              Network: ${navigator.onLine ? 'Online' : 'Offline'}<br>
-              Starting streaming process...
-            </div>
-          `;
-          debugElement.style.display = 'block';
-        } else {
-          console.error('⚡⚡⚡ ENTRY POINT: Failed to create or find debug element');
-        }
+        // Debug info is no longer shown in the UI
+        console.log('⚡⚡⚡ ENTRY POINT: Processing with streaming API, bundle IDs:', bundleIds.length);
         
         try {
           // First check that StreamingProcessor exists and is properly initialized
@@ -313,16 +274,9 @@ class StreamingIntegration {
             throw new Error(`StreamingProcessor.processBundleIds is not a function. Type: ${typeof StreamingProcessor.processBundleIds}`);
           }
           
-          // Add debugging to debug element
-          const debugInfo = document.getElementById('debugInfo') || document.getElementById('debug-information');
-          if (debugInfo) {
-            debugInfo.innerHTML += `<br><br><strong>Function Check (${new Date().toLocaleTimeString()}):</strong><br>
-              StreamingProcessor loaded: ${!!StreamingProcessor}<br>
-              StreamingProcessor type: ${typeof StreamingProcessor}<br>
-              processBundleIds type: ${typeof StreamingProcessor.processBundleIds}<br>
-              Starting method call...
-            `;
-          }
+          // Function check logs
+          console.log(`⚡⚡⚡ Function Check: StreamingProcessor loaded: ${!!StreamingProcessor}, type: ${typeof StreamingProcessor}`);
+          console.log(`⚡⚡⚡ Function Check: processBundleIds type: ${typeof StreamingProcessor.processBundleIds}`);
           
           // Process with streaming
           console.log('⚡⚡⚡ ENTRY POINT: Calling StreamingProcessor.processBundleIds');
@@ -332,13 +286,8 @@ class StreamingIntegration {
           const success = await StreamingProcessor.processBundleIds(bundleIds, searchTerms);
           console.log('⚡⚡⚡ ENTRY POINT: Streaming process result:', success ? 'Success' : 'Failed');
           
-          // Update debug element with result
-          if (debugInfo) {
-            debugInfo.innerHTML += `<br><br><strong>Process Result (${new Date().toLocaleTimeString()}):</strong><br>
-              Success: ${success}<br>
-              Processing complete
-            `;
-          }
+          // Log result
+          console.log(`⚡⚡⚡ Process result: ${success ? 'Success' : 'Failed'}`);
         } catch (err) {
           console.error('⚡⚡⚡ ENTRY POINT: Streaming error, falling back to regular processing:', err);
           
@@ -351,16 +300,10 @@ class StreamingIntegration {
             processBundleIds: typeof StreamingProcessor?.processBundleIds
           });
           
-          // Update debug element with error
-          const debugInfo = document.getElementById('debugInfo') || document.getElementById('debug-information');
-          if (debugInfo) {
-            debugInfo.innerHTML += `<br><br><strong>Error (${new Date().toLocaleTimeString()}):</strong><br>
-              Error: ${err.message}<br>
-              Type: ${err.name}<br>
-              Stack: ${err.stack ? err.stack.split('\n').slice(0, 5).join('<br>') : 'No stack trace'}<br>
-              Falling back to regular processing...
-            `;
-          }
+          // Log error details
+          console.error(`⚡⚡⚡ Error details: ${err.message}, type: ${err.name}`);
+          console.error(`⚡⚡⚡ Error stack: ${err.stack || 'No stack trace'}`);
+          console.log('⚡⚡⚡ Falling back to regular processing...');
           
           showNotification('Streaming error, falling back to regular processing', 'warning');
           

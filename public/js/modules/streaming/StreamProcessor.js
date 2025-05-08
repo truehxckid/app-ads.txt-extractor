@@ -102,37 +102,6 @@ class StreamProcessor {
       console.error('Failed to initialize streaming worker:', err);
     }
     
-    // Create a debug element to verify initialization using safe DOM methods
-    try {
-      const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
-      if (!debugElement) {
-        // Create main debug container
-        const debugDiv = document.createElement('div');
-        debugDiv.id = 'debug-information';
-        debugDiv.style.cssText = 'background: #f7f7f7; border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 4px;';
-        
-        // Create title element
-        const titleElement = document.createElement('strong');
-        titleElement.textContent = 'Stream Processing Debug Info:';
-        
-        // Create linebreak
-        const lineBreak = document.createElement('br');
-        
-        // Add success message
-        const successText = document.createTextNode('Initialization successful');
-        
-        // Add elements to debug div in order
-        debugDiv.appendChild(titleElement);
-        debugDiv.appendChild(lineBreak);
-        debugDiv.appendChild(successText);
-        
-        // Add debug div to document
-        document.body.appendChild(debugDiv);
-      }
-    } catch (err) {
-      console.error('Failed to create debug element:', err);
-    }
-    
     this.initialized = true;
     return true;
   }
@@ -372,12 +341,6 @@ class StreamProcessor {
         hasSearchTerms: false // Add this for backward compatibility
       });
         
-        // Update debug information with worker status - check first if the message is already there
-        const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
-        if (debugElement && !debugElement.textContent.includes('Using Web Worker for processing')) {
-          debugElement.innerHTML += `<br><strong style="color: green;">Using Web Worker for processing! (faster parallel processing)</strong>`;
-        }
-        
         // Worker handles the UI updates, so we just return
         return true;
       }
@@ -427,32 +390,6 @@ class StreamProcessor {
         `;
       }
       
-      // Create debug info in the UI
-      const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
-      
-      // If debug element doesn't exist, create it
-      if (!debugElement) {
-        const debugInfoElement = document.createElement('div');
-        debugInfoElement.id = 'debug-information';
-        debugInfoElement.style.cssText = 'background: #f8f8f8; border: 1px solid #ddd; padding: 15px; margin: 20px 0; border-radius: 8px; font-family: monospace; white-space: pre-wrap; overflow: auto; max-height: 300px; display: block;';
-        
-        // Add to the page
-        const container = document.querySelector('.container') || document.body;
-        container.appendChild(debugInfoElement);
-      }
-      
-      // Now get the element (should exist now) and update it
-      const debugInfoElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
-      if (debugInfoElement) {
-        debugInfoElement.innerHTML = `
-          <strong>Stream Processing Debug Info:</strong><br>
-          Current time: ${new Date().toLocaleTimeString()}<br>
-          Bundle IDs: ${bundleIds.length}<br>
-          Starting fetch request...
-        `;
-        debugInfoElement.style.display = 'block';
-      }
-      
       // Create debug panel
       this.debugger.initialize('Stream Debug');
       
@@ -469,11 +406,8 @@ class StreamProcessor {
       try {
         // Send API request
         
-        // Update debug information
-        const debugInfo = document.getElementById('debug-information') || document.getElementById('debugInfo');
-        if (debugInfo) {
-            debugInfo.innerHTML += '<br>Sending fetch request...';
-        }
+        // Sending fetch request
+        console.log('Sending fetch request...');
         
         // Import API from '../api.js' dynamically to avoid circular dependencies
         const ApiModule = await import('../api.js');
@@ -739,34 +673,16 @@ class StreamProcessor {
       '.rate-indicator', 
       '.time-remaining', 
       '.progress-indicator', 
-      '#streamProgress'
+      '#streamProgress',
+      '#debug-information', 
+      '#debugInfo', 
+      '.debug-info'
     ].join(', ');
     
     const allProgressElements = document.querySelectorAll(progressSelectors);
-    console.log(`⚡ StreamProcessor: Removing ${allProgressElements.length} progress elements`);
+    console.log(`⚡ StreamProcessor: Removing ${allProgressElements.length} progress and debug elements`);
     allProgressElements.forEach(element => {
       if (element && element.parentNode) {
-        element.parentNode.removeChild(element);
-      }
-    });
-    
-    // Check and remove worker messages more efficiently
-    const workerMessageSelectors = ['#debug-information', '#debugInfo', '.debug-info'].join(', ');
-    const workerMessages = document.querySelectorAll(workerMessageSelectors);
-    
-    // Create a list of elements to remove, then remove them all at once
-    const messagesToRemove = [];
-    workerMessages.forEach(element => {
-      // Only add it to the removal list if it contains the worker message
-      if (element && element.textContent && element.textContent.includes('Using Web Worker for processing')) {
-        messagesToRemove.push(element);
-      }
-    });
-    
-    // Now remove all collected elements
-    console.log(`⚡ StreamProcessor: Removing ${messagesToRemove.length} worker message elements`);
-    messagesToRemove.forEach(element => {
-      if (element.parentNode) {
         element.parentNode.removeChild(element);
       }
     });
