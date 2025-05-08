@@ -79,6 +79,9 @@
   --gray-700: #495057;
   --gray-800: #343a40;
   --gray-900: #212529;
+  
+  /* Additional Blues for search term indicators */
+  --blue-400: #64b5f6; /* Missing variable that was referenced in code */
 
   /* Spacing */
   --space-xxs: 0.25rem;

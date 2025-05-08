@@ -353,8 +353,8 @@ class UnifiedExporter {
    * @private
    */
   _generateCSV(results, structuredParams) {
-    // Create CSV header
-    let csvContent = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL,Advanced Search Results,Match Count,Matching Lines,Success,Error\n";
+    // Create CSV header with clear column definitions
+    let csvContent = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL,Advanced Search Criteria,Unique Match Count,Matching Lines (Format: match (search criteria)),Success,Error\n";
     
     // Process results in batches to avoid memory issues
     const BATCH_SIZE = 100;
@@ -410,13 +410,27 @@ class UnifiedExporter {
     
     // Always include search parameters for advanced search
     if (isAdvancedSearch) {
-      const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
-      let searchDescription = '';
-      if (params.domain) searchDescription += `${params.domain}`;
-      if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
-      if (params.relationship) searchDescription += `${searchDescription ? " | " : ""}rel: ${params.relationship}`;
-      if (params.tagId) searchDescription += `${searchDescription ? " | " : ""}tagId: ${params.tagId}`;
-      advancedSearchInfo = searchDescription || "Advanced search";
+      if (Array.isArray(structuredParams) && structuredParams.length > 1) {
+        // Handle multiple structured params (OR conditions)
+        const descriptions = structuredParams.map(params => {
+          let searchDesc = '';
+          if (params.domain) searchDesc += `${params.domain}`;
+          if (params.publisherId) searchDesc += `${searchDesc ? " | " : ""}publisherId: ${params.publisherId}`;
+          if (params.relationship) searchDesc += `${searchDesc ? " | " : ""}rel: ${params.relationship}`;
+          if (params.tagId) searchDesc += `${searchDesc ? " | " : ""}tagId: ${params.tagId}`;
+          return searchDesc;
+        });
+        advancedSearchInfo = descriptions.join(' OR ');
+      } else {
+        // Handle single parameter set (either first array item or direct object)
+        const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
+        let searchDescription = '';
+        if (params.domain) searchDescription += `${params.domain}`;
+        if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
+        if (params.relationship) searchDescription += `${searchDescription ? " | " : ""}rel: ${params.relationship}`;
+        if (params.tagId) searchDescription += `${searchDescription ? " | " : ""}tagId: ${params.tagId}`;
+        advancedSearchInfo = searchDescription || "Advanced search";
+      }
     }
     
     // Check for matching search results
@@ -442,14 +456,56 @@ class UnifiedExporter {
       // Use the number of unique matches instead of the raw count from server
       matchCount = String(uniqueMatchingLines.size || 0);
       
-      // Process matching lines
+      // Process matching lines to ensure uniqueness
       if (searchResults.termResults && searchResults.termResults.length > 0) {
-        matchingLinesSummary = searchResults.termResults
-          .map(tr => {
-            if (tr.matches && tr.matches.length > 0) {
-              return `${tr.term}: ${tr.matches.join(', ')}`;
+        // First collect unique terms and their matches
+        const uniqueMatches = new Map();
+        
+        searchResults.termResults.forEach(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            // Add each unique match with its associated terms
+            tr.matches.forEach(match => {
+              if (!uniqueMatches.has(match)) {
+                uniqueMatches.set(match, new Set());
+              }
+              // Store the term's identifier to help correlate with search criteria
+              uniqueMatches.get(match).add(tr.term);
+            });
+          }
+        });
+        
+        // Get criteria descriptions for reference
+        const criteriaDescriptions = [];
+        if (Array.isArray(structuredParams)) {
+          structuredParams.forEach((params, index) => {
+            let desc = '';
+            if (params.domain) desc += params.domain;
+            if (params.publisherId) desc += `${desc ? " | " : ""}publisherId: ${params.publisherId}`;
+            criteriaDescriptions.push(`Criteria ${index + 1}: ${desc}`);
+          });
+        }
+        
+        // Generate summary of unique matches with their criteria
+        matchingLinesSummary = Array.from(uniqueMatches.entries())
+          .map(([match, terms]) => {
+            // If we have structured params and multiple search criteria, use numbers
+            if (Array.isArray(structuredParams) && structuredParams.length > 1) {
+              // Map each term to its criteria number if possible
+              const criteriaNumbers = Array.from(terms).map(term => {
+                // Try to find which criteria this term came from
+                for (let i = 0; i < searchResults.termResults.length; i++) {
+                  if (searchResults.termResults[i].term === term) {
+                    return `Criteria ${i + 1}`;
+                  }
+                }
+                return term;
+              });
+              return `${match} (${criteriaNumbers.join(', ')})`;
+            } else {
+              // Simple case - just join the terms
+              const termsList = Array.from(terms).join(', ');
+              return `${match} (${termsList})`;
             }
-            return tr.term;
           })
           .join(' | ');
       }
@@ -477,12 +533,53 @@ class UnifiedExporter {
       matchCount = String(uniqueMatchingLines.size || 0);
       
       if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
-        matchingLinesSummary = result.matchInfo.termResults
-          .map(tr => {
-            if (tr.matches && tr.matches.length > 0) {
-              return `${tr.term}: ${tr.matches.join(', ')}`;
+        // First collect unique terms and their matches
+        const uniqueMatches = new Map();
+        
+        result.matchInfo.termResults.forEach(tr => {
+          if (tr.matches && tr.matches.length > 0) {
+            // Add each unique match with its associated terms
+            tr.matches.forEach(match => {
+              if (!uniqueMatches.has(match)) {
+                uniqueMatches.set(match, new Set());
+              }
+              uniqueMatches.get(match).add(tr.term);
+            });
+          }
+        });
+        
+        // Get criteria descriptions for reference
+        const criteriaDescriptions = [];
+        if (Array.isArray(structuredParams)) {
+          structuredParams.forEach((params, index) => {
+            let desc = '';
+            if (params.domain) desc += params.domain;
+            if (params.publisherId) desc += `${desc ? " | " : ""}publisherId: ${params.publisherId}`;
+            criteriaDescriptions.push(`Criteria ${index + 1}: ${desc}`);
+          });
+        }
+        
+        // Generate summary of unique matches with their criteria
+        matchingLinesSummary = Array.from(uniqueMatches.entries())
+          .map(([match, terms]) => {
+            // If we have structured params and multiple search criteria, use numbers
+            if (Array.isArray(structuredParams) && structuredParams.length > 1) {
+              // Map each term to its criteria number if possible
+              const criteriaNumbers = Array.from(terms).map(term => {
+                // Try to find which criteria this term came from
+                for (let i = 0; i < result.matchInfo.termResults.length; i++) {
+                  if (result.matchInfo.termResults[i].term === term) {
+                    return `Criteria ${i + 1}`;
+                  }
+                }
+                return term;
+              });
+              return `${match} (${criteriaNumbers.join(', ')})`;
+            } else {
+              // Simple case - just join the terms
+              const termsList = Array.from(terms).join(', ');
+              return `${match} (${termsList})`;
             }
-            return tr.term;
           })
           .join(' | ');
       }

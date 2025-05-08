@@ -252,7 +252,7 @@
   background: rgba(66, 153, 225, 0.35);
 }
 
-/* Search matches table */
+/* Search matches table - updated to match results table */
 .search-matches-table {
   width: 100%;
   border-collapse: collapse;
@@ -264,11 +264,16 @@
   padding: var(--space-xs);
   border: 1px solid var(--border);
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .search-matches-table th {
   background: var(--neutral-light);
   font-weight: var(--font-weight-medium);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-above);
 }
 
 .search-match-content {

@@ -802,9 +802,13 @@ class StreamResultsRenderer {
               // Generate colored indicators for each term - showing term numbers (1-based index)
               result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
                 if (termResult.count > 0) {
+                  // Limit to 5 color classes (0-4) to match search highlighting
                   const colorClass = `term-match-${termIndex % 5}`;
+                  // Note: termResult.count may include duplicate matches if the same line
+                  // matches multiple search terms. When exporting to CSV, we deduplicate these.
                   const termIndicator = Sanitizer.createSafeElement('span', { 
-                    class: `term-match-indicator ${colorClass}` 
+                    class: `term-match-indicator ${colorClass}`,
+                    title: `Term ${termIndex + 1} found ${termResult.count} time(s) - may include duplicates`
                   }, String(termIndex + 1));
                   matchesSpan.appendChild(termIndicator);
                   matchesSpan.appendChild(document.createTextNode(' '));
