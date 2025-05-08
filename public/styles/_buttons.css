@@ -85,13 +85,21 @@ button:disabled,
 }
 
 .download-btn {
-  background: var(--primary);
-  padding: var(--space-xs) var(--space-sm);
+  background: linear-gradient(135deg, var(--highlight), var(--primary));
+  color: white;
+  padding: var(--space-sm) var(--space-xl);
   font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 8px var(--shadow);
+  min-width: 200px;
+  transition: all var(--transition-fast);
 }
 
 .download-btn:hover {
-  background: var(--primary-hover);
+  background: linear-gradient(135deg, var(--highlight-hover), var(--primary-hover));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px var(--shadow);
 }
 
 .table-copy-btn {
