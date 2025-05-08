@@ -222,6 +222,15 @@ class EventHandlerManager {
     
     const action = actionElement.dataset.action;
     
+    // Log click events for debugging
+    console.log('EVENT MONITOR: Click detected on:', 
+      actionElement.tagName, 
+      actionElement.id ? `#${actionElement.id}` : '', 
+      actionElement.className ? `.${actionElement.className.split(' ').join('.')}` : '', 
+      `"${actionElement.textContent.trim().substring(0, 20)}${actionElement.textContent.trim().length > 20 ? '...' : ''}"`
+    );
+    console.log('EVENT MONITOR: data-action:', action);
+    
     // Check for duplicate events (sometimes the browser sends duplicate events)
     const now = Date.now();
     const lastClickTime = this._lastClickTime || 0;
@@ -345,8 +354,8 @@ class EventHandlerManager {
       case 'remove-structured-search':
         this.handleRemoveStructuredSearch(target);
         break;
-      case 'pagination':
-        this.handlePaginationClick(target);
+      case 'paginate': // Use 'paginate' instead of 'pagination'
+        this.handlePaginationClick(actionElement);
         break;
       case 'close-error':
         DOMUtils.hideErrorBoundary();
@@ -567,12 +576,29 @@ class EventHandlerManager {
    * @param {HTMLElement} button - Pagination button
    */
   handlePaginationClick(button) {
+    console.log('Pagination button clicked:', button);
+    
+    // Check if the button has 'data-action="paginate"' attribute
+    const action = button.getAttribute('data-action');
+    if (action !== 'paginate') {
+      console.log('Button does not have data-action="paginate":', action);
+      return;
+    }
+    
     // Get the page number from the button
     const pageAttr = button.getAttribute('data-page');
-    if (!pageAttr) return;
+    if (!pageAttr) {
+      console.log('Button does not have data-page attribute');
+      return;
+    }
     
     const page = parseInt(pageAttr, 10);
-    if (isNaN(page) || page <= 0) return;
+    if (isNaN(page) || page <= 0) {
+      console.log('Invalid page number:', pageAttr);
+      return;
+    }
+    
+    console.log('Changing to page:', page);
     
     // Import StreamResultsRenderer and use its _renderPage method to handle pagination
     import('./streaming/StreamResultsRenderer.js').then(module => {
@@ -581,6 +607,7 @@ class EventHandlerManager {
       if (streamResultsRenderer && typeof streamResultsRenderer._renderPage === 'function') {
         // Get results either from StreamResultsRenderer's allResults or from AppState
         const results = streamResultsRenderer.allResults || window.AppState?.results || [];
+        console.log('Rendering page', page, 'with', results.length, 'total results');
         streamResultsRenderer._renderPage(results, page);
       } else {
         console.error('StreamResultsRenderer or _renderPage method not found');

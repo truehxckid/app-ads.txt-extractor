@@ -16,6 +16,15 @@ class StreamResultsRenderer {
     this.animationFrameId = null;
     this.resultElement = null;
     
+    // Progress tracking
+    this.cumulativeStats = {
+      processed: 0,
+      success: 0,
+      errors: 0,
+      withAppAds: 0,
+      total: 0
+    };
+    
     // DOM caching to reduce redundant queries
     this.domCache = {
       // Result elements
@@ -42,6 +51,15 @@ class StreamResultsRenderer {
       
       // Show the results UI
       this.showResults(results);
+    });
+    
+    // Listen for progress updates from StreamProcessor
+    window.addEventListener('streaming-progress-update', (event) => {
+      if (event.detail && event.detail.stats) {
+        console.log('🔄 StreamResultsRenderer: Received progress update from StreamProcessor', event.detail.stats);
+        // Sync our stats with StreamProcessor's stats
+        this.syncWithProcessorStats(event.detail.stats);
+      }
     });
   }
   
@@ -275,6 +293,26 @@ class StreamResultsRenderer {
   }
   
   /**
+   * Synchronize our stats with StreamProcessor's stats
+   * @param {Object} processorStats - Stats from StreamProcessor
+   */
+  syncWithProcessorStats(processorStats) {
+    if (!processorStats) return;
+    
+    // Update our cumulative stats with the processor's stats (which are more accurate)
+    this.cumulativeStats.processed = processorStats.processedCount || processorStats.processed || this.cumulativeStats.processed;
+    this.cumulativeStats.success = processorStats.successCount || processorStats.success || this.cumulativeStats.success;
+    this.cumulativeStats.errors = processorStats.errorCount || processorStats.errors || this.cumulativeStats.errors;
+    this.cumulativeStats.withAppAds = processorStats.withAppAdsTxtCount || processorStats.withAppAds || this.cumulativeStats.withAppAds;
+    this.cumulativeStats.total = processorStats.totalBundleIds || processorStats.total || this.cumulativeStats.total;
+    
+    console.log('🔄 StreamResultsRenderer: Synced with processor stats', this.cumulativeStats);
+    
+    // Update the UI with the synced stats
+    this.updateSummaryStats(this.cumulativeStats);
+  }
+  
+  /**
    * Update the summary statistics in the UI
    * @param {Object} stats - Statistics object
    * @private
@@ -285,6 +323,11 @@ class StreamResultsRenderer {
     // Store stats for reference
     this.stats = this.stats || {};
     Object.assign(this.stats, stats);
+    
+    // Also update cumulative total if provided
+    if (stats.total && stats.total > 0) {
+      this.cumulativeStats.total = stats.total;
+    }
     
     // Get cached indicator header or query it once
     const workerIndicator = this._getElement('workerIndicatorHeader', 
@@ -297,9 +340,9 @@ class StreamResultsRenderer {
     if (workerIndicator) {
       // Fix for NaN% issue - ensure both values are valid numbers
       let percent = 0;
-      const processedCount = typeof stats.processed === 'number' ? stats.processed : 0;
-      const totalCount = typeof stats.total === 'number' && stats.total > 0 ? 
-        stats.total : this.stats?.totalBundleIds || 0;
+      // Use cumulative stats or provided stats, preferring cumulative
+      const processedCount = this.cumulativeStats.processed || stats.processed || 0;
+      const totalCount = this.cumulativeStats.total || stats.total || this.stats?.totalBundleIds || 0;
       
       // Only calculate percent if total is valid
       if (totalCount > 0) {
@@ -353,14 +396,25 @@ class StreamResultsRenderer {
       const successCount = results.filter(r => r.success).length;
       const errorCount = results.filter(r => !r.success).length;
       
-      // Update summary stats with the new counts
-      this.updateSummaryStats({
-        processed: results.length,
-        success: successCount,
-        errors: errorCount,
-        withAppAds: withAppAds,
-        // Don't update the total here as it might overwrite the correct total
-      });
+      // Update cumulative stats
+      this.cumulativeStats.processed += results.length;
+      this.cumulativeStats.success += successCount;
+      this.cumulativeStats.errors += errorCount;
+      this.cumulativeStats.withAppAds += withAppAds;
+      
+      // Use the cumulative stats for UI updates
+      const updatedStats = {
+        processed: this.cumulativeStats.processed,
+        success: this.cumulativeStats.success,
+        errors: this.cumulativeStats.errors,
+        withAppAds: this.cumulativeStats.withAppAds,
+        total: this.cumulativeStats.total || this.stats?.totalBundleIds || 0
+      };
+      
+      console.log('🔄 StreamResultsRenderer: Cumulative stats:', updatedStats);
+      
+      // Update summary stats with the cumulative counts
+      this.updateSummaryStats(updatedStats);
       
       // Dispatch a custom event to notify that results were processed
       if (window.dispatchEvent) {
@@ -550,10 +604,15 @@ class StreamResultsRenderer {
     const tbody = this._getElement('resultsTableBody', '#results-final-tbody');
     if (!tbody) return;
     
-    // Clear existing rows
-    tbody.innerHTML = '';
+    // Performance optimization: Use DocumentFragment for batch DOM operations
+    const fragment = document.createDocumentFragment();
     
-    // Add results for this page
+    // Clear existing rows more efficiently
+    while (tbody.firstChild) {
+      tbody.removeChild(tbody.firstChild);
+    }
+    
+    // Add results for this page to the fragment
     pageResults.forEach(result => {
       if (!result) return; // Skip null/undefined results
       
@@ -619,8 +678,11 @@ class StreamResultsRenderer {
         `;
       }
       
-      tbody.appendChild(row);
+      fragment.appendChild(row);
     });
+    
+    // Append the fragment to the DOM (single reflow)
+    tbody.appendChild(fragment);
     
     // Update pagination controls using our caching method
     const paginationControls = this._getElement('paginationControls', '#pagination-controls');
@@ -651,9 +713,9 @@ class StreamResultsRenderer {
     
     // Previous button
     if (currentPage > 1) {
-      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${currentPage - 1}">← Previous</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${currentPage - 1}">← Previous</button>`;
     } else {
-      paginationHTML += `<button class="pagination-btn button-small disabled" disabled>← Previous</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small disabled" disabled>← Previous</button>`;
     }
     
     // Page numbers
@@ -661,7 +723,7 @@ class StreamResultsRenderer {
     
     // First page
     if (currentPage > 3) {
-      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="1">1</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="1">1</button>`;
       
       if (currentPage > 4) {
         paginationHTML += '<span class="pagination-ellipsis">...</span>';
@@ -674,9 +736,9 @@ class StreamResultsRenderer {
     
     for (let i = startPage; i <= endPage; i++) {
       if (i === currentPage) {
-        paginationHTML += `<button class="pagination-btn button-small active" data-page="${i}" disabled>${i}</button>`;
+        paginationHTML += `<button type="button" class="pagination-btn button-small active" disabled>${i}</button>`;
       } else {
-        paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${i}">${i}</button>`;
+        paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${i}">${i}</button>`;
       }
     }
     
@@ -686,16 +748,16 @@ class StreamResultsRenderer {
         paginationHTML += '<span class="pagination-ellipsis">...</span>';
       }
       
-      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${totalPages}">${totalPages}</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${totalPages}">${totalPages}</button>`;
     }
     
     paginationHTML += '</div>';
     
     // Next button
     if (currentPage < totalPages) {
-      paginationHTML += `<button class="pagination-btn button-small" data-action="paginate" data-page="${currentPage + 1}">Next →</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small" data-action="paginate" data-page="${currentPage + 1}">Next →</button>`;
     } else {
-      paginationHTML += `<button class="pagination-btn button-small disabled" disabled>Next →</button>`;
+      paginationHTML += `<button type="button" class="pagination-btn button-small disabled" disabled>Next →</button>`;
     }
     
     paginationHTML += '</div>';

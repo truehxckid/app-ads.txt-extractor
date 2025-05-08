@@ -692,6 +692,20 @@ class StreamProcessor {
       this.resultsRenderer.updateSummaryStats(stats);
     }
     
+    // Dispatch a progress update event to synchronize all UI components
+    // Use throttling to avoid too many events
+    const now = Date.now();
+    if (!this._lastProgressUpdateTime || (now - this._lastProgressUpdateTime) > 500) {
+      window.dispatchEvent(new CustomEvent('streaming-progress-update', {
+        detail: { 
+          stats: stats,
+          source: 'processResult',
+          timestamp: now
+        }
+      }));
+      this._lastProgressUpdateTime = now;
+    }
+    
     // Update status message periodically
     if (this.stats.processedCount % 5 === 0) {
       const percent = this.stats.totalBundleIds > 0 
@@ -931,6 +945,14 @@ class StreamProcessor {
           }
           
           this.progressUI.updateProgress(this.stats);
+          
+          // Dispatch a progress update event to synchronize the UI components
+          window.dispatchEvent(new CustomEvent('streaming-progress-update', {
+            detail: { 
+              stats: this.stats,
+              timestamp: Date.now()
+            }
+          }));
         } catch (err) {
           console.warn('Error updating progress UI from worker message:', err);
           // Don't let progress UI errors stop processing
@@ -1126,7 +1148,7 @@ class StreamProcessor {
   }
   
   /**
-   * Export results to CSV via streaming
+   * Export results to CSV via client-side processing (faster, no server overhead)
    * @param {string[]} bundleIds - Bundle IDs
    * @param {Object|string[]} searchParams - Search parameters object or legacy search terms
    */
@@ -1205,83 +1227,68 @@ class StreamProcessor {
       this.progressUI.setStatusMessage('Preparing CSV export...', 'info');
       showNotification('Starting CSV export...', 'info');
       
-      // Create a download link with unique timestamp
-      const timestamp = Date.now();
-      const downloadLink = document.createElement('a');
-      downloadLink.href = `/api/stream/export-csv?ts=${timestamp}`; // Add timestamp to prevent caching
-      downloadLink.download = `developer_domains_${new Date().toISOString().slice(0, 10)}.csv`;
-      downloadLink.style.display = 'none';
-      downloadLink.id = `csv-download-${timestamp}`; // Add unique ID
-      
-      // Update visual progress indicators
+      // Update progress indicators
       this.progressUI.updateProgress({
         processed: 0,
         total: bundleIds.length
       });
-      this.progressUI.setStatusMessage('Connecting to server...', 'info');
       
-      // Get the existing results that already have matches from AppState
+      // Get the existing results
       const fullResults = window.AppState?.results || this.results || [];
+      console.log('CSV Export: Using', fullResults.length, 'existing results for client-side CSV generation');
       
-      // Create an extremely minimal version with only absolute essential data to reduce request size
-      // The server 413 (Content Too Large) error indicates we need to reduce the payload significantly
-      // Instead of sending all results, just send the bundle IDs and let the server handle extraction
-      // This fixes the 413 Content Too Large error
-      const existingResults = []; // Don't send any existing results, let the server do the extraction
+      // Create CSV header
+      let csvContent = "Bundle ID,Store,Domain,Has App-Ads.txt,App-Ads.txt URL,Advanced Search Results,Match Count,Matching Lines,Success,Error\n";
       
-      // Log what we're doing to fix the 413 error
-      console.log('CSV Export: Not sending existing results to reduce payload size and avoid 413 error');
-
-      // Log for debugging
-      console.log('Using lightweight results for CSV export:', existingResults.length);
-      
-      // Set up fetch for streaming response with a unique cache buster
-      const response = await fetch(`/api/stream/export-csv?nocache=${timestamp}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
-        },
-        body: JSON.stringify({ 
-          bundleIds, 
-          structuredParams,
-          mode: searchMode, // Include the search mode explicitly
-          timestamp, // Include timestamp in request to prevent duplicate processing
-          existingResults // Send only the stripped-down essential data
-        })
-      });
-      
-      // Log the request payload for debugging
-      console.log('CSV Export request payload:', { 
-        bundleIds: bundleIds.length, 
-        structuredParams: Array.isArray(structuredParams) ? structuredParams.length : (structuredParams ? 1 : 0),
-        mode: searchMode, // Show the search mode in logs
-        existingResultsLength: existingResults.length // Show how many existing results we're sending (should be 0)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Server error: ${response.status} ${response.statusText}`);
-      }
-      
-      // Update progress indicators
+      // Update progress to indicate we've started
       this.progressUI.updateProgress({
-        processed: Math.floor(bundleIds.length * 0.1), // Show some progress
+        processed: Math.floor(bundleIds.length * 0.1),
         total: bundleIds.length
       });
-      this.progressUI.setStatusMessage('Processing data on server...', 'info');
+      this.progressUI.setStatusMessage('Generating CSV data...', 'info');
       
-      // Get the blob from the response
-      const blob = await response.blob();
+      // Process in batches to avoid freezing the UI
+      const BATCH_SIZE = 100; // Process 100 results at a time
+      const totalBatches = Math.ceil(fullResults.length / BATCH_SIZE);
       
-      // Update progress to 80%
+      for (let i = 0; i < totalBatches; i++) {
+        const start = i * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, fullResults.length);
+        const batch = fullResults.slice(start, end);
+        
+        // Process this batch
+        for (const result of batch) {
+          csvContent += this._generateCsvRow(result, structuredParams);
+        }
+        
+        // Update progress (scale from 10% to 80%)
+        const progress = 0.1 + (0.7 * (i + 1) / totalBatches);
+        this.progressUI.updateProgress({
+          processed: Math.floor(bundleIds.length * progress),
+          total: bundleIds.length
+        });
+        
+        // Allow UI to update before processing next batch
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      
+      // Create blob from CSV content
+      const timestamp = Date.now();
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download link
+      const downloadLink = document.createElement('a');
+      downloadLink.href = url;
+      downloadLink.download = `developer_domains_${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadLink.style.display = 'none';
+      downloadLink.id = `csv-download-${timestamp}`;
+      
       this.progressUI.updateProgress({
-        processed: Math.floor(bundleIds.length * 0.8),
+        processed: Math.floor(bundleIds.length * 0.9),
         total: bundleIds.length
       });
       this.progressUI.setStatusMessage('Creating download file...', 'info');
-      
-      // Create object URL for the blob
-      const url = URL.createObjectURL(blob);
       
       // Update progress to 90%
       this.progressUI.updateProgress({
@@ -1355,6 +1362,101 @@ class StreamProcessor {
       window._lastGlobalExportTime = null;
       this._exportInProgress = false;
     }
+  }
+  /**
+   * Generate a CSV row for a single result
+   * @param {Object} result - The result object
+   * @param {Array} structuredParams - Advanced search parameters
+   * @returns {string} - CSV row
+   * @private
+   */
+  _generateCsvRow(result, structuredParams) {
+    if (!result) return '';
+    
+    // Helper function to escape CSV fields
+    const escapeCSV = (field) => {
+      if (field === null || field === undefined) return '';
+      const str = String(field);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+    
+    // Extract basic data
+    const hasAppAds = result.success && (result.hasAppAds || result.appAdsTxt?.exists);
+    const store = result.storeType ? this._getStoreDisplayName(result.storeType) : '';
+    const domain = result.domain || '';
+    const appAdsTxtUrl = hasAppAds && result.appAdsTxt?.url ? result.appAdsTxt.url : '';
+    const success = result.success ? 'Yes' : 'No';
+    const error = result.error || '';
+    
+    // Process advanced search results
+    let advancedSearchInfo = '';
+    let matchCount = '0';
+    let matchingLinesSummary = '';
+    
+    // Always include search parameters for advanced search
+    if (structuredParams && structuredParams.length > 0) {
+      const params = structuredParams[0];
+      let searchDescription = '';
+      if (params.domain) searchDescription += `${params.domain}`;
+      if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
+      if (params.relationship) searchDescription += `${searchDescription ? " | " : ""}rel: ${params.relationship}`;
+      if (params.tagId) searchDescription += `${searchDescription ? " | " : ""}tagId: ${params.tagId}`;
+      advancedSearchInfo = searchDescription || "Advanced search";
+    }
+    
+    // Check for matching search results
+    if (hasAppAds && result.appAdsTxt?.searchResults) {
+      const searchResults = result.appAdsTxt.searchResults;
+      
+      // Process match count
+      matchCount = String(searchResults.count || 0);
+      
+      // Process matching lines
+      if (searchResults.termResults && searchResults.termResults.length > 0) {
+        matchingLinesSummary = searchResults.termResults
+          .map(tr => {
+            if (tr.matches && tr.matches.length > 0) {
+              return `${tr.term}: ${tr.matches.join(', ')}`;
+            }
+            return tr.term;
+          })
+          .join(' | ');
+      }
+    }
+    
+    // Build and return CSV row
+    return [
+      escapeCSV(result.bundleId),
+      escapeCSV(store),
+      escapeCSV(domain),
+      hasAppAds ? 'Yes' : 'No',
+      escapeCSV(appAdsTxtUrl),
+      escapeCSV(advancedSearchInfo),
+      matchCount,
+      escapeCSV(matchingLinesSummary),
+      success,
+      escapeCSV(error)
+    ].join(',') + '\n';
+  }
+  
+  /**
+   * Helper to get store display name
+   * @param {string} storeType - Store type code
+   * @returns {string} - Store display name
+   * @private
+   */
+  _getStoreDisplayName(storeType) {
+    const storeMap = {
+      'googleplay': 'Google Play',
+      'appstore': 'App Store',
+      'amazon': 'Amazon',
+      'huawei': 'Huawei',
+      'samsung': 'Samsung'
+    };
+    return storeMap[storeType.toLowerCase()] || storeType;
   }
 }
 
