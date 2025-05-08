@@ -20,6 +20,7 @@ class StreamProcessor {
     this.worker = null;
     this.streamController = null;
     this.decoder = new TextDecoder();
+    this._exportInProgress = false;
     
     // Use the imported singleton instances instead of creating new ones
     this.progressUI = StreamProgressUI;
@@ -146,6 +147,7 @@ class StreamProcessor {
     this.resultBuffer = [];
     this.lastRenderTime = 0;
     this.isRendering = false;
+    this._exportInProgress = false;
     
     // Cancel any pending animation frame
     if (this.animationFrameId) {
@@ -1104,9 +1106,17 @@ class StreamProcessor {
       return;
     }
     
+    // Add a flag to indicate export is in progress
+    if (this._exportInProgress) {
+      console.log('CSV export already in progress (internal flag), ignoring duplicate request');
+      showNotification('Export already in progress, please wait a few seconds', 'info');
+      return;
+    }
+    
     // Set both module-specific and global timestamp to prevent duplicate exports
     this._lastExportTime = now;
     window._lastGlobalExportTime = now;
+    this._exportInProgress = true;
     
     // Log export attempt
     console.log('CSV export initiated at', new Date().toISOString());
@@ -1302,7 +1312,8 @@ class StreamProcessor {
         // Clear the global export timestamp after UI cleanup is complete
         window._lastGlobalExportTime = null;
         this._lastExportTime = null;
-        console.log('Export timestamps cleared, ready for next export');
+        this._exportInProgress = false;
+        console.log('Export timestamps and flags cleared, ready for next export');
       }, 3000);
       
       showNotification('CSV export complete', 'success');
@@ -1310,9 +1321,10 @@ class StreamProcessor {
       console.error('CSV export error:', err);
       showNotification(`Export error: ${err.message}`, 'error');
       this.progressUI.showError(`Export error: ${err.message}`);
-      // Reset both local and global export timestamps on error
+      // Reset both local and global export timestamps and flags on error
       this._lastExportTime = null;
       window._lastGlobalExportTime = null;
+      this._exportInProgress = false;
     }
   }
 }

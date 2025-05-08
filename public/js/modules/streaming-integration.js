@@ -414,23 +414,9 @@ class StreamingIntegration {
    * Patch CSV export functionality
    */
   _patchCsvExport() {
-    // Add event handler for streaming-specific downloads
-    document.addEventListener('click', async (event) => {
-      const target = event.target;
-      const action = target.dataset.action || target.closest('[data-action]')?.dataset.action;
-      
-      if (action === 'stream-download-csv') {
-        event.preventDefault();
-        
-        // Get bundle IDs and search terms
-        const bundleIds = DOMUtils.getTextareaLines('bundleIds');
-        const searchTerms = AppState.searchTerms.length > 0 ? 
-          AppState.searchTerms : DOMUtils.getSearchTerms();
-        
-        // Download all results via streaming API
-        await StreamingProcessor.exportCsv(bundleIds, searchTerms);
-      }
-    });
+    // REMOVED: We're NOT adding a separate event handler anymore since it's causing duplicate events
+    // The main event handler in event-handler.js already handles both 'download-csv' and 'stream-download-csv'
+    // actions so we'll just modify the buttons but not add duplicate handlers
     
     // Modify the action buttons in results summary
     const observer = new MutationObserver((mutations) => {

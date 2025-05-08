@@ -265,8 +265,7 @@ class EventHandlerManager {
       case 'tab-switch':
         this.handleTabSwitch(target);
         break;
-      case 'download-csv':
-      case 'stream-download-csv':
+      case 'download-csv': // Single action for CSV download
         // Use global export timestamp to synchronize with StreamProcessor
         const currentTime = Date.now();
         
@@ -339,6 +338,14 @@ class EventHandlerManager {
             // Log the search params we're sending
             console.log('Calling StreamProcessor.exportCsv with searchParams:', searchParams);
             
+            // Check again if an export was recently triggered
+            const currentTime = Date.now();
+            if (window._lastGlobalExportTime && (currentTime - window._lastGlobalExportTime < 5000)) {
+              console.log('CSV export recently triggered (additional check), ignoring duplicate request');
+              showNotification('Export already in progress, please wait a few seconds', 'info');
+              return; // Early return to prevent export
+            }
+            
             // Pass search parameters as a unified object to ensure both simple terms
             // and structured parameters are correctly handled
             StreamProcessor.exportCsv(bundleIds, searchParams);
@@ -381,7 +388,58 @@ class EventHandlerManager {
         this.handleSwitchSearchMode(target);
         break;
       case 'hide-results':
+        // Hide the results display but keep completion banner visible
+        const hideResultsDisplay = document.querySelector('.stream-results-display');
+        if (hideResultsDisplay) {
+          hideResultsDisplay.style.display = 'none';
+          
+          // Update button text if it exists
+          const showResultsBtn = document.querySelector('[data-action="show-results"]');
+          if (showResultsBtn) {
+            showResultsBtn.textContent = 'Show Results';
+          }
+        }
+        break;
       case 'show-results':
+        // Show the results display
+        const showResultsDisplay = document.querySelector('.stream-results-display');
+        
+        if (showResultsDisplay) {
+          // Results display already exists, just show it
+          showResultsDisplay.style.display = 'block';
+          showResultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          
+          // Update button text
+          const hideResultsBtn = document.querySelector('[data-action="hide-results"]');
+          if (hideResultsBtn) {
+            hideResultsBtn.textContent = 'Hide Results';
+          }
+        } else {
+          // Results need to be generated - use the StreamResultsRenderer
+          import('./streaming/StreamResultsRenderer.js').then(module => {
+            const streamResultsRenderer = module.default;
+            
+            // Try to get AppState via import
+            import('./app-state.js').then(appStateModule => {
+              const appState = appStateModule.default;
+              
+              // Show the results
+              streamResultsRenderer.showResults(appState?.results || []);
+              
+              // Update button text
+              const showBtn = target.closest('[data-action="show-results"]');
+              if (showBtn) {
+                showBtn.textContent = 'Hide Results';
+              }
+            }).catch(error => {
+              console.error('Error importing AppState:', error);
+              // Fallback to window.AppState
+              streamResultsRenderer.showResults(window.AppState?.results || []);
+            });
+          }).catch(error => {
+            console.error('Error importing StreamResultsRenderer:', error);
+          });
+        }
         break;
     }
   }
@@ -577,7 +635,27 @@ class EventHandlerManager {
    * @param {HTMLElement} button - Pagination button
    */
   handlePaginationClick(button) {
-    // Implemented in StreamResultsRenderer
+    // Get the page number from the button
+    const pageAttr = button.getAttribute('data-page');
+    if (!pageAttr) return;
+    
+    const page = parseInt(pageAttr, 10);
+    if (isNaN(page) || page <= 0) return;
+    
+    // Import StreamResultsRenderer and use its _renderPage method to handle pagination
+    import('./streaming/StreamResultsRenderer.js').then(module => {
+      const streamResultsRenderer = module.default;
+      
+      if (streamResultsRenderer && typeof streamResultsRenderer._renderPage === 'function') {
+        // Get results either from StreamResultsRenderer's allResults or from AppState
+        const results = streamResultsRenderer.allResults || window.AppState?.results || [];
+        streamResultsRenderer._renderPage(results, page);
+      } else {
+        console.error('StreamResultsRenderer or _renderPage method not found');
+      }
+    }).catch(error => {
+      console.error('Error importing StreamResultsRenderer for pagination:', error);
+    });
   }
   
   /**

@@ -156,105 +156,17 @@ class StreamResultsRenderer {
    * @private
    */
   _setupEventListeners() {
-    // Use event delegation on document
-    document.addEventListener('click', (event) => {
-      // Check if the clicked element has a data-action attribute
-      const action = event.target.dataset?.action || event.target.closest('[data-action]')?.dataset.action;
-      
-      if (!action) return;
-      
-      // Handle toggle-ads action (show app-ads.txt details)
-      if (action === 'toggle-ads') {
-        const targetId = event.target.dataset.target || event.target.closest('[data-target]').dataset.target;
-        const targetElement = document.getElementById(targetId);
-        
-        if (targetElement) {
-          const isExpanded = targetElement.style.display !== 'none';
-          targetElement.style.display = isExpanded ? 'none' : 'block';
-          
-          // Update button text and aria attributes
-          const button = event.target.closest('[data-action="toggle-ads"]');
-          if (button) {
-            button.textContent = isExpanded ? 'Show app-ads.txt' : 'Hide app-ads.txt';
-            button.setAttribute('aria-expanded', !isExpanded);
-          }
-        }
-      }
-      
-      // Handle toggle-matches action (show search matches)
-      if (action === 'toggle-matches') {
-        const targetId = event.target.dataset.target || event.target.closest('[data-target]').dataset.target;
-        const targetElement = document.getElementById(targetId);
-        
-        if (targetElement) {
-          const isExpanded = targetElement.style.display !== 'none';
-          targetElement.style.display = isExpanded ? 'none' : 'block';
-          
-          // Update button text and aria attributes
-          const button = event.target.closest('[data-action="toggle-matches"]');
-          if (button) {
-            button.textContent = isExpanded ? 'Show matches' : 'Hide matches';
-            button.setAttribute('aria-expanded', !isExpanded);
-          }
-        }
-      }
-      
-      // Handle copy action
-      if (action === 'copy') {
-        const text = event.target.dataset.copy || event.target.closest('[data-copy]').dataset.copy;
-        if (text) {
-          navigator.clipboard.writeText(text)
-            .then(() => {
-              // Show a small notification
-              const button = event.target.closest('[data-action="copy"]');
-              if (button) {
-                const originalText = button.textContent;
-                button.textContent = 'Copied!';
-                setTimeout(() => {
-                  button.textContent = originalText;
-                }, 1500);
-              }
-            })
-            .catch(err => {
-              console.error('Failed to copy text:', err);
-            });
-        }
-      }
-      
-      // Handle tab switching
-      if (action === 'tab-switch') {
-        const tabId = event.target.dataset.tab || event.target.closest('[data-tab]').dataset.tab;
-        if (tabId) {
-          // Hide all tab contents
-          const tabContents = document.querySelectorAll('.search-tab-content');
-          tabContents.forEach(tab => {
-            tab.classList.remove('active');
-            tab.setAttribute('aria-hidden', 'true');
-          });
-          
-          // Deactivate all tab buttons
-          const tabButtons = document.querySelectorAll('.search-tab');
-          tabButtons.forEach(btn => {
-            btn.classList.remove('active');
-            btn.setAttribute('aria-selected', 'false');
-          });
-          
-          // Activate the selected tab
-          const targetTab = document.getElementById(tabId);
-          if (targetTab) {
-            targetTab.classList.add('active');
-            targetTab.setAttribute('aria-hidden', 'false');
-          }
-          
-          // Activate the selected tab button
-          const button = event.target.closest('[data-tab]');
-          if (button) {
-            button.classList.add('active');
-            button.setAttribute('aria-selected', 'true');
-          }
-        }
-      }
-    });
+    // REMOVED redundant event listeners - All actions with data-action 
+    // are now handled by the central EventHandler in event-handler.js
+    
+    // Previously this method had duplicate handlers for:
+    // - toggle-ads
+    // - toggle-matches
+    // - copy
+    // - tab-switch
+    
+    // These are now all handled by the main event handler 
+    // through a single document click event listener in EventHandler.js
   }
   
   /**
@@ -695,21 +607,12 @@ class StreamResultsRenderer {
       });
     }
     
-    // Pagination buttons and Download CSV
-    if (container) {
-      container.addEventListener('click', (event) => {
-        const target = event.target;
-        // Handle pagination
-        if (target && target.dataset && target.dataset.action === 'paginate') {
-          const page = parseInt(target.dataset.page, 10);
-          if (!isNaN(page) && page > 0) {
-            this._renderPage(this.allResults, page);
-          }
-        }
-        
-        // CSV export is now handled by the main EventHandler
-      });
-    }
+    // NOTE: Pagination clicks (data-action="pagination") should be handled by the
+    // central EventHandler in event-handler.js. However, the EventHandler currently
+    // delegates this to StreamResultsRenderer's handlePaginationClick method.
+    //
+    // A cleaner approach would be to expose a public method for changing pages
+    // and have the EventHandler call that method.
   }
   
   /**
@@ -726,7 +629,7 @@ class StreamResultsRenderer {
           <p>Completed processing ${this.allResults?.length || 0} bundle IDs</p>
         </div>
         <div class="action-buttons">
-          <button class="extract-btn" data-action="stream-download-csv">
+          <button class="extract-btn" data-action="download-csv">
             Download CSV
           </button>
           <button class="extract-btn" data-action="show-results">
@@ -750,32 +653,9 @@ class StreamResultsRenderer {
       button.style.marginRight = '5px';
     });
     
-    // Show/Hide results button event listener
-    if (showResultsBtn) {
-      showResultsBtn.addEventListener('click', () => {
-        // Check if results are already displayed
-        const resultsDisplay = this.resultElement.querySelector('.stream-results-display');
-        const isResultsDisplayVisible = resultsDisplay && resultsDisplay.style.display !== 'none';
-        
-        // Toggle the display state
-        if (isResultsDisplayVisible) {
-          // Hide results
-          resultsDisplay.style.display = 'none';
-          showResultsBtn.textContent = 'Show Results';
-        } else {
-          // Show results - keep completion banner visible
-          if (resultsDisplay) {
-            resultsDisplay.style.display = 'block';
-            resultsDisplay.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            showResultsBtn.textContent = 'Hide Results';
-          } else {
-            // If results don't exist yet, render them
-            this._renderResults(this.allResults || []);
-            showResultsBtn.textContent = 'Hide Results';
-          }
-        }
-      });
-    }
+    // NOTE: We're not directly attaching an event listener to show/hide buttons anymore.
+    // Instead, the buttons have data-action="show-results" or data-action="hide-results"
+    // which are handled by the global event handler in event-handler.js
     
     // We don't need to add the event listener here anymore
     // The event is now handled globally in the EventHandler via data-action="stream-download-csv"
@@ -823,7 +703,7 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
         <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
       </div>
       <div class="action-buttons">
-        <button class="extract-btn" data-action="stream-download-csv">
+        <button class="extract-btn" data-action="download-csv">
           Download CSV
         </button>
         <button class="extract-btn" data-action="show-results">
@@ -854,36 +734,9 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     button.style.marginRight = '5px';
   });
   
-  // Show/Hide results button event listener
-  if (showResultsBtn) {
-    showResultsBtn.addEventListener('click', () => {
-      // Check if results are already displayed
-      const resultsDisplay = this.resultElement.querySelector('.stream-results-display');
-      const isResultsDisplayVisible = resultsDisplay && resultsDisplay.style.display !== 'none';
-      
-      if (isResultsDisplayVisible) {
-        // Hide results
-        resultsDisplay.style.display = 'none';
-        showResultsBtn.textContent = 'Show Results';
-      } else {
-        // Import AppState directly to ensure we get the latest results
-        import('../app-state.js').then(module => {
-          const appState = module.default;
-          
-          // Show the results immediately - keep banner visible
-          this.showResults(appState?.results || []);
-          
-          // Update button text
-          showResultsBtn.textContent = 'Hide Results';
-        }).catch(error => {
-          console.error('Error importing AppState for showing results:', error);
-          // Fallback to window.AppState
-          this.showResults(window.AppState?.results || []);
-          showResultsBtn.textContent = 'Hide Results';
-        });
-      }
-    });
-  }
+  // NOTE: We're not directly attaching an event listener to show/hide buttons anymore.
+  // Instead, the buttons have data-action="show-results" or data-action="hide-results"
+  // which are handled by the global event handler in event-handler.js
   
   // CSV export event handling is centralized in EventHandler
 };
