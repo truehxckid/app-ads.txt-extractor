@@ -1262,9 +1262,15 @@ class StreamProcessor {
     let matchCount = '0';
     let matchingLinesSummary = '';
     
+    // Check if we have structured params (advanced search)
+    const isAdvancedSearch = structuredParams && (
+      Array.isArray(structuredParams) ? structuredParams.length > 0 : 
+      (typeof structuredParams === 'object' && Object.keys(structuredParams).length > 0)
+    );
+    
     // Always include search parameters for advanced search
-    if (structuredParams && structuredParams.length > 0) {
-      const params = structuredParams[0];
+    if (isAdvancedSearch) {
+      const params = Array.isArray(structuredParams) ? structuredParams[0] : structuredParams;
       let searchDescription = '';
       if (params.domain) searchDescription += `${params.domain}`;
       if (params.publisherId) searchDescription += `${searchDescription ? " | " : ""}publisherId: ${params.publisherId}`;
@@ -1283,6 +1289,24 @@ class StreamProcessor {
       // Process matching lines
       if (searchResults.termResults && searchResults.termResults.length > 0) {
         matchingLinesSummary = searchResults.termResults
+          .map(tr => {
+            if (tr.matches && tr.matches.length > 0) {
+              return `${tr.term}: ${tr.matches.join(', ')}`;
+            }
+            return tr.term;
+          })
+          .join(' | ');
+      }
+    }
+    
+    // Also check for matchInfo format (used in some implementations)
+    if (result.matchInfo) {
+      if (result.matchInfo.count) {
+        matchCount = String(result.matchInfo.count);
+      }
+      
+      if (result.matchInfo.termResults && result.matchInfo.termResults.length > 0) {
+        matchingLinesSummary = result.matchInfo.termResults
           .map(tr => {
             if (tr.matches && tr.matches.length > 0) {
               return `${tr.term}: ${tr.matches.join(', ')}`;

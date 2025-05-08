@@ -290,15 +290,18 @@ class EventHandlerManager {
           const bundleIds = DOMUtils.getTextareaLines('bundleIds');
           
           // Only advanced mode is supported now
-          // Get structured parameters
-          let structuredParams = window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+          // Get structured parameters from all possible sources
+          let structuredParams = AppState.advancedSearchParams || window.AppState?.advancedSearchParams || window.advancedSearchParams || null;
+          
+          // For debugging, log what we have found
+          console.log("CSV Export: Using structured params:", structuredParams);
           
           // Ensure structuredParams is always an array
           if (structuredParams && !Array.isArray(structuredParams)) {
             structuredParams = [structuredParams];
           }
           
-          // Use advanced search mode
+          // Use advanced search mode with properly formatted parameters
           const searchParams = {
             mode: 'advanced',
             structuredParams: structuredParams
@@ -313,7 +316,12 @@ class EventHandlerManager {
             
             // Pass search parameters as a unified object to ensure both simple terms
             // and structured parameters are correctly handled
-            StreamProcessor.exportResultsAsCsv(bundleIds, searchParams);
+            // Ensure we're calling the correct method (exportResultsAsCsv instead of exportCsv)
+            if (typeof StreamProcessor.exportResultsAsCsv === 'function') {
+              StreamProcessor.exportResultsAsCsv(bundleIds, searchParams);
+            } else if (typeof StreamProcessor.exportCsv === 'function') {
+              StreamProcessor.exportCsv(bundleIds, searchParams);
+            }
             return; // Early return to prevent fallback
           }
           
