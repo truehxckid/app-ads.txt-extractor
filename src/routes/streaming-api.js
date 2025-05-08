@@ -128,7 +128,12 @@ router.post('/extract-multiple', streamingLimiter, async (req, res, next) => {
         // Process this smaller batch
         const batchPromises = currentBatch.map(bundleId => (async () => {
           try {
-            const result = await getDeveloperInfo(bundleId, validatedTerms);
+            // Use validatedStructuredParams if advanced search, otherwise validatedTerms
+            const result = await getDeveloperInfo(
+              bundleId, 
+              isAdvancedSearch ? [] : validatedTerms,
+              isAdvancedSearch ? validatedStructuredParams : null
+            );
             processedCount++;
             
             if (result.success) {

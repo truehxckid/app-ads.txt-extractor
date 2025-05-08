@@ -43,6 +43,7 @@ const appAdsWorkerPool = new WorkerPool(
  * @param {string|string[]|null} searchTerms - Search terms to look for in the file
  * @param {object} options - Optional processing options
  * @param {boolean} options.skipCache - Whether to bypass cache
+ * @param {Object|Object[]} options.structuredParams - Advanced search parameters
  * @returns {Promise<object>} - Results of the check
  */
 async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
@@ -62,7 +63,19 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
   
   try {
     const normalizedSearchTerms = validateSearchTerms(searchTerms);
-    const cacheKey = keys.appAdsTxt(domain, normalizedSearchTerms);
+    
+    // Get structured params from options if available
+    const structuredParams = options.structuredParams || null;
+    
+    // Create cache key that includes both search terms and structured params
+    let cacheKey;
+    if (structuredParams) {
+      // For advanced search, use a cache key that includes structured params
+      cacheKey = `appads:${domain}:advanced:${JSON.stringify(structuredParams)}`;
+    } else {
+      // For simple search, use the regular search terms cache key
+      cacheKey = keys.appAdsTxt(domain, normalizedSearchTerms);
+    }
     
     // Check cache first (unless skipCache option is set)
     const skipCache = options.skipCache === true;
@@ -210,7 +223,7 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
         }, 'Processing stream');
         
         // Parse the stream in chunks to minimize memory usage
-        const result = await processStreamedContent(stream, normalizedSearchTerms);
+        const result = await processStreamedContent(stream, normalizedSearchTerms, structuredParams);
         
         // Set content to a truncated version for caching
         content = result.content;
@@ -248,11 +261,17 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
           logger.debug({ 
             domain, 
             contentSize: content.length,
-            searchTermsCount: normalizedSearchTerms?.length || 0
+            searchTermsCount: normalizedSearchTerms?.length || 0,
+            hasStructuredParams: !!structuredParams
           }, 'Using worker thread for large file');
           
+          // Pass both search terms and structured params to worker
           const workerResult = await appAdsWorkerPool.runTask(
-            { content, searchTerms: normalizedSearchTerms },
+            { 
+              content, 
+              searchTerms: normalizedSearchTerms,
+              structuredParams
+            },
             Priority.NORMAL
           );
           
@@ -286,7 +305,11 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
             const lines = content.split(/\r\n|\n|\r/);
             analyzed = analyzeAppAdsTxt(lines);
             
-            if (normalizedSearchTerms?.length > 0) {
+            if (structuredParams) {
+              // For advanced search, use structuredParams
+              searchResults = processSearchTerms(lines, [], structuredParams);
+            } else if (normalizedSearchTerms?.length > 0) {
+              // For simple search, use search terms
               searchResults = processSearchTerms(lines, normalizedSearchTerms);
             }
           } catch (fallbackErr) {
@@ -317,8 +340,12 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
           // Analyze the file content
           analyzed = analyzeAppAdsTxt(lines);
           
-          // Process search terms if provided
-          if (normalizedSearchTerms?.length > 0) {
+          // Process search based on mode
+          if (structuredParams) {
+            // For advanced search, use structuredParams
+            searchResults = processSearchTerms(lines, [], structuredParams);
+          } else if (normalizedSearchTerms?.length > 0) {
+            // For simple search, use search terms
             searchResults = processSearchTerms(lines, normalizedSearchTerms);
           }
         } catch (syncErr) {
@@ -401,9 +428,10 @@ async function checkAppAdsTxt(domain, searchTerms = null, options = {}) {
  * Process content from a stream in a memory-efficient way
  * @param {Stream} stream - The readable stream
  * @param {string[]} searchTerms - Search terms (optional)
+ * @param {Object|Object[]} structuredParams - Advanced search parameters (optional)
  * @returns {Promise<object>} - Processing results
  */
-async function processStreamedContent(stream, searchTerms = null) {
+async function processStreamedContent(stream, searchTerms = null, structuredParams = null) {
   return new Promise((resolve, reject) => {
     // Initialize analysis counters
     let validLineCount = 0;
@@ -582,8 +610,20 @@ async function processStreamedContent(stream, searchTerms = null) {
         
         // Create search results if needed
         let searchResults = null;
-        if (searchTerms && searchTerms.length > 0) {
+        if (structuredParams) {
+          // For advanced search
+          const formattedParams = Array.isArray(structuredParams) ? structuredParams : [structuredParams];
           searchResults = {
+            mode: 'advanced',
+            advancedParams: formattedParams,
+            termResults: searchTermResults,
+            matchingLines: searchMatchingLines,
+            count: searchMatchingLines.length
+          };
+        } else if (searchTerms && searchTerms.length > 0) {
+          // For simple search
+          searchResults = {
+            mode: 'simple',
             terms: searchTerms,
             termResults: searchTermResults,
             matchingLines: searchMatchingLines,
@@ -613,9 +653,10 @@ async function processStreamedContent(stream, searchTerms = null) {
  * Process search terms against lines of content
  * @param {string[]} lines - Lines of content
  * @param {Array} searchTerms - Search terms (string or objects with exactMatch property)
+ * @param {Object|Object[]} structuredParams - Advanced search parameters (optional)
  * @returns {object} - Search results
  */
-function processSearchTerms(lines, searchTerms) {
+function processSearchTerms(lines, searchTerms, structuredParams = null) {
   try {
     const searchResults = {
       terms: searchTerms,
@@ -632,8 +673,35 @@ function processSearchTerms(lines, searchTerms) {
     let searchGroups = [];
     let isStructuredSearch = false;
     
+    // Check if we have structuredParams from advanced search
+    if (structuredParams) {
+      isStructuredSearch = true;
+      
+      // Ensure structuredParams is an array
+      const paramsArray = Array.isArray(structuredParams) ? structuredParams : [structuredParams];
+      
+      // For advanced search, each object is its own group (AND relationship within group)
+      // Each group represents an OR term from the frontend
+      searchGroups = paramsArray.map(param => {
+        const groupTerms = [];
+        // Include the field name so we can do proper structured field matching
+        if (param.domain) groupTerms.push({ exactMatch: param.domain.toLowerCase(), field: 'domain' });
+        if (param.publisherId) groupTerms.push({ exactMatch: param.publisherId.toLowerCase(), field: 'publisherId' });
+        if (param.relationship) groupTerms.push({ exactMatch: param.relationship.toLowerCase(), field: 'relationship' });
+        if (param.tagId) groupTerms.push({ exactMatch: param.tagId.toLowerCase(), field: 'tagId' });
+        return groupTerms;
+      });
+      
+      // Filter out any empty groups
+      searchGroups = searchGroups.filter(group => group.length > 0);
+      
+      logger.debug({ 
+        searchGroups,
+        isStructuredSearch 
+      }, 'Using advanced structured search with groups');
+    }
     // Check if searchTerms contains structured parameters
-    if (searchTerms.length > 0 && typeof searchTerms[0] === 'object') {
+    else if (searchTerms.length > 0 && typeof searchTerms[0] === 'object') {
       // Check if any term has advanced search fields
       const hasAdvancedParams = searchTerms.some(term => {
         return ['domain', 'publisherId', 'relationship', 'tagId'].some(field => 
@@ -671,16 +739,33 @@ function processSearchTerms(lines, searchTerms) {
       // 1. Each search term represents a separate search group (OR logic between them)
       // 2. All search terms belong to the same group (AND logic between them)
       
-      // For this implementation, we'll group all terms together for AND logic
-      // This matches the expectation that searching for "appnexus.com 12447" finds lines with both terms
-      searchGroups = [searchTerms];
-      
-      logger.debug({
-        searchGroups: searchGroups.map(group => group.map(term => 
-          typeof term === 'object' ? term.exactMatch : term
-        )),
-        termCount: searchTerms.length
-      }, 'Using simple search with AND logic between terms');
+      // Check if each search term contains commas or spaces
+      const hasMultipleWords = searchTerms.some(term => {
+        const termValue = typeof term === 'object' ? term.exactMatch : term;
+        return termValue.includes(',') || termValue.includes(' ');
+      });
+
+      if (hasMultipleWords) {
+        // If any term contains commas or spaces, treat all terms as one group (AND logic)
+        // This matches the expectation that searching for "appnexus.com 12447" finds lines with both parts
+        searchGroups = [searchTerms];
+        logger.debug({
+          searchGroups: searchGroups.map(group => group.map(term => 
+            typeof term === 'object' ? term.exactMatch : term
+          )),
+          termCount: searchTerms.length
+        }, 'Using simple search with AND logic between terms - multi-word terms detected');
+      } else {
+        // If we have multiple simple terms, treat each as its own group (OR logic between terms)
+        // This means searching for "term1, term2" should find lines with EITHER term
+        searchGroups = searchTerms.map(term => [term]);
+        logger.debug({
+          searchGroups: searchGroups.map(group => group.map(term => 
+            typeof term === 'object' ? term.exactMatch : term
+          )),
+          termCount: searchTerms.length
+        }, 'Using simple search with OR logic between separate terms');
+      }
     }
     
     // Pre-compile regexes or prepare exact match terms for performance

@@ -210,9 +210,12 @@ class StreamProcessor {
     
     if (Array.isArray(searchParams)) {
       // Legacy format - just search terms array
-      searchTerms = searchParams;
+      // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
+      searchTerms = searchParams.map(term => 
+        typeof term === 'string' ? { exactMatch: term.trim() } : term
+      );
       structuredParams = null; // Explicitly set to null for simple mode
-      console.log('🚀 Legacy search terms:', searchTerms);
+      console.log('🚀 Legacy search terms (fixed for multi-term OR logic):', searchTerms);
     } else if (searchParams && typeof searchParams === 'object') {
       // Store the search mode for later reference
       searchMode = searchParams.mode || 'simple';
@@ -220,9 +223,11 @@ class StreamProcessor {
       // New unified format - STRICT SEPARATION between modes
       if (searchParams.mode === 'simple' && searchParams.queries) {
         // ONLY use search terms from simple mode, explicitly clear structured params
-        searchTerms = searchParams.queries;
+        // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
+        // Make sure each term is explicitly an object with exactMatch property to ensure proper handling
+        searchTerms = searchParams.queries.map(term => ({ exactMatch: term.trim() }));
         structuredParams = null; // Explicitly clear any structured params
-        console.log('🚀 Simple search mode with queries:', searchParams.queries);
+        console.log('🚀 Simple search mode with queries (fixed for multi-term OR logic):', searchTerms);
         
         // Clear any previously stored advanced search params
         if (AppState && typeof AppState.setAdvancedSearchParams === 'function') {
@@ -1135,13 +1140,18 @@ class StreamProcessor {
         }
       } else if (searchParams.mode === 'simple' && searchParams.queries) {
         // Simple mode: use queries as search terms
-        searchTerms = searchParams.queries;
-        console.log('CSV Export: Using simple search mode with terms:', searchTerms);
+        // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
+        // Make sure each term is explicitly an object with exactMatch property
+        searchTerms = searchParams.queries.map(term => ({ exactMatch: term.trim() }));
+        console.log('CSV Export: Using simple search mode with terms (fixed for multi-term OR logic):', searchTerms);
       }
     } else if (Array.isArray(searchParams)) {
       // Legacy format: searchParams is just an array of search terms
-      searchTerms = searchParams;
-      console.log('CSV Export: Using legacy search terms format:', searchTerms);
+      // CRITICAL FIX: Ensure the search terms are processed as individual terms with OR logic
+      searchTerms = searchParams.map(term => 
+        typeof term === 'string' ? { exactMatch: term.trim() } : term
+      );
+      console.log('CSV Export: Using legacy search terms format (fixed for multi-term OR logic):', searchTerms);
     }
     
     // Debug check the variables

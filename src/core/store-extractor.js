@@ -51,9 +51,10 @@ function extractDomain(url) {
  * @param {string} bundleId - App bundle ID
  * @param {string} storeType - Store type
  * @param {string[]|null} searchTerms - Search terms for app-ads.txt
+ * @param {Object|Object[]|null} structuredParams - Advanced search parameters
  * @returns {Promise<object>} - Extraction results
  */
-async function extractFromStore(bundleId, storeType, searchTerms = null) {
+async function extractFromStore(bundleId, storeType, searchTerms = null, structuredParams = null) {
   try {
     const store = stores[storeType];
     if (!store) {
@@ -67,30 +68,53 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
     // Check cache first
     const cached = await cache.get(cacheKey);
     if (cached) {
-      if (cached.success && cached.domain && searchTerms) {
-        const cachedTerms = cached.searchTerms || [];
-        const newTerms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
-        
-        // If search terms are different, recheck app-ads.txt with new terms
-        if (JSON.stringify(cachedTerms.sort()) !== JSON.stringify(newTerms.sort())) {
+      if (cached.success && cached.domain) {
+        // Handle different search scenarios
+        if (structuredParams) {
+          // Advanced search - check if we need to recheck app-ads.txt
           try {
             logger.debug({ 
               bundleId, 
               domain: cached.domain,
-              cachedTerms,
-              newTerms
-            }, 'Different search terms, rechecking app-ads.txt');
+              hasStructuredParams: true
+            }, 'Using advanced search, rechecking app-ads.txt');
             
-            const validatedTerms = validateSearchTerms(newTerms);
-            const appAdsTxt = await checkAppAdsTxt(cached.domain, validatedTerms);
-            return {...cached, appAdsTxt, searchTerms: validatedTerms};
+            const appAdsTxt = await checkAppAdsTxt(cached.domain, [], { structuredParams });
+            return {...cached, appAdsTxt, searchTerms: [], structuredParams};
           } catch (appAdsErr) {
             logger.error({ 
               error: appAdsErr.message, 
               domain: cached.domain 
-            }, 'Error checking app-ads.txt with new search terms');
+            }, 'Error checking app-ads.txt with structured params');
             
-            return cached; // Return cached result without new search terms
+            return cached; // Return cached result without structured params
+          }
+        } else if (searchTerms) {
+          // Simple search - check if search terms are different
+          const cachedTerms = cached.searchTerms || [];
+          const newTerms = Array.isArray(searchTerms) ? searchTerms : [searchTerms];
+          
+          // If search terms are different, recheck app-ads.txt with new terms
+          if (JSON.stringify(cachedTerms.sort()) !== JSON.stringify(newTerms.sort())) {
+            try {
+              logger.debug({ 
+                bundleId, 
+                domain: cached.domain,
+                cachedTerms,
+                newTerms
+              }, 'Different search terms, rechecking app-ads.txt');
+              
+              const validatedTerms = validateSearchTerms(newTerms);
+              const appAdsTxt = await checkAppAdsTxt(cached.domain, validatedTerms);
+              return {...cached, appAdsTxt, searchTerms: validatedTerms};
+            } catch (appAdsErr) {
+              logger.error({ 
+                error: appAdsErr.message, 
+                domain: cached.domain 
+              }, 'Error checking app-ads.txt with new search terms');
+              
+              return cached; // Return cached result without new search terms
+            }
           }
         }
       }
@@ -195,23 +219,41 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
       
       // Check for app-ads.txt
       const validatedTerms = validateSearchTerms(searchTerms);
-      const appAdsTxt = await checkAppAdsTxt(domain, validatedTerms);
-      
-      // Prepare result
-      const result = {
-        bundleId: validId,
-        developerUrl,
-        domain,
-        storeType,
-        appAdsTxt,
-        searchTerms: validatedTerms,
-        success: true,
-        timestamp: Date.now()
-      };
-      
-      // Cache result
-      await cache.set(cacheKey, result, 'storeSuccess');
-      return result;
+      // Pass advanced search parameters if provided
+      if (structuredParams) {
+        // Pass directly to checkAppAdsTxt for advanced search
+        const appAdsTxt = await checkAppAdsTxt(domain, [], { structuredParams });
+        return {
+          bundleId: validId,
+          developerUrl,
+          domain,
+          storeType,
+          appAdsTxt,
+          searchTerms: [],
+          structuredParams,
+          success: true,
+          timestamp: Date.now()
+        };
+      } else {
+        // Regular simple search
+        const appAdsTxt = await checkAppAdsTxt(domain, validatedTerms);
+        
+        // Prepare result
+        const result = {
+          bundleId: validId,
+          developerUrl,
+          domain,
+          storeType,
+          appAdsTxt,
+          searchTerms: validatedTerms,
+          success: true,
+          timestamp: Date.now()
+        };
+        
+        // Cache result
+        await cache.set(cacheKey, result, 'storeSuccess');
+        return result;
+      }
     } catch (requestErr) {
       // Report error to rate limiter
       rateLimiter.reportError(storeType, requestErr.response?.status);
@@ -245,81 +287,16 @@ async function extractFromStore(bundleId, storeType, searchTerms = null) {
   }
 }
 
-/**
- * Try extraction from all stores
- * @param {string} bundleId - App bundle ID
- * @param {string[]|null} searchTerms - Search terms for app-ads.txt
- * @returns {Promise<object>} - Results from the first successful store
- */
-async function tryAllStores(bundleId, searchTerms = null) {
-  const validId = validateBundleId(bundleId);
-  const results = [];
-  const errors = [];
-  
-  logger.info({ bundleId: validId }, 'Trying all stores');
-  
-  for (const storeType of Object.keys(stores)) {
-    try {
-      const result = await extractFromStore(validId, storeType, searchTerms);
-      
-      if (result.success) {
-        logger.info({ 
-          bundleId: validId, 
-          storeType, 
-          domain: result.domain 
-        }, 'Successfully extracted from store');
-        
-        return result;
-      }
-      
-      results.push(result);
-    } catch (err) {
-      logger.error({ 
-        error: err.message, 
-        bundleId: validId, 
-        storeType 
-      }, 'Error trying store');
-      
-      errors.push({
-        storeType,
-        error: err.message,
-        statusCode: err.response?.status
-      });
-      
-      results.push({ 
-        bundleId: validId, 
-        storeType, 
-        error: err.message, 
-        success: false,
-        timestamp: Date.now()
-      });
-    }
-  }
-  
-  // If we get here, all stores failed - return an error result instead of throwing
-  const errorResult = {
-    bundleId: validId,
-    success: false,
-    error: 'Failed to extract from any store',
-    attemptedStores: Object.keys(stores),
-    storeErrors: errors,
-    timestamp: Date.now()
-  };
-  
-  // Cache the combined error result
-  await cache.set(`all-stores-${validId}`, errorResult, 'storeError');
-  
-  // Return the error result instead of throwing
-  return errorResult;
-}
+// tryAllStores function removed - it's more efficient to only try the correct store for each bundle ID
 
 /**
  * Get developer information for a bundle ID
  * @param {string} bundleId - App bundle ID
  * @param {string[]|null} searchTerms - Search terms for app-ads.txt
+ * @param {Object|Object[]|null} structuredParams - Advanced search parameters
  * @returns {Promise<object>} - Developer information
  */
-async function getDeveloperInfo(bundleId, searchTerms = null) {
+async function getDeveloperInfo(bundleId, searchTerms = null, structuredParams = null) {
   try {
     const validId = validateBundleId(bundleId);
     const storeType = detectStoreType(validId);
@@ -362,35 +339,24 @@ async function getDeveloperInfo(bundleId, searchTerms = null) {
       };
     }
     
-    // Try the detected store type
+    // Try the detected store type only - no fallback to other stores
     try {
-      return await extractFromStore(validId, storeType, searchTerms);
+      return await extractFromStore(validId, storeType, searchTerms, structuredParams);
     } catch (err) {
-      logger.info({ 
+      logger.error({ 
         error: err.message, 
         bundleId: validId, 
         detectedStoreType: storeType 
-      }, 'Failed with detected store type, trying all stores');
+      }, 'Failed to extract from detected store type');
       
-      // If the detected store failed, try all stores
-      try {
-        return await tryAllStores(validId, searchTerms);
-      } catch (allStoresErr) {
-        // If all stores fail, return a more detailed error
-        logger.error({ 
-          error: allStoresErr.message, 
-          bundleId: validId 
-        }, 'All stores failed for bundle ID');
-        
-        return {
-          bundleId: validId,
-          success: false,
-          storeType: storeType,
-          error: `Failed to extract from any store: ${allStoresErr.message}`,
-          attemptedStores: Object.keys(stores),
-          timestamp: Date.now()
-        };
-      }
+      // Return error information
+      return {
+        bundleId: validId,
+        success: false,
+        storeType: storeType,
+        error: `Failed to extract app information: ${err.message}`,
+        timestamp: Date.now()
+      };
     }
   } catch (err) {
     logger.error({ error: err.message, bundleId }, 'Error validating bundle ID');
@@ -407,7 +373,6 @@ async function getDeveloperInfo(bundleId, searchTerms = null) {
 
 module.exports = {
   extractFromStore,
-  tryAllStores,
   getDeveloperInfo,
   extractDomain
 };

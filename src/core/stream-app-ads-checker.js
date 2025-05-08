@@ -263,6 +263,8 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
             // Check each search term
             searchTerms.forEach((term, termIndex) => {
               try {
+                let termMatched = false;
+                
                 // Check if this is an exact match term from new UI
                 if (typeof term === 'object' && term.exactMatch) {
                   const exactTerm = term.exactMatch.toLowerCase();
@@ -271,16 +273,7 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
                   // For exact match terms, check if the exact string appears in the line
                   // This will match the term exactly as the user entered it
                   if (lowerLine.includes(exactTerm)) {
-                    // Add to term-specific results (limit to 500 matches per term)
-                    if (searchTermResults[termIndex].matchingLines.length < 500) {
-                      searchTermResults[termIndex].matchingLines.push({
-                        lineNumber: totalLineCount,
-                        content: cleanLine,
-                        termIndex
-                      });
-                    }
-                    searchTermResults[termIndex].count++;
-                    anyMatch = true;
+                    termMatched = true;
                   }
                 }
                 // Backward compatibility with string terms
@@ -291,31 +284,30 @@ async function processAppAdsStream(url, searchTerms = null, responseStream = nul
                   // For single word terms, check if the term is present in the line
                   if (termWords.length === 1) {
                     if (lineWords.includes(termWords[0])) {
-                      // Add to term-specific results (limit to 500 matches per term)
-                      if (searchTermResults[termIndex].matchingLines.length < 500) {
-                        searchTermResults[termIndex].matchingLines.push({
-                          lineNumber: totalLineCount,
-                          content: cleanLine,
-                          termIndex
-                        });
-                      }
-                      searchTermResults[termIndex].count++;
-                      anyMatch = true;
+                      termMatched = true;
                     }
                   }
                   // For multi-word terms, check if all words are present in the line
                   else if (termWords.every(word => cleanLine.toLowerCase().includes(word))) {
-                    // Add to term-specific results (limit to 500 matches per term)
-                    if (searchTermResults[termIndex].matchingLines.length < 500) {
-                      searchTermResults[termIndex].matchingLines.push({
-                        lineNumber: totalLineCount,
-                        content: cleanLine,
-                        termIndex
-                      });
-                    }
-                    searchTermResults[termIndex].count++;
-                    anyMatch = true;
+                    termMatched = true;
                   }
+                }
+                
+                // If this term matched, track it
+                if (termMatched) {
+                  // Add to term-specific results (limit to 500 matches per term)
+                  if (searchTermResults[termIndex].matchingLines.length < 500) {
+                    searchTermResults[termIndex].matchingLines.push({
+                      lineNumber: totalLineCount,
+                      content: cleanLine,
+                      termIndex
+                    });
+                  }
+                  searchTermResults[termIndex].count++;
+                  
+                  // In simple search mode with multiple terms, we want OR logic 
+                  // So if ANY term matches, it should be included in the results
+                  anyMatch = true;
                 }
               } catch (err) {
                 // Ignore search errors and continue
