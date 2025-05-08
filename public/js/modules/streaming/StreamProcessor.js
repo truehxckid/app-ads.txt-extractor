@@ -1099,24 +1099,11 @@ class StreamProcessor {
     // Global export tracking timestamp - use a window property to synchronize between modules
     const now = Date.now();
     
-    // Check if an export was recently triggered from any module (within the last 5 seconds)
-    if (window._lastGlobalExportTime && (now - window._lastGlobalExportTime < 5000)) {
-      console.log('CSV export already in progress or recently triggered, ignoring duplicate request');
-      showNotification('Export already in progress, please wait a few seconds', 'info');
-      return;
-    }
-    
-    // Add a flag to indicate export is in progress
-    if (this._exportInProgress) {
-      console.log('CSV export already in progress (internal flag), ignoring duplicate request');
-      showNotification('Export already in progress, please wait a few seconds', 'info');
-      return;
-    }
-    
-    // Set both module-specific and global timestamp to prevent duplicate exports
-    this._lastExportTime = now;
-    window._lastGlobalExportTime = now;
+    // Set global timestamp here to prevent duplicate exports between modules
+    // EventHandler checks but doesn't set this so we avoid double-check issues
+    window._lastGlobalExportTime = now; // Set timestamp here first
     this._exportInProgress = true;
+    this._lastExportTime = now;
     
     // Log export attempt
     console.log('CSV export initiated at', new Date().toISOString());

@@ -414,34 +414,10 @@ class StreamingIntegration {
    * Patch CSV export functionality
    */
   _patchCsvExport() {
-    // REMOVED: We're NOT adding a separate event handler anymore since it's causing duplicate events
-    // The main event handler in event-handler.js already handles both 'download-csv' and 'stream-download-csv'
-    // actions so we'll just modify the buttons but not add duplicate handlers
-    
-    // Modify the action buttons in results summary
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'childList') {
-          const actionButtons = document.querySelector('.action-buttons');
-          if (actionButtons && this.streamingEnabled) {
-            // Check if we already added the streaming button
-            if (!actionButtons.querySelector('[data-action="stream-download-csv"]')) {
-              // Add streaming-specific download button
-              const streamDownloadBtn = document.createElement('button');
-              streamDownloadBtn.className = 'download-btn extract-btn';
-              streamDownloadBtn.setAttribute('data-action', 'stream-download-csv');
-              streamDownloadBtn.textContent = 'Download CSV';
-              
-              // Add to action buttons
-              actionButtons.prepend(streamDownloadBtn);
-            }
-          }
-        }
-      });
-    });
-    
-    // Start observing the document body for dynamic changes
-    observer.observe(document.body, { childList: true, subtree: true });
+    // We don't need to add a separate download button anymore
+    // The "download-csv" action button is already handled by event-handler.js
+    // This method is kept for backward compatibility but doesn't do anything
+    console.log('CSV export patching skipped - using standard download-csv action');
   }
 }
 

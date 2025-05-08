@@ -629,9 +629,6 @@ class StreamResultsRenderer {
           <p>Completed processing ${this.allResults?.length || 0} bundle IDs</p>
         </div>
         <div class="action-buttons">
-          <button class="extract-btn" data-action="download-csv">
-            Download CSV
-          </button>
           <button class="extract-btn" data-action="show-results">
             Show Results
           </button>
@@ -642,9 +639,8 @@ class StreamResultsRenderer {
     // Add to the result element
     this.resultElement.prepend(completionBanner);
     
-    // Add event listeners for both buttons
+    // Add event listener for show results button
     const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
-    const downloadBtn = completionBanner.querySelector('[data-action="stream-download-csv"]');
     
     // Set up styles to match other buttons
     const actionButtons = completionBanner.querySelectorAll('button');
@@ -658,7 +654,7 @@ class StreamResultsRenderer {
     // which are handled by the global event handler in event-handler.js
     
     // We don't need to add the event listener here anymore
-    // The event is now handled globally in the EventHandler via data-action="stream-download-csv"
+    // The event is now handled globally in the EventHandler via data-action="download-csv"
   }
   
   /**
@@ -703,8 +699,8 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
         <p>Completed processing ${stats.total} bundle IDs (${stats.errors} errors) in ${timeDisplay}</p>
       </div>
       <div class="action-buttons">
-        <button class="extract-btn" data-action="download-csv">
-          Download CSV
+        <button class="download-btn extract-btn" data-action="download-csv" id="main-download-csv-btn">
+          Download CSV Results
         </button>
         <button class="extract-btn" data-action="show-results">
           Show Results
@@ -723,9 +719,8 @@ streamResultsRenderer.updateCompletionStatus = function(stats) {
     this.resultElement.appendChild(completionBanner);
   }
   
-  // Add event listeners for both buttons
+  // Add event listeners for buttons
   const showResultsBtn = completionBanner.querySelector('[data-action="show-results"]');
-  const downloadBtn = completionBanner.querySelector('[data-action="stream-download-csv"]');
   
   // Set up styles to match other buttons
   const actionButtons = completionBanner.querySelectorAll('button');

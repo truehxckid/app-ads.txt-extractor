@@ -289,9 +289,9 @@ class EventHandlerManager {
           return;
         }
         
-        // Set both local and global timestamps
+        // Set only the local timestamp for initial tracking
+        // Let StreamProcessor set the global timestamp to avoid double-checking conflicts
         this._lastExportTime = currentTime;
-        window._lastGlobalExportTime = currentTime;
         
         // Stop click event propagation to prevent any duplicate triggers
         event.preventDefault();
@@ -338,13 +338,8 @@ class EventHandlerManager {
             // Log the search params we're sending
             console.log('Calling StreamProcessor.exportCsv with searchParams:', searchParams);
             
-            // Check again if an export was recently triggered
-            const currentTime = Date.now();
-            if (window._lastGlobalExportTime && (currentTime - window._lastGlobalExportTime < 5000)) {
-              console.log('CSV export recently triggered (additional check), ignoring duplicate request');
-              showNotification('Export already in progress, please wait a few seconds', 'info');
-              return; // Early return to prevent export
-            }
+            // Removed redundant check that was causing issues
+            // The check at the start of this function is sufficient
             
             // Pass search parameters as a unified object to ensure both simple terms
             // and structured parameters are correctly handled
