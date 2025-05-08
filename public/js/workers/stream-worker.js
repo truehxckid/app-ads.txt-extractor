@@ -487,6 +487,25 @@ function matchesStructuredParams(result, params) {
     // If any parameter set matches, the result is included
     if (matchesForThisParamSet) {
       console.log('Found matching entry for paramSet:', paramSet);
+      
+      // Store the matched terms in the result object for UI display
+      if (!result.appAdsTxt.searchResults) {
+        result.appAdsTxt.searchResults = {
+          count: 1,
+          termResults: []
+        };
+      }
+      
+      // Create a formatted term result that the UI can display
+      const termResult = {
+        term: `${paramSet.domain || ''}${paramSet.publisherId ? ', ' + paramSet.publisherId : ''}`,
+        count: 1,
+        matches: [`${paramSet.domain || ''}${paramSet.publisherId ? ':' + paramSet.publisherId : ''}`]
+      };
+      
+      // Add to termResults array
+      result.appAdsTxt.searchResults.termResults.push(termResult);
+      
       return true;
     }
     

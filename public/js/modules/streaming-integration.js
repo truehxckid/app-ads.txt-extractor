@@ -259,18 +259,7 @@ class StreamingIntegration {
         console.log('⚡⚡⚡ ENTRY POINT: Streaming endpoint: /api/stream/extract-multiple');
         console.log('⚡⚡⚡ ENTRY POINT: COMPLETELY BYPASSING ORIGINAL HANDLER');
         
-        // Create direct DOM manipulation to show what's happening
-        const streamingDebugHelper = document.createElement('div');
-        streamingDebugHelper.style.cssText = 'position: fixed; bottom: 40px; left: 10px; background: #f1f8ff; border: 1px solid #0366d6; padding: 5px 10px; border-radius: 4px; z-index: 9999; font-size: 12px;';
-        streamingDebugHelper.innerHTML = 'Using <strong>STREAMING</strong> endpoint (/api/stream/...)';
-        document.body.appendChild(streamingDebugHelper);
-        
-        // Remove after 5 seconds
-        setTimeout(() => {
-          if (streamingDebugHelper.parentNode) {
-            streamingDebugHelper.parentNode.removeChild(streamingDebugHelper);
-          }
-        }, 5000);
+        // No longer creating fixed element to avoid duplicates - StreamProcessor now handles this
         
         // Create a global debug info element if it doesn't exist
         let debugElement = DOMUtils.getElement('debugInfo') || document.getElementById('debug-information');

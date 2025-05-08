@@ -492,8 +492,10 @@ function generateCsvLine(result, searchTerms) {
   
   // Detect if we're dealing with advanced search parameters
   const isAdvancedSearch = result && 
-    result.appAdsTxt?.searchResults?.mode === 'advanced' &&
-    result.appAdsTxt?.searchResults?.advancedParams;
+    (result.appAdsTxt?.searchResults?.mode === 'advanced' ||
+     result.appAdsTxt?.searchResults?.termResults?.length > 0 ||
+     result.matchesAdvancedSearch === true) &&
+    (result.appAdsTxt?.searchResults?.advancedParams || result.appAdsTxt?.searchResults?.termResults);
     
   if (isAdvancedSearch) {
     // Handle advanced search format
@@ -502,7 +504,14 @@ function generateCsvLine(result, searchTerms) {
     
     // Format advanced search results
     let advancedSearchInfo = '';
-    if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
+    
+    // First try to use termResults if available (from our client-side fix)
+    if (hasMatches && result.appAdsTxt.searchResults?.termResults?.length > 0) {
+      const termResults = result.appAdsTxt.searchResults.termResults;
+      advancedSearchInfo = termResults.map(termResult => termResult.term || '').join(' | ');
+    }
+    // Fall back to traditional advancedParams if termResults not available
+    else if (hasMatches && result.appAdsTxt.searchResults?.advancedParams) {
       const params = result.appAdsTxt.searchResults.advancedParams;
       
       // Format each parameter as a readable string

@@ -392,9 +392,9 @@ class StreamProcessor {
         hasSearchTerms: false // Add this for backward compatibility
       });
         
-        // Update debug information with worker status
+        // Update debug information with worker status - check first if the message is already there
         const debugElement = document.getElementById('debug-information') || document.getElementById('debugInfo');
-        if (debugElement) {
+        if (debugElement && !debugElement.textContent.includes('Using Web Worker for processing')) {
           debugElement.innerHTML += `<br><strong style="color: green;">Using Web Worker for processing! (faster parallel processing)</strong>`;
         }
         
