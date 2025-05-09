@@ -786,9 +786,36 @@ class StreamResultsRenderer {
           
           // App-ads.txt cell
           const appAdsCell = Sanitizer.createSafeElement('td', { class: 'app-ads-cell' });
-          const appAdsStatusSpan = Sanitizer.createSafeElement('span', { 
-            class: hasAppAds ? 'app-ads-found' : 'app-ads-missing' 
+          
+          // Create app-ads status with inline styles to ensure consistency
+          const appAdsStatusSpan = Sanitizer.createSafeElement('span', {
+            class: hasAppAds ? 'app-ads-found' : 'app-ads-missing',
+            title: hasAppAds ? 'app-ads.txt file found for this domain' : 'No app-ads.txt file found'
           }, hasAppAds ? 'Found' : 'Not found');
+          
+          if (hasAppAds) {
+            appAdsStatusSpan.style.display = 'inline-block';
+            appAdsStatusSpan.style.padding = '4px 10px';
+            appAdsStatusSpan.style.borderRadius = '4px';
+            appAdsStatusSpan.style.backgroundColor = '#4caf50';
+            appAdsStatusSpan.style.color = 'white';
+            appAdsStatusSpan.style.fontWeight = 'bold';
+            appAdsStatusSpan.style.textAlign = 'center';
+            appAdsStatusSpan.style.minWidth = '60px';
+            appAdsStatusSpan.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+          } else {
+            appAdsStatusSpan.style.display = 'inline-block';
+            appAdsStatusSpan.style.padding = '4px 10px';
+            appAdsStatusSpan.style.borderRadius = '4px';
+            appAdsStatusSpan.style.backgroundColor = '#f5f5f5';
+            appAdsStatusSpan.style.color = '#666';
+            appAdsStatusSpan.style.fontWeight = 'normal';
+            appAdsStatusSpan.style.fontStyle = 'italic';
+            appAdsStatusSpan.style.textAlign = 'center';
+            appAdsStatusSpan.style.minWidth = '60px';
+            appAdsStatusSpan.style.border = '1px solid #ddd';
+          }
+          
           appAdsCell.appendChild(appAdsStatusSpan);
           
           // Search matches cell
@@ -799,31 +826,60 @@ class StreamResultsRenderer {
             
             // For multi-term search, show color-coded indicators
             if (result.appAdsTxt.searchResults.termResults) {
-              // Create a container div to hold the indicators
-              const indicatorsContainer = Sanitizer.createSafeElement('div', {
-                style: 'display: flex; gap: 8px; flex-wrap: wrap;'
-              });
-              
-              // Generate colored indicators for each term - showing term numbers (1-based index)
+              // Process each term result as a separate indicator
               result.appAdsTxt.searchResults.termResults.forEach((termResult, termIndex) => {
                 if (termResult.count > 0) {
                   // Limit to 5 color classes (0-4) to match search highlighting
                   const colorClass = `term-match-${termIndex % 5}`;
+                  
                   // Use index+1 to represent which search criteria matched (1, 2, 3, etc.)
                   // This shows which criteria number matched rather than the actual ID
                   const displayText = String(termIndex + 1);
                   
-                  const termIndicator = Sanitizer.createSafeElement('span', { 
+                  // Create a safe element with inline styles for guaranteed spacing and appearance
+                  const termIndicator = Sanitizer.createSafeElement('span', {
                     class: `term-match-indicator ${colorClass}`,
                     title: `${termResult.term || `Term ${termIndex + 1}`} found ${termResult.count} time(s)`
                   }, displayText);
+                  termIndicator.style.display = 'inline-block';
+                  termIndicator.style.width = '30px';
+                  termIndicator.style.height = '30px';
+                  termIndicator.style.lineHeight = '30px';
+                  termIndicator.style.textAlign = 'center';
+                  termIndicator.style.borderRadius = '4px';
+                  termIndicator.style.margin = '0 8px 0 0';
+                  termIndicator.style.fontWeight = 'bold';
+                  termIndicator.style.color = 'white';
+                  termIndicator.style.fontSize = '14px';
                   
-                  indicatorsContainer.appendChild(termIndicator);
+                  // Set background colors directly based on term index
+                  switch(termIndex % 5) {
+                    case 0:
+                      termIndicator.style.background = 'linear-gradient(135deg, #4a6bdf, #3957cc)';
+                      termIndicator.style.border = '1px solid #3450c0';
+                      break;
+                    case 1:
+                      termIndicator.style.background = 'linear-gradient(135deg, #9c5ad3, #7e40b9)';
+                      termIndicator.style.border = '1px solid #7138a8';
+                      break;
+                    case 2:
+                      termIndicator.style.background = 'linear-gradient(135deg, #4caf50, #357a38)';
+                      termIndicator.style.border = '1px solid #2e6b31';
+                      break;
+                    case 3:
+                      termIndicator.style.background = 'linear-gradient(135deg, #ff9800, #d68100)';
+                      termIndicator.style.border = '1px solid #c27700';
+                      break;
+                    case 4:
+                      termIndicator.style.background = 'linear-gradient(135deg, #e91e63, #c1134e)';
+                      termIndicator.style.border = '1px solid #ad1145';
+                      break;
+                  }
+                  
+                  // Add directly to the matches span
+                  matchesSpan.appendChild(termIndicator);
                 }
               });
-              
-              // Add indicators container to matches span
-              matchesSpan.appendChild(indicatorsContainer);
             } else if (searchMatchCount > 0) {
               // Fallback for single-term search
               matchesSpan.appendChild(document.createTextNode(`${searchMatchCount} matches`));
