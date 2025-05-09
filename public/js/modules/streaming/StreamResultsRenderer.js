@@ -836,23 +836,23 @@ class StreamResultsRenderer {
                   // This shows which criteria number matched rather than the actual ID
                   const displayText = String(termIndex + 1);
                   
-                  // Create a safe element with inline styles for guaranteed spacing and appearance
                   const termIndicator = Sanitizer.createSafeElement('span', {
                     class: `term-match-indicator ${colorClass}`,
                     title: `${termResult.term || `Term ${termIndex + 1}`} found ${termResult.count} time(s)`
                   }, displayText);
-                  termIndicator.style.display = 'inline-block';
-                  termIndicator.style.width = '30px';
-                  termIndicator.style.height = '30px';
-                  termIndicator.style.lineHeight = '30px';
-                  termIndicator.style.textAlign = 'center';
+                  termIndicator.style.display = 'inline-flex';
+                  termIndicator.style.alignItems = 'center';
+                  termIndicator.style.justifyContent = 'center';
+                  termIndicator.style.width = '24px';
+                  termIndicator.style.height = '24px';
+                  termIndicator.style.padding = '0 4px';
                   termIndicator.style.borderRadius = '4px';
-                  termIndicator.style.margin = '0 8px 0 0';
-                  termIndicator.style.fontWeight = 'bold';
+                  termIndicator.style.margin = '0 6px 0 0';
+                  termIndicator.style.fontWeight = 'var(--font-weight-semibold, 600)';
                   termIndicator.style.color = 'white';
-                  termIndicator.style.fontSize = '14px';
+                  termIndicator.style.fontSize = '11px';
+                  termIndicator.style.textShadow = '0 1px 1px rgba(0,0,0,0.1)';
                   
-                  // Set background colors directly based on term index
                   switch(termIndex % 5) {
                     case 0:
                       termIndicator.style.background = 'linear-gradient(135deg, #4a6bdf, #3957cc)';
